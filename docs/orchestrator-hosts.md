@@ -41,3 +41,10 @@ cutover; this API does not promise an event-driven incremental filesystem watche
 
 Optional semantic setup and failure behavior are unchanged. Do not pass provider
 accounts, credentials, raw logs or chat transcripts as memory or handoff content.
+
+Nested project registrations remain boundaries in every checkout of the parent
+project, including registrations created after a client was bound. Diagnostics
+validate every registered workspace against both its canonical root and Git
+membership. Include patterns with a provable root prefix prune unrelated trees;
+unanchored basename patterns still require traversal because they can match at
+any depth. Traversal and content limits remain enforced.

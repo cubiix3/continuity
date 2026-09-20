@@ -143,3 +143,54 @@ it('narrows sources by trusted host selection without allowing secret indexing',
   expect(await host.project(primary).sync()).toMatchObject({ files: 1 });
   expect(JSON.stringify(await host.project(primary).context({ task: 'reconnect SECRET_CANARY' }))).not.toMatch(/excluded detail|vendor detail|SECRET_CANARY/);
 });
+
+
+it('preserves nested project boundaries across all attached checkouts and late registration', async () => {
+  const nested = join(primary, 'packages', 'private');
+  const copied = join(feature, 'packages', 'private');
+  mkdirSync(nested, { recursive: true }); mkdirSync(copied, { recursive: true });
+  writeFileSync(join(nested, 'README.md'), 'Reconnect NESTED_PROJECT_CANARY.');
+  writeFileSync(join(copied, 'README.md'), 'Reconnect NESTED_PROJECT_CANARY.');
+  const a = host.project(primary); const b = host.workspace(primary, feature);
+  await b.sync(); // Registration must invalidate an already indexed nested path too.
+  host.init(nested);
+  for (const client of [a, b]) {
+    const bundle = await client.context({ task: 'reconnect', budget: 4000 });
+    expect(JSON.stringify(bundle)).not.toContain('NESTED_PROJECT_CANARY');
+    expect(bundle.items.some(i => i.provenance.origin === 'README.md')).toBe(true);
+    expect(bundle.budget.used).toBeLessThanOrEqual(4000);
+  }
+  expect(JSON.stringify(await host.project(nested).context({ task: 'reconnect' }))).toContain('NESTED_PROJECT_CANARY');
+  const featurePrivate = join(feature, 'workspace-private');
+  mkdirSync(featurePrivate); mkdirSync(join(primary, 'workspace-private'));
+  writeFileSync(join(featurePrivate, 'README.md'), 'Reconnect REVERSE_CANARY.');
+  writeFileSync(join(primary, 'workspace-private', 'README.md'), 'Reconnect REVERSE_CANARY.');
+  host.init(featurePrivate);
+  expect(JSON.stringify(await a.context({ task: 'reconnect' }))).not.toContain('REVERSE_CANARY');
+});
+
+it('diagnoses missing and invalid registered workspaces without claiming healthy roots', () => {
+  const client = host.workspace(primary, feature); const id = client.status().workspace!.workspace_id;
+  expect(host.doctor().workspaces).toContainEqual({ project_id: client.status().project_id, workspace_id: id, accessible: true });
+  rmSync(join(feature, '.git'));
+  expect(host.doctor().problems).toContain(`inaccessible/stale workspace: ${id}`);
+  rmSync(feature, { recursive: true, force: true });
+  expect(host.doctor().workspaces.some(w => w.workspace_id === id && !w.accessible)).toBe(true);
+});
+
+
+it('prunes unrelated trees before traversal limits while preserving include semantics', async () => {
+  mkdirSync(join(primary, 'docs')); mkdirSync(join(primary, 'unrelated'));
+  writeFileSync(join(primary, 'docs', 'chosen.md'), 'Reconnect SELECTED_SECTION.');
+  for (let n = 0; n < 20001; n++) writeFileSync(join(primary, 'unrelated', `${n}.bin`), '');
+  host.close(); host = openContinuity(home, { sources: { include: ['/DOCS/**', '/README.md'] } });
+  const bundle = await host.project(primary).context({ task: 'reconnect' });
+  expect(JSON.stringify(bundle)).toContain('SELECTED_SECTION');
+  expect(bundle.items.some(i => i.provenance.origin === 'README.md')).toBe(true);
+  // An unanchored name can match beneath an otherwise unrelated directory.
+  rmSync(join(primary, 'unrelated'), { recursive: true, force: true });
+  mkdirSync(join(primary, 'unrelated'));
+  writeFileSync(join(primary, 'unrelated', 'README.md'), 'Reconnect NESTED_BASENAME.');
+  host.close(); host = openContinuity(home, { sources: { include: ['README.md'] } });
+  expect(JSON.stringify(await host.project(primary).context({ task: 'reconnect' }))).toContain('NESTED_BASENAME');
+}, 60000);

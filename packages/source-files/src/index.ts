@@ -14,6 +14,25 @@ export function isWithin(root: string, path: string): boolean {
   const rel = relative(root, path);
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`));
 }
+// Conservative root prefixes for gitignore-style include patterns. Unanchored
+// basename patterns can match at any depth and therefore cannot prune traversal.
+function includePrefixes(patterns: readonly string[]): string[] | undefined {
+  const prefixes: string[] = [];
+  for (const raw of patterns) {
+    if (!raw || raw.startsWith('#') || raw.startsWith('!')) continue;
+    if (!/^[A-Za-z0-9_./*?-]+$/.test(raw)) return undefined;
+    const pattern = raw.replace(/^\//, '');
+    const components = pattern.replace(/\/$/, '').split('/');
+    if (components.length === 1 && !raw.startsWith('/')) return undefined;
+    if (components.some(part => !part || part === '.' || part === '..')) return undefined;
+    const wildcard = components.findIndex(part => /[*?]/.test(part));
+    const parents = wildcard >= 0 ? components.slice(0, wildcard) : components;
+    if (wildcard === 0) return undefined;
+    if (parents.length) prefixes.push(parents.join('/').toLowerCase());
+  }
+  return prefixes;
+}
+
 interface IgnoreLayer { base: string; rules: Ignore }
 
 export class FileSources implements SourcePort {
@@ -28,6 +47,7 @@ export class FileSources implements SourcePort {
     const nestedRoots = this.registeredRoots().filter(p => p !== project.root);
     const excluded = ignore().add([...(this.selection.exclude ?? [])]);
     const included = this.selection.include ? ignore().add([...this.selection.include]) : undefined;
+    const prefixes = this.selection.include ? includePrefixes(this.selection.include) : undefined;
     const walk = (directory: string, inherited: IgnoreLayer[]) => {
       const layers = [...inherited];
       const ignorePath = join(directory, '.gitignore');
@@ -45,6 +65,8 @@ export class FileSources implements SourcePort {
         const canonical = realpathSync.native(path);
         if (!isWithin(root, canonical) || canonical !== path) continue;
         if (entry.isDirectory()) {
+          const selectedPath = relativePath.toLowerCase();
+          if (prefixes && !prefixes.some(prefix => selectedPath === prefix || selectedPath.startsWith(prefix + '/') || prefix.startsWith(selectedPath + '/'))) continue;
           const normalized = process.platform === 'win32' ? canonical.toLowerCase() : canonical;
           if (nestedRoots.includes(normalized) || existsSync(join(path, '.git'))) continue;
           walk(path, layers); continue;

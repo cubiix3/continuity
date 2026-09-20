@@ -1,0 +1,10 @@
+{
+  "workflow": "Claude → Codex → Claude",
+  "verified": true,
+  "budget_used": 4876,
+  "items": 6,
+  "last_agent": "claude-code-return",
+  "no_project_b_marker": true,
+  "new_sessions": true,
+  "shared_transcript": false
+}

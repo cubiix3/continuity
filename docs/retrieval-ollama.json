@@ -1,6 +1,6 @@
 {
   "backend": "ollama",
-  "recorded_at": "2026-09-20T15:53:01.326Z",
+  "recorded_at": "2026-09-20T16:20:47.464Z",
   "node": "24.13.0",
   "platform": "win32",
   "service": {
@@ -19,35 +19,35 @@
       "reason": "Index current",
       "model": "nomic-embed-text",
       "dimensions": 768,
-      "indexed": 2,
-      "total": 2
+      "indexed": 8,
+      "total": 8
     }
   },
-  "method": "25 fixed synthetic cases; 3000-byte budgets; one measured query per mode/case; warm local services; cache setup excluded; all wrong-item labels reported",
+  "method": "25 fixed synthetic cases with six shared background documents per project; 3000-byte budgets; one measured query per mode/case; warm local services; cache setup excluded; all wrong-item labels reported",
   "summary": {
     "lexical": {
       "positive_cases": 22,
       "relevant_hits": 18,
       "top3_hits": 18,
-      "wrong_items": 9,
+      "wrong_items": 17,
       "clean_negative_cases": 3,
-      "mean_latency_ms": 9.79
+      "mean_latency_ms": 11.94
     },
     "semantic": {
       "positive_cases": 22,
-      "relevant_hits": 22,
-      "top3_hits": 22,
-      "wrong_items": 13,
-      "clean_negative_cases": 3,
-      "mean_latency_ms": 46.97
+      "relevant_hits": 21,
+      "top3_hits": 21,
+      "wrong_items": 39,
+      "clean_negative_cases": 2,
+      "mean_latency_ms": 51.92
     },
     "hybrid": {
       "positive_cases": 22,
-      "relevant_hits": 22,
-      "top3_hits": 22,
-      "wrong_items": 13,
-      "clean_negative_cases": 3,
-      "mean_latency_ms": 45.29
+      "relevant_hits": 21,
+      "top3_hits": 21,
+      "wrong_items": 39,
+      "clean_negative_cases": 2,
+      "mean_latency_ms": 50.79
     }
   },
   "rows": [
@@ -63,7 +63,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 8.21,
+      "latency_ms": 11.11,
       "selected": [
         {
           "source": "reconnect.ts",
@@ -85,12 +85,15 @@
       "relevant_included": true,
       "relevant_rank": 1,
       "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 971,
+      "wrong_items": [
+        "background/cache.md",
+        "background/logging.md"
+      ],
+      "budget_bytes": 2477,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 29.59,
+      "latency_ms": 30.12,
       "selected": [
         {
           "source": "reconnect.ts",
@@ -102,6 +105,26 @@
             "semantic similarity 0.755; rank #1",
             "final rank #1"
           ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.532; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.506; rank #3",
+            "final rank #3"
+          ]
         }
       ]
     },
@@ -112,12 +135,15 @@
       "relevant_included": true,
       "relevant_rank": 1,
       "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 985,
+      "wrong_items": [
+        "background/cache.md",
+        "background/logging.md"
+      ],
+      "budget_bytes": 2491,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 21.57,
+      "latency_ms": 29.28,
       "selected": [
         {
           "source": "reconnect.ts",
@@ -129,6 +155,26 @@
             "lexical rank #1",
             "semantic similarity 0.755; rank #1",
             "final rank #1"
+          ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.532; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.506; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -141,13 +187,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "noise.md"
+        "noise.md",
+        "background/scheduler.md"
       ],
-      "budget_bytes": 1475,
+      "budget_bytes": 2211,
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 9.16,
+      "latency_ms": 8.77,
       "selected": [
         {
           "source": "decision.md",
@@ -167,6 +214,16 @@
             "source hash checked during this request",
             "lexical rank #2",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -179,13 +236,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
+        "background/scheduler.md",
         "noise.md"
       ],
-      "budget_bytes": 1518,
+      "budget_bytes": 2273,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 27.42,
+      "latency_ms": 32.51,
       "selected": [
         {
           "source": "decision.md",
@@ -198,13 +256,23 @@
           ]
         },
         {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.546; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
           "source": "noise.md",
           "reasons": [
             "same project",
             "authoritative current source",
             "source hash checked during this request",
-            "semantic similarity 0.500; rank #2",
-            "final rank #2"
+            "semantic similarity 0.500; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -217,13 +285,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
+        "background/scheduler.md",
         "noise.md"
       ],
-      "budget_bytes": 1550,
+      "budget_bytes": 2437,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 21.3,
+      "latency_ms": 34.48,
       "selected": [
         {
           "source": "decision.md",
@@ -237,14 +306,27 @@
           ]
         },
         {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "semantic similarity 0.546; rank #2",
+            "weak OR match: 1/3 query terms; no lexical fusion vote",
+            "final rank #2"
+          ]
+        },
+        {
           "source": "noise.md",
           "reasons": [
             "same project",
             "authoritative current source",
             "source hash checked during this request",
             "lexical rank #2",
-            "semantic similarity 0.500; rank #2",
-            "final rank #2"
+            "semantic similarity 0.500; rank #3",
+            "weak OR match: 1/3 query terms; no lexical fusion vote",
+            "final rank #3"
           ]
         }
       ]
@@ -261,7 +343,7 @@
       "semantic_used": false,
       "lexical_used": false,
       "effective": "lexical",
-      "latency_ms": 6.25,
+      "latency_ms": 8.62,
       "selected": []
     },
     {
@@ -276,7 +358,7 @@
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 26.59,
+      "latency_ms": 27.13,
       "selected": [
         {
           "source": "decision.md",
@@ -302,7 +384,7 @@
       "semantic_used": true,
       "lexical_used": false,
       "effective": "hybrid",
-      "latency_ms": 20.59,
+      "latency_ms": 29.11,
       "selected": [
         {
           "source": "decision.md",
@@ -328,7 +410,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 5.53,
+      "latency_ms": 8.2,
       "selected": [
         {
           "source": "decision.md",
@@ -349,12 +431,14 @@
       "relevant_included": true,
       "relevant_rank": 1,
       "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 919,
+      "wrong_items": [
+        "background/logging.md"
+      ],
+      "budget_bytes": 1676,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 19.58,
+      "latency_ms": 27.15,
       "selected": [
         {
           "source": "decision.md",
@@ -364,6 +448,16 @@
             "source hash checked during this request",
             "semantic similarity 0.676; rank #1",
             "final rank #1"
+          ]
+        },
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.503; rank #2",
+            "final rank #2"
           ]
         }
       ]
@@ -375,12 +469,14 @@
       "relevant_included": true,
       "relevant_rank": 1,
       "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 933,
+      "wrong_items": [
+        "background/logging.md"
+      ],
+      "budget_bytes": 1690,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 19.94,
+      "latency_ms": 26.49,
       "selected": [
         {
           "source": "decision.md",
@@ -391,6 +487,16 @@
             "lexical rank #1",
             "semantic similarity 0.676; rank #1",
             "final rank #1"
+          ]
+        },
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.503; rank #2",
+            "final rank #2"
           ]
         }
       ]
@@ -409,7 +515,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 6.3,
+      "latency_ms": 8.38,
       "selected": [
         {
           "source": "decision.md",
@@ -441,13 +547,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "contradiction.md"
+        "contradiction.md",
+        "background/scheduler.md"
       ],
-      "budget_bytes": 1522,
+      "budget_bytes": 2277,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 23.76,
+      "latency_ms": 27.98,
       "selected": [
         {
           "source": "decision.md",
@@ -467,6 +574,16 @@
             "source hash checked during this request",
             "semantic similarity 0.788; rank #2",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.537; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -479,13 +596,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "contradiction.md"
+        "contradiction.md",
+        "background/scheduler.md"
       ],
-      "budget_bytes": 1554,
+      "budget_bytes": 2309,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 22.11,
+      "latency_ms": 26.9,
       "selected": [
         {
           "source": "decision.md",
@@ -508,6 +626,16 @@
             "semantic similarity 0.788; rank #2",
             "final rank #2"
           ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.537; rank #3",
+            "final rank #3"
+          ]
         }
       ]
     },
@@ -519,13 +647,14 @@
       "relevant_rank": 2,
       "expected_empty": false,
       "wrong_items": [
-        "noise.md"
+        "noise.md",
+        "background/testing.md"
       ],
-      "budget_bytes": 1458,
+      "budget_bytes": 2191,
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 14.37,
+      "latency_ms": 9.26,
       "selected": [
         {
           "source": "noise.md",
@@ -546,6 +675,16 @@
             "lexical rank #2",
             "final rank #2"
           ]
+        },
+        {
+          "source": "background/testing.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
         }
       ]
     },
@@ -557,13 +696,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "noise.md"
+        "noise.md",
+        "background/cache.md"
       ],
-      "budget_bytes": 1501,
+      "budget_bytes": 2250,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 21.75,
+      "latency_ms": 28.65,
       "selected": [
         {
           "source": "reconnect.md",
@@ -584,6 +724,16 @@
             "semantic similarity 0.640; rank #2",
             "final rank #2"
           ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.543; rank #3",
+            "final rank #3"
+          ]
         }
       ]
     },
@@ -595,13 +745,14 @@
       "relevant_rank": 2,
       "expected_empty": false,
       "wrong_items": [
-        "noise.md"
+        "noise.md",
+        "background/cache.md"
       ],
-      "budget_bytes": 1533,
+      "budget_bytes": 2282,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 23.08,
+      "latency_ms": 29.26,
       "selected": [
         {
           "source": "noise.md",
@@ -624,6 +775,16 @@
             "semantic similarity 0.693; rank #1",
             "final rank #2"
           ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.543; rank #3",
+            "final rank #3"
+          ]
         }
       ]
     },
@@ -639,7 +800,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 6.49,
+      "latency_ms": 8.14,
       "selected": [
         {
           "source": "reconnect.md",
@@ -660,12 +821,15 @@
       "relevant_included": true,
       "relevant_rank": 1,
       "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 903,
+      "wrong_items": [
+        "background/cache.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2408,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 20.87,
+      "latency_ms": 23.92,
       "selected": [
         {
           "source": "reconnect.md",
@@ -675,6 +839,26 @@
             "source hash checked during this request",
             "semantic similarity 0.734; rank #1",
             "final rank #1"
+          ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.528; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.521; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -686,12 +870,15 @@
       "relevant_included": true,
       "relevant_rank": 1,
       "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 917,
+      "wrong_items": [
+        "background/cache.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2422,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 20.91,
+      "latency_ms": 26.08,
       "selected": [
         {
           "source": "reconnect.md",
@@ -702,6 +889,26 @@
             "lexical rank #1",
             "semantic similarity 0.734; rank #1",
             "final rank #1"
+          ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.528; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.521; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -718,7 +925,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 7.08,
+      "latency_ms": 9.33,
       "selected": [
         {
           "source": "reconnect.md",
@@ -739,12 +946,15 @@
       "relevant_included": true,
       "relevant_rank": 1,
       "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 903,
+      "wrong_items": [
+        "background/cache.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2408,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 449.13,
+      "latency_ms": 460.98,
       "selected": [
         {
           "source": "reconnect.md",
@@ -754,6 +964,26 @@
             "source hash checked during this request",
             "semantic similarity 0.734; rank #1",
             "final rank #1"
+          ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.528; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.521; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -765,12 +995,15 @@
       "relevant_included": true,
       "relevant_rank": 1,
       "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 917,
+      "wrong_items": [
+        "background/cache.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2422,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 456.92,
+      "latency_ms": 461.32,
       "selected": [
         {
           "source": "reconnect.md",
@@ -781,6 +1014,26 @@
             "lexical rank #1",
             "semantic similarity 0.734; rank #1",
             "final rank #1"
+          ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.528; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.521; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -797,7 +1050,7 @@
       "semantic_used": false,
       "lexical_used": false,
       "effective": "lexical",
-      "latency_ms": 6.32,
+      "latency_ms": 9.36,
       "selected": [
         {
           "source": "src/recovery.ts",
@@ -819,13 +1072,14 @@
       "relevant_rank": 2,
       "expected_empty": false,
       "wrong_items": [
-        "src/recovery-ui.ts"
+        "src/recovery-ui.ts",
+        "background/cache.md"
       ],
-      "budget_bytes": 1567,
+      "budget_bytes": 2316,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 28.48,
+      "latency_ms": 31.67,
       "selected": [
         {
           "source": "src/recovery-ui.ts",
@@ -847,6 +1101,16 @@
             "semantic similarity 0.729; rank #2",
             "final rank #2"
           ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.508; rank #3",
+            "final rank #3"
+          ]
         }
       ]
     },
@@ -858,13 +1122,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "src/recovery-ui.ts"
+        "src/recovery-ui.ts",
+        "background/cache.md"
       ],
-      "budget_bytes": 1563,
+      "budget_bytes": 2312,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "hybrid",
-      "latency_ms": 22.38,
+      "latency_ms": 27.62,
       "selected": [
         {
           "source": "src/recovery.ts",
@@ -886,6 +1151,16 @@
             "semantic similarity 0.761; rank #1",
             "final rank #2"
           ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.508; rank #3",
+            "final rank #3"
+          ]
         }
       ]
     },
@@ -897,13 +1172,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "idea.md"
+        "idea.md",
+        "background/formatting.md"
       ],
-      "budget_bytes": 1518,
+      "budget_bytes": 2275,
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 6.51,
+      "latency_ms": 8.82,
       "selected": [
         {
           "source": "AGENTS.md",
@@ -924,6 +1200,16 @@
             "source hash checked during this request",
             "lexical rank #2",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/formatting.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -936,13 +1222,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "idea.md"
+        "idea.md",
+        "background/scheduler.md"
       ],
-      "budget_bytes": 1561,
+      "budget_bytes": 2316,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 28.51,
+      "latency_ms": 27.19,
       "selected": [
         {
           "source": "AGENTS.md",
@@ -963,6 +1250,16 @@
             "source hash checked during this request",
             "semantic similarity 0.750; rank #2",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.557; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -975,13 +1272,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "idea.md"
+        "idea.md",
+        "background/scheduler.md"
       ],
-      "budget_bytes": 1593,
+      "budget_bytes": 2462,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 22.53,
+      "latency_ms": 26.93,
       "selected": [
         {
           "source": "AGENTS.md",
@@ -992,6 +1290,7 @@
             "project rule applies to every role",
             "lexical rank #1",
             "semantic similarity 0.760; rank #1",
+            "weak OR match: 1/5 query terms; no lexical fusion vote",
             "final rank #1"
           ]
         },
@@ -1003,7 +1302,18 @@
             "source hash checked during this request",
             "lexical rank #2",
             "semantic similarity 0.750; rank #2",
+            "weak OR match: 1/5 query terms; no lexical fusion vote",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.557; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -1016,13 +1326,15 @@
       "relevant_rank": null,
       "expected_empty": false,
       "wrong_items": [
-        "limits.md"
+        "limits.md",
+        "background/testing.md",
+        "background/formatting.md"
       ],
-      "budget_bytes": 906,
+      "budget_bytes": 2397,
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 7.39,
+      "latency_ms": 9.64,
       "selected": [
         {
           "source": "limits.md",
@@ -1032,6 +1344,26 @@
             "source hash checked during this request",
             "lexical rank #1",
             "final rank #1"
+          ]
+        },
+        {
+          "source": "background/testing.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/formatting.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -1044,13 +1376,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "limits.md"
+        "background/scheduler.md",
+        "background/testing.md"
       ],
-      "budget_bytes": 1556,
+      "budget_bytes": 2444,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 20.7,
+      "latency_ms": 28.77,
       "selected": [
         {
           "source": "retry.md",
@@ -1063,13 +1396,23 @@
           ]
         },
         {
-          "source": "limits.md",
+          "source": "background/scheduler.md",
           "reasons": [
             "same project",
             "authoritative current source",
             "source hash checked during this request",
-            "semantic similarity 0.523; rank #2",
+            "semantic similarity 0.570; rank #2",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/testing.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.546; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -1079,28 +1422,18 @@
       "mode": "hybrid",
       "query": "stop hammering the server after failures",
       "relevant_included": true,
-      "relevant_rank": 2,
+      "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "limits.md"
+        "background/scheduler.md",
+        "background/testing.md"
       ],
-      "budget_bytes": 1570,
+      "budget_bytes": 2590,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 22.5,
+      "latency_ms": 31.42,
       "selected": [
-        {
-          "source": "limits.md",
-          "reasons": [
-            "same project",
-            "authoritative current source",
-            "source hash checked during this request",
-            "lexical rank #1",
-            "semantic similarity 0.523; rank #2",
-            "final rank #1"
-          ]
-        },
         {
           "source": "retry.md",
           "reasons": [
@@ -1108,7 +1441,31 @@
             "authoritative current source",
             "source hash checked during this request",
             "semantic similarity 0.597; rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #6",
+            "semantic similarity 0.570; rank #2",
+            "weak OR match: 0/4 query terms; no lexical fusion vote",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/testing.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "semantic similarity 0.546; rank #3",
+            "weak OR match: 1/4 query terms; no lexical fusion vote",
+            "final rank #3"
           ]
         }
       ]
@@ -1125,7 +1482,7 @@
       "semantic_used": false,
       "lexical_used": false,
       "effective": "lexical",
-      "latency_ms": 6.82,
+      "latency_ms": 9.53,
       "selected": []
     },
     {
@@ -1136,13 +1493,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "storage.md"
+        "background/logging.md",
+        "background/cache.md"
       ],
-      "budget_bytes": 1534,
+      "budget_bytes": 2438,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 23.73,
+      "latency_ms": 30.29,
       "selected": [
         {
           "source": "auth.md",
@@ -1155,13 +1513,23 @@
           ]
         },
         {
-          "source": "storage.md",
+          "source": "background/logging.md",
           "reasons": [
             "same project",
             "authoritative current source",
             "source hash checked during this request",
-            "semantic similarity 0.517; rank #2",
+            "semantic similarity 0.562; rank #2",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.539; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -1174,13 +1542,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "storage.md"
+        "background/logging.md",
+        "background/cache.md"
       ],
-      "budget_bytes": 1530,
+      "budget_bytes": 2434,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "hybrid",
-      "latency_ms": 20.66,
+      "latency_ms": 29.51,
       "selected": [
         {
           "source": "auth.md",
@@ -1193,13 +1562,23 @@
           ]
         },
         {
-          "source": "storage.md",
+          "source": "background/logging.md",
           "reasons": [
             "same project",
             "authoritative current source",
             "source hash checked during this request",
-            "semantic similarity 0.517; rank #2",
+            "semantic similarity 0.562; rank #2",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.539; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -1216,7 +1595,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 6.51,
+      "latency_ms": 11.31,
       "selected": [
         {
           "source": "retry.md",
@@ -1242,7 +1621,7 @@
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 30.78,
+      "latency_ms": 32.96,
       "selected": [
         {
           "source": "retry.md",
@@ -1268,7 +1647,7 @@
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 25.8,
+      "latency_ms": 26.08,
       "selected": [
         {
           "source": "retry.md",
@@ -1297,7 +1676,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 8.58,
+      "latency_ms": 9.65,
       "selected": [
         {
           "source": "retry.md",
@@ -1329,13 +1708,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "ui.md"
+        "ui.md",
+        "background/cache.md"
       ],
-      "budget_bytes": 2098,
+      "budget_bytes": 2847,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 24.47,
+      "latency_ms": 29.69,
       "selected": [
         {
           "source": "retry.md",
@@ -1366,6 +1746,16 @@
             "semantic similarity 0.626; rank #3",
             "final rank #3"
           ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.566; rank #4",
+            "final rank #4"
+          ]
         }
       ]
     },
@@ -1377,13 +1767,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "ui.md"
+        "ui.md",
+        "background/cache.md"
       ],
-      "budget_bytes": 2130,
+      "budget_bytes": 2936,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 24.45,
+      "latency_ms": 28.74,
       "selected": [
         {
           "source": "retry.md",
@@ -1397,6 +1788,16 @@
           ]
         },
         {
+          "source": "retry.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.754; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
           "source": "ui.md",
           "reasons": [
             "same project",
@@ -1404,17 +1805,18 @@
             "source hash checked during this request",
             "lexical rank #2",
             "semantic similarity 0.626; rank #3",
-            "final rank #2"
+            "weak OR match: 1/3 query terms; no lexical fusion vote",
+            "final rank #3"
           ]
         },
         {
-          "source": "retry.ts",
+          "source": "background/cache.md",
           "reasons": [
             "same project",
             "authoritative current source",
             "source hash checked during this request",
-            "semantic similarity 0.754; rank #2",
-            "final rank #3"
+            "semantic similarity 0.566; rank #4",
+            "final rank #4"
           ]
         }
       ]
@@ -1433,7 +1835,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 6.77,
+      "latency_ms": 8.66,
       "selected": [
         {
           "source": "AGENTS.md",
@@ -1466,13 +1868,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "old.md"
+        "old.md",
+        "background/cache.md"
       ],
-      "budget_bytes": 1592,
+      "budget_bytes": 2341,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 23.58,
+      "latency_ms": 25.87,
       "selected": [
         {
           "source": "AGENTS.md",
@@ -1494,6 +1897,16 @@
             "semantic similarity 0.738; rank #2",
             "final rank #2"
           ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.556; rank #3",
+            "final rank #3"
+          ]
         }
       ]
     },
@@ -1505,13 +1918,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "old.md"
+        "old.md",
+        "background/cache.md"
       ],
-      "budget_bytes": 1624,
+      "budget_bytes": 2373,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 23.15,
+      "latency_ms": 26.86,
       "selected": [
         {
           "source": "AGENTS.md",
@@ -1535,6 +1949,16 @@
             "semantic similarity 0.738; rank #2",
             "final rank #2"
           ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.556; rank #3",
+            "final rank #3"
+          ]
         }
       ]
     },
@@ -1550,7 +1974,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 7.17,
+      "latency_ms": 8.15,
       "selected": [
         {
           "source": "history.md",
@@ -1576,7 +2000,7 @@
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 24.26,
+      "latency_ms": 27.48,
       "selected": [
         {
           "source": "history.md",
@@ -1602,7 +2026,7 @@
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 22.19,
+      "latency_ms": 28.62,
       "selected": [
         {
           "source": "history.md",
@@ -1629,7 +2053,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 6.93,
+      "latency_ms": 11.7,
       "selected": [
         {
           "source": "transport.ts",
@@ -1658,7 +2082,7 @@
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 24.07,
+      "latency_ms": 33.04,
       "selected": [
         {
           "source": "transport.ts",
@@ -1697,7 +2121,7 @@
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 25.5,
+      "latency_ms": 32.37,
       "selected": [
         {
           "source": "transport.ts",
@@ -1735,7 +2159,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 72.81,
+      "latency_ms": 75.88,
       "selected": [
         {
           "source": "guide.md",
@@ -1757,12 +2181,15 @@
       "relevant_included": true,
       "relevant_rank": 1,
       "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 971,
+      "wrong_items": [
+        "background/cache.md",
+        "background/logging.md"
+      ],
+      "budget_bytes": 2477,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 171.2,
+      "latency_ms": 170.75,
       "selected": [
         {
           "source": "guide.md",
@@ -1774,6 +2201,26 @@
             "semantic similarity 0.753; rank #1",
             "final rank #1"
           ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.532; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.506; rank #3",
+            "final rank #3"
+          ]
         }
       ]
     },
@@ -1784,12 +2231,15 @@
       "relevant_included": true,
       "relevant_rank": 1,
       "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 985,
+      "wrong_items": [
+        "background/cache.md",
+        "background/logging.md"
+      ],
+      "budget_bytes": 2491,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 160.41,
+      "latency_ms": 156.86,
       "selected": [
         {
           "source": "guide.md",
@@ -1801,6 +2251,26 @@
             "lexical rank #1",
             "semantic similarity 0.753; rank #1",
             "final rank #1"
+          ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.532; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.506; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -1817,7 +2287,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 6.77,
+      "latency_ms": 10.86,
       "selected": [
         {
           "source": "errors.ts",
@@ -1840,13 +2310,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "guide.md"
+        "background/cache.md",
+        "background/scheduler.md"
       ],
-      "budget_bytes": 1560,
+      "budget_bytes": 2464,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 23.02,
+      "latency_ms": 33.86,
       "selected": [
         {
           "source": "errors.ts",
@@ -1860,13 +2331,23 @@
           ]
         },
         {
-          "source": "guide.md",
+          "source": "background/cache.md",
           "reasons": [
             "same project",
             "authoritative current source",
             "source hash checked during this request",
-            "semantic similarity 0.508; rank #2",
+            "semantic similarity 0.562; rank #2",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.520; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -1879,13 +2360,14 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
-        "guide.md"
+        "background/cache.md",
+        "background/scheduler.md"
       ],
-      "budget_bytes": 1574,
+      "budget_bytes": 2478,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 21.96,
+      "latency_ms": 30.35,
       "selected": [
         {
           "source": "errors.ts",
@@ -1900,13 +2382,23 @@
           ]
         },
         {
-          "source": "guide.md",
+          "source": "background/cache.md",
           "reasons": [
             "same project",
             "authoritative current source",
             "source hash checked during this request",
-            "semantic similarity 0.508; rank #2",
+            "semantic similarity 0.562; rank #2",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.520; rank #3",
+            "final rank #3"
           ]
         }
       ]
@@ -1925,7 +2417,7 @@
       "semantic_used": false,
       "lexical_used": true,
       "effective": "lexical",
-      "latency_ms": 6.01,
+      "latency_ms": 8.22,
       "selected": [
         {
           "source": "AGENTS.md",
@@ -1956,13 +2448,15 @@
       "relevant_rank": 1,
       "expected_empty": false,
       "wrong_items": [
+        "background/scheduler.md",
+        "background/logging.md",
         "agent:proposal"
       ],
-      "budget_bytes": 1387,
+      "budget_bytes": 2898,
       "semantic_used": true,
       "lexical_used": false,
       "effective": "semantic",
-      "latency_ms": 22.67,
+      "latency_ms": 27.2,
       "selected": [
         {
           "source": "AGENTS.md",
@@ -1976,341 +2470,411 @@
           ]
         },
         {
-          "source": "agent:proposal",
-          "reasons": [
-            "same project",
-            "human-reviewed claim; current sources take precedence",
-            "task term match"
-          ]
-        }
-      ]
-    },
-    {
-      "scenario": "memory versus authoritative rule",
-      "mode": "hybrid",
-      "query": "reconnect manager",
-      "relevant_included": true,
-      "relevant_rank": 1,
-      "expected_empty": false,
-      "wrong_items": [
-        "agent:proposal"
-      ],
-      "budget_bytes": 1401,
-      "semantic_used": true,
-      "lexical_used": true,
-      "effective": "hybrid",
-      "latency_ms": 22.19,
-      "selected": [
-        {
-          "source": "AGENTS.md",
+          "source": "background/scheduler.md",
           "reasons": [
             "same project",
             "authoritative current source",
             "source hash checked during this request",
-            "project rule applies to every role",
-            "lexical rank #1",
-            "semantic similarity 0.786; rank #1",
-            "final rank #1"
-          ]
-        },
-        {
-          "source": "agent:proposal",
-          "reasons": [
-            "same project",
-            "human-reviewed claim; current sources take precedence",
-            "task term match"
-          ]
-        }
-      ]
-    },
-    {
-      "scenario": "handoff relevance",
-      "mode": "lexical",
-      "query": "remaining reconnect work",
-      "relevant_included": true,
-      "relevant_rank": 1,
-      "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 913,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "lexical",
-      "latency_ms": 6.09,
-      "selected": [
-        {
-          "source": "agent:fixture",
-          "reasons": [
-            "same project",
-            "latest structured handoff",
-            "task term match; agent report, not project policy"
-          ]
-        }
-      ]
-    },
-    {
-      "scenario": "handoff relevance",
-      "mode": "semantic",
-      "query": "remaining reconnect work",
-      "relevant_included": true,
-      "relevant_rank": 1,
-      "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 918,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "semantic",
-      "latency_ms": 20.01,
-      "selected": [
-        {
-          "source": "agent:fixture",
-          "reasons": [
-            "same project",
-            "latest structured handoff",
-            "task term match; agent report, not project policy"
-          ]
-        }
-      ]
-    },
-    {
-      "scenario": "handoff relevance",
-      "mode": "hybrid",
-      "query": "remaining reconnect work",
-      "relevant_included": true,
-      "relevant_rank": 1,
-      "expected_empty": false,
-      "wrong_items": [],
-      "budget_bytes": 914,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "hybrid",
-      "latency_ms": 22.31,
-      "selected": [
-        {
-          "source": "agent:fixture",
-          "reasons": [
-            "same project",
-            "latest structured handoff",
-            "task term match; agent report, not project policy"
-          ]
-        }
-      ]
-    },
-    {
-      "scenario": "unrelated noise",
-      "mode": "lexical",
-      "query": "banana bread oven temperature",
-      "relevant_included": false,
-      "relevant_rank": null,
-      "expected_empty": true,
-      "wrong_items": [],
-      "budget_bytes": 307,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "lexical",
-      "latency_ms": 6.83,
-      "selected": []
-    },
-    {
-      "scenario": "unrelated noise",
-      "mode": "semantic",
-      "query": "banana bread oven temperature",
-      "relevant_included": false,
-      "relevant_rank": null,
-      "expected_empty": true,
-      "wrong_items": [],
-      "budget_bytes": 312,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "semantic",
-      "latency_ms": 22.09,
-      "selected": []
-    },
-    {
-      "scenario": "unrelated noise",
-      "mode": "hybrid",
-      "query": "banana bread oven temperature",
-      "relevant_included": false,
-      "relevant_rank": null,
-      "expected_empty": true,
-      "wrong_items": [],
-      "budget_bytes": 308,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "hybrid",
-      "latency_ms": 22.06,
-      "selected": []
-    },
-    {
-      "scenario": "cross-project canary",
-      "mode": "lexical",
-      "query": "B_CANARY transport recovery",
-      "relevant_included": false,
-      "relevant_rank": null,
-      "expected_empty": true,
-      "wrong_items": [],
-      "budget_bytes": 307,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "lexical",
-      "latency_ms": 5.91,
-      "selected": []
-    },
-    {
-      "scenario": "cross-project canary",
-      "mode": "semantic",
-      "query": "B_CANARY transport recovery",
-      "relevant_included": false,
-      "relevant_rank": null,
-      "expected_empty": true,
-      "wrong_items": [],
-      "budget_bytes": 312,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "semantic",
-      "latency_ms": 21.55,
-      "selected": []
-    },
-    {
-      "scenario": "cross-project canary",
-      "mode": "hybrid",
-      "query": "B_CANARY transport recovery",
-      "relevant_included": false,
-      "relevant_rank": null,
-      "expected_empty": true,
-      "wrong_items": [],
-      "budget_bytes": 308,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "hybrid",
-      "latency_ms": 21.74,
-      "selected": []
-    },
-    {
-      "scenario": "deleted source",
-      "mode": "lexical",
-      "query": "legacy reconnect controller",
-      "relevant_included": false,
-      "relevant_rank": null,
-      "expected_empty": true,
-      "wrong_items": [],
-      "budget_bytes": 307,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "lexical",
-      "latency_ms": 7.51,
-      "selected": []
-    },
-    {
-      "scenario": "deleted source",
-      "mode": "semantic",
-      "query": "legacy reconnect controller",
-      "relevant_included": false,
-      "relevant_rank": null,
-      "expected_empty": true,
-      "wrong_items": [],
-      "budget_bytes": 312,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "semantic",
-      "latency_ms": 24.76,
-      "selected": []
-    },
-    {
-      "scenario": "deleted source",
-      "mode": "hybrid",
-      "query": "legacy reconnect controller",
-      "relevant_included": false,
-      "relevant_rank": null,
-      "expected_empty": true,
-      "wrong_items": [],
-      "budget_bytes": 308,
-      "semantic_used": false,
-      "lexical_used": false,
-      "effective": "hybrid",
-      "latency_ms": 23.59,
-      "selected": []
-    },
-    {
-      "scenario": "paraphrase durability",
-      "mode": "lexical",
-      "query": "keep work after the process crashes",
-      "relevant_included": false,
-      "relevant_rank": null,
-      "expected_empty": false,
-      "wrong_items": [
-        "tasks.md"
-      ],
-      "budget_bytes": 887,
-      "semantic_used": false,
-      "lexical_used": true,
-      "effective": "lexical",
-      "latency_ms": 6.54,
-      "selected": [
-        {
-          "source": "tasks.md",
-          "reasons": [
-            "same project",
-            "authoritative current source",
-            "source hash checked during this request",
-            "lexical rank #1",
-            "final rank #1"
-          ]
-        }
-      ]
-    },
-    {
-      "scenario": "paraphrase durability",
-      "mode": "semantic",
-      "query": "keep work after the process crashes",
-      "relevant_included": true,
-      "relevant_rank": 1,
-      "expected_empty": false,
-      "wrong_items": [
-        "tasks.md"
-      ],
-      "budget_bytes": 1569,
-      "semantic_used": true,
-      "lexical_used": false,
-      "effective": "semantic",
-      "latency_ms": 21.73,
-      "selected": [
-        {
-          "source": "persistence.md",
-          "reasons": [
-            "same project",
-            "authoritative current source",
-            "source hash checked during this request",
-            "semantic similarity 0.658; rank #1",
-            "final rank #1"
-          ]
-        },
-        {
-          "source": "tasks.md",
-          "reasons": [
-            "same project",
-            "authoritative current source",
-            "source hash checked during this request",
-            "semantic similarity 0.581; rank #2",
+            "semantic similarity 0.537; rank #2",
             "final rank #2"
           ]
+        },
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.507; rank #3",
+            "final rank #3"
+          ]
+        },
+        {
+          "source": "agent:proposal",
+          "reasons": [
+            "same project",
+            "human-reviewed claim; current sources take precedence",
+            "task term match"
+          ]
         }
       ]
     },
     {
-      "scenario": "paraphrase durability",
+      "scenario": "memory versus authoritative rule",
       "mode": "hybrid",
-      "query": "keep work after the process crashes",
+      "query": "reconnect manager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "background/scheduler.md",
+        "background/logging.md",
+        "agent:proposal"
+      ],
+      "budget_bytes": 2912,
+      "semantic_used": true,
+      "lexical_used": true,
+      "effective": "hybrid",
+      "latency_ms": 26.83,
+      "selected": [
+        {
+          "source": "AGENTS.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "project rule applies to every role",
+            "lexical rank #1",
+            "semantic similarity 0.786; rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.537; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.507; rank #3",
+            "final rank #3"
+          ]
+        },
+        {
+          "source": "agent:proposal",
+          "reasons": [
+            "same project",
+            "human-reviewed claim; current sources take precedence",
+            "task term match"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "handoff relevance",
+      "mode": "lexical",
+      "query": "remaining reconnect work",
       "relevant_included": true,
       "relevant_rank": 2,
       "expected_empty": false,
       "wrong_items": [
-        "tasks.md"
+        "background/scheduler.md"
       ],
-      "budget_bytes": 1583,
+      "budget_bytes": 1650,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.94,
+      "selected": [
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "agent:fixture",
+          "reasons": [
+            "same project",
+            "latest structured handoff",
+            "task term match; agent report, not project policy"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "handoff relevance",
+      "mode": "semantic",
+      "query": "remaining reconnect work",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [
+        "background/scheduler.md",
+        "background/logging.md",
+        "background/cache.md"
+      ],
+      "budget_bytes": 2572,
+      "semantic_used": true,
+      "lexical_used": false,
+      "effective": "semantic",
+      "latency_ms": 30.49,
+      "selected": [
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.532; rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.525; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.500; rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "handoff relevance",
+      "mode": "hybrid",
+      "query": "remaining reconnect work",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [
+        "background/scheduler.md",
+        "background/logging.md",
+        "background/cache.md"
+      ],
+      "budget_bytes": 2643,
       "semantic_used": true,
       "lexical_used": true,
       "effective": "hybrid",
-      "latency_ms": 22.46,
+      "latency_ms": 27.62,
+      "selected": [
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "semantic similarity 0.532; rank #1",
+            "weak OR match: 1/3 query terms; no lexical fusion vote",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.525; rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/cache.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.500; rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "unrelated noise",
+      "mode": "lexical",
+      "query": "banana bread oven temperature",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 307,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 9.11,
+      "selected": []
+    },
+    {
+      "scenario": "unrelated noise",
+      "mode": "semantic",
+      "query": "banana bread oven temperature",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 312,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "semantic",
+      "latency_ms": 29.57,
+      "selected": []
+    },
+    {
+      "scenario": "unrelated noise",
+      "mode": "hybrid",
+      "query": "banana bread oven temperature",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 308,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "hybrid",
+      "latency_ms": 27.85,
+      "selected": []
+    },
+    {
+      "scenario": "cross-project canary",
+      "mode": "lexical",
+      "query": "B_CANARY transport recovery",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 307,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.33,
+      "selected": []
+    },
+    {
+      "scenario": "cross-project canary",
+      "mode": "semantic",
+      "query": "B_CANARY transport recovery",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 312,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "semantic",
+      "latency_ms": 27.44,
+      "selected": []
+    },
+    {
+      "scenario": "cross-project canary",
+      "mode": "hybrid",
+      "query": "B_CANARY transport recovery",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 308,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "hybrid",
+      "latency_ms": 25.34,
+      "selected": []
+    },
+    {
+      "scenario": "deleted source",
+      "mode": "lexical",
+      "query": "legacy reconnect controller",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 307,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.14,
+      "selected": []
+    },
+    {
+      "scenario": "deleted source",
+      "mode": "semantic",
+      "query": "legacy reconnect controller",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [
+        "background/logging.md"
+      ],
+      "budget_bytes": 1068,
+      "semantic_used": true,
+      "lexical_used": false,
+      "effective": "semantic",
+      "latency_ms": 26.23,
+      "selected": [
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.508; rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "deleted source",
+      "mode": "hybrid",
+      "query": "legacy reconnect controller",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [
+        "background/logging.md"
+      ],
+      "budget_bytes": 1064,
+      "semantic_used": true,
+      "lexical_used": false,
+      "effective": "hybrid",
+      "latency_ms": 25.93,
+      "selected": [
+        {
+          "source": "background/logging.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.508; rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "paraphrase durability",
+      "mode": "lexical",
+      "query": "keep work after the process crashes",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [
+        "tasks.md",
+        "background/release.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2370,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.32,
       "selected": [
         {
           "source": "tasks.md",
@@ -2319,10 +2883,48 @@
             "authoritative current source",
             "source hash checked during this request",
             "lexical rank #1",
-            "semantic similarity 0.581; rank #2",
             "final rank #1"
           ]
         },
+        {
+          "source": "background/release.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "paraphrase durability",
+      "mode": "semantic",
+      "query": "keep work after the process crashes",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "background/scheduler.md",
+        "background/release.md"
+      ],
+      "budget_bytes": 2489,
+      "semantic_used": true,
+      "lexical_used": false,
+      "effective": "semantic",
+      "latency_ms": 27.17,
+      "selected": [
         {
           "source": "persistence.md",
           "reasons": [
@@ -2330,7 +2932,80 @@
             "authoritative current source",
             "source hash checked during this request",
             "semantic similarity 0.658; rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.645; rank #2",
             "final rank #2"
+          ]
+        },
+        {
+          "source": "background/release.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.589; rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "paraphrase durability",
+      "mode": "hybrid",
+      "query": "keep work after the process crashes",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "background/scheduler.md",
+        "background/release.md"
+      ],
+      "budget_bytes": 2635,
+      "semantic_used": true,
+      "lexical_used": true,
+      "effective": "hybrid",
+      "latency_ms": 27.95,
+      "selected": [
+        {
+          "source": "persistence.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "semantic similarity 0.658; rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "semantic similarity 0.645; rank #2",
+            "weak OR match: 1/4 query terms; no lexical fusion vote",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/release.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "semantic similarity 0.589; rank #3",
+            "weak OR match: 1/4 query terms; no lexical fusion vote",
+            "final rank #3"
           ]
         }
       ]

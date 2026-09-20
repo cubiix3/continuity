@@ -1,4 +1,12 @@
 // Judgments are explicit fixture labels, not model-generated scores.
+export const backgroundFiles = {
+  'background/logging.md': '# Request logging\nEach HTTP request gets a correlation identifier. Logs record duration and status code. Redact authorization headers before writing a diagnostic record.\n',
+  'background/testing.md': '# Test execution\nUnit tests use deterministic fake clocks. Integration tests launch a local server. Failed assertions should include the expected and observed state.\n',
+  'background/cache.md': '# Response cache\nThe cache stores successful read responses for sixty seconds. Evict the oldest entry when capacity is reached. Configuration changes clear the cache.\n',
+  'background/scheduler.md': '# Background jobs\nThe scheduler runs cleanup once per minute. A single worker owns the job queue. Shutdown stops accepting jobs and waits for active work to finish.\n',
+  'background/release.md': '# Releases\nBuild the package from a clean checkout and run tests before tagging. Publish the changelog with migration instructions. Keep the prior release available for rollback.\n',
+  'background/formatting.md': '# Source formatting\nUse two spaces and explicit return types at module boundaries. Architecture documentation lives next to the component. Name test files after the module under test.\n',
+};
 export const retrievalCases = [
   { name: 'exact symbol', query: 'recoverConnection', relevant: ['reconnect.ts'], files: { 'reconnect.ts': 'export function recoverConnection() { return "bounded retry"; }', 'noise.md': 'Connection metrics dashboard.' } },
   { name: 'architecture decision', query: 'single reconnect manager', relevant: ['decision.md'], files: { 'decision.md': 'Architecture decision: reuse a single reconnect manager.', 'noise.md': 'Use a manager for UI layout.' } },

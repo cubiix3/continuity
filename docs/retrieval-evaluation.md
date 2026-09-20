@@ -4,7 +4,9 @@ This extends the unchanged [eight-case baseline](retrieval-baseline.md) to 25 fi
 synthetic cases: 22 positive queries and three expected-empty queries. The corpus
 includes exact symbols/paths, rules, paraphrases, contradictions, stale/deleted
 sources, code, reviewed memory, handoffs, large noise and a cross-project canary.
-Each case has its own project; project B remains indexed in the same backing store.
+Each case has its own project plus six fixed background documents about logging,
+testing, caching, scheduling, releases and formatting. Project B remains indexed
+in the same backing store. The background documents compete for the same budget.
 All modes receive the same 3,000-byte budget and explicit relevance labels.
 
 Recorded on Windows, Node 24.13.0, warm already-installed local services. Each
@@ -15,24 +17,39 @@ budget cost, effective mode, and actual lexical/semantic use.
 
 | Backend / mode | Relevant hit | Top 3 | Wrong items | Clean negatives | Mean query ms |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| FTS5 (Ollama run) | 18/22 | 18/22 | 9 | 3/3 | 9.79 |
-| Ollama semantic | 22/22 | 22/22 | 13 | 3/3 | 46.97 |
-| Ollama hybrid | 22/22 | 22/22 | 13 | 3/3 | 45.29 |
-| FTS5 (OpenViking run) | 18/22 | 18/22 | 9 | 3/3 | 9.58 |
-| OpenViking semantic | 21/22 | 21/22 | 12 | 3/3 | 54.91 |
-| OpenViking hybrid | 21/22 | 21/22 | 12 | 3/3 | 52.44 |
+| FTS5 (Ollama run) | 18/22 | 18/22 | 17 | 3/3 | 11.94 |
+| Ollama semantic | 21/22 | 21/22 | 39 | 2/3 | 51.92 |
+| Ollama hybrid | 21/22 | 21/22 | 39 | 2/3 | 50.79 |
+| FTS5 (OpenViking run) | 18/22 | 18/22 | 17 | 3/3 | 12.33 |
+| OpenViking semantic | 21/22 | 21/22 | 23 | 3/3 | 55.54 |
+| OpenViking hybrid | 21/22 | 21/22 | 25 | 3/3 | 57.33 |
 
 Raw runs: [no backend](retrieval-none.json), [Ollama](retrieval-ollama.json),
 [OpenViking](retrieval-openviking.json). With no backend, all three requested modes
 effectively use FTS5 and produce the same labels. Each run also invokes the real
 compiled CLI for every search mode, context, verbose explain and doctor.
 
+A later repeat on 2026-09-20 found both local service endpoints unavailable.
+The successful timestamped runs above are retained; they do not imply that the
+services remained healthy. A separate [real CLI outage check](semantic-service-outage.json)
+verified lexical fallback, returned source content, byte limits and unavailable
+doctor diagnostics for both providers. No service was restarted or reconfigured.
+
 ## What improved, and what did not
 
-Ollama adds the four missed natural-language cases without losing exact matches in
-this fixture. Hybrid does **not** beat semantic-only recall here. Both add four
-wrong items compared with lexical retrieval. The small 3,000-byte budget makes the
-packing cost visible; this is not evidence of universally better precision.
+Ollama adds four missed natural-language cases without losing exact matches, but
+loses the handoff case: weakly related current sources fill the budget before the
+lower-trust handoff. Hybrid does **not** beat semantic-only recall here. Wrong
+items increase from 17 to 39, and one negative query retrieves irrelevant current
+logging documentation. This is a false positive, not a returned deleted source.
+Use the dedicated handoff tool when switching agents; a context bundle alone is
+not a guarantee that the latest handoff fits.
+
+The initial reciprocal-rank fusion also let weak OR keyword matches outvote good
+paraphrases. A general minimum term-coverage gate removed those extra votes. The
+same fixtures and cutoff were retained. The [Ollama before-gate report](retrieval-ollama-before-fusion.json)
+records 19/22 hybrid hits and 41 wrong items; the [OpenViking before-gate report](retrieval-openviking-before-fusion.json)
+records 21/22 and 25. No per-query or per-file ranking exceptions were added.
 
 OpenViking misses `restore dropped transport` at the same 0.5 cosine cutoff. Its
 observed score was about 0.474, versus about 0.501 through the direct Ollama adapter.

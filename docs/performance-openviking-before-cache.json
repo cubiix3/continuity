@@ -1,0 +1,177 @@
+{
+  "backend": "openviking",
+  "recorded_at": "2026-09-20T16:01:56.423Z",
+  "node": "24.13.0",
+  "platform": "win32",
+  "method": "Wall time; same generated content per size; warm service; five queries; 30s bounded sync calls resumed explicitly by benchmark; incremental phase edits ten files",
+  "results": [
+    {
+      "resources": 100,
+      "passages": 100,
+      "first_sync": {
+        "completed": true,
+        "ms": 40742.01,
+        "attempts": [
+          {
+            "status": "unavailable",
+            "reason": "The operation was aborted due to timeout"
+          },
+          {
+            "status": "ready",
+            "reason": "Indexed 46; reused 54 passages",
+            "indexed": 100,
+            "total": 100
+          }
+        ]
+      },
+      "unchanged_sync": {
+        "completed": true,
+        "ms": 6545.31,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Indexed 0; reused 100 passages",
+            "indexed": 100,
+            "total": 100
+          }
+        ]
+      },
+      "single_file_update": {
+        "completed": true,
+        "ms": 8011.11,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Indexed 1; reused 99 passages",
+            "indexed": 100,
+            "total": 100
+          }
+        ]
+      },
+      "incremental_ten_files": {
+        "completed": true,
+        "ms": 18363.11,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Indexed 10; reused 90 passages",
+            "indexed": 100,
+            "total": 100
+          }
+        ]
+      },
+      "query_ms": [
+        404.27,
+        293.46,
+        2185.58,
+        426.33,
+        439.17
+      ],
+      "effective_modes": [
+        "hybrid",
+        "hybrid",
+        "hybrid",
+        "hybrid",
+        "hybrid"
+      ],
+      "storage_bytes": 614400,
+      "storage_note": "Continuity manifest only; service storage not included"
+    },
+    {
+      "resources": 1000,
+      "passages": 1000,
+      "first_sync": {
+        "completed": false,
+        "ms": 116916.77,
+        "attempts": [
+          {
+            "status": "unavailable",
+            "reason": "The operation was aborted due to timeout"
+          },
+          {
+            "status": "unavailable",
+            "reason": "Backend HTTP 504"
+          },
+          {
+            "status": "unavailable",
+            "reason": "The operation was aborted due to timeout"
+          },
+          {
+            "status": "unavailable",
+            "reason": "The operation was aborted due to timeout"
+          }
+        ],
+        "indexed": 104,
+        "total": 1000,
+        "reason": "Four bounded sync calls exhausted; remaining measurements skipped"
+      },
+      "unchanged_sync": null,
+      "single_file_update": null,
+      "incremental_ten_files": null,
+      "query_ms": [
+        1207.15,
+        1110.44,
+        1109.94,
+        1161.28,
+        958.42
+      ],
+      "effective_modes": [
+        "lexical",
+        "lexical",
+        "lexical",
+        "lexical",
+        "lexical"
+      ],
+      "storage_bytes": 1961984,
+      "storage_note": "Continuity manifest only; service storage not included"
+    },
+    {
+      "resources": 1000,
+      "passages": 10000,
+      "first_sync": {
+        "completed": false,
+        "ms": 130252.72,
+        "attempts": [
+          {
+            "status": "unavailable",
+            "reason": "The operation was aborted due to timeout"
+          },
+          {
+            "status": "unavailable",
+            "reason": "The operation was aborted due to timeout"
+          },
+          {
+            "status": "unavailable",
+            "reason": "The operation was aborted due to timeout"
+          },
+          {
+            "status": "unavailable",
+            "reason": "The operation was aborted due to timeout"
+          }
+        ],
+        "indexed": 309,
+        "total": 10000,
+        "reason": "Four bounded sync calls exhausted; remaining measurements skipped"
+      },
+      "unchanged_sync": null,
+      "single_file_update": null,
+      "incremental_ten_files": null,
+      "query_ms": [
+        1785.01,
+        1508.2,
+        1523.78,
+        1783.87,
+        1815.23
+      ],
+      "effective_modes": [
+        "lexical",
+        "lexical",
+        "lexical",
+        "lexical",
+        "lexical"
+      ],
+      "storage_bytes": 7520256,
+      "storage_note": "Continuity manifest only; service storage not included"
+    }
+  ]
+}

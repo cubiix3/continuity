@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { openContinuity } from '../dist/packages/sdk/src/index.js';
-import { retrievalCases } from '../tests/fixtures/retrieval.mjs';
+import { retrievalCases, backgroundFiles } from '../tests/fixtures/retrieval.mjs';
 
 const backend = process.argv.find(a => a.startsWith('--backend='))?.split('=')[1] ?? 'none';
 if (!['none', 'ollama', 'openviking'].includes(backend)) throw new Error('Use --backend=none|ollama|openviking');
@@ -16,6 +17,7 @@ try {
   const b = join(root, 'project-b'); mkdirSync(b); put(b, { 'README.md': 'B_CANARY transport recovery reconnect retry. All project namespaces must be exposed.' }); host.init(b); await host.project(b).sync();
   for (const [index, c] of retrievalCases.entries()) {
     const path = join(root, `case-${index}`); mkdirSync(path); host.init(path); const client = host.project(path);
+    put(path, backgroundFiles);
     if (c.before) { put(path, c.before); await client.sync(); for (const name of Object.keys(c.before)) if (!(name in c.files)) unlinkSync(join(path, name)); }
     put(path, c.files);
     const sync = await client.sync();
@@ -26,6 +28,11 @@ try {
       const start = performance.now(); const bundle = await client.context({ task: c.query, mode, budget: 3000 }); const latency = performance.now() - start;
       const selected = bundle.items.map(i => i.provenance.origin);
       if (bundle.budget.used > 3000 || bundle.items.some(i => i.provenance.project_id !== client.status().project_id || i.content.includes('B_CANARY'))) throw new Error('Budget or isolation violation');
+      const currentFiles = { ...backgroundFiles, ...c.files };
+      for (const item of bundle.items.filter(i => ['source', 'rule'].includes(i.kind))) {
+        const text = currentFiles[item.provenance.origin];
+        if (text === undefined || createHash('sha256').update(text).digest('hex') !== item.provenance.source_version) throw new Error('Deleted or stale source selected');
+      }
       const rank = selected.findIndex(p => c.relevant.includes(p));
       rows.push({ scenario: c.name, mode, query: c.query, relevant_included: rank >= 0, relevant_rank: rank >= 0 ? rank + 1 : null, expected_empty: !c.relevant.length, wrong_items: selected.filter(p => !c.relevant.includes(p)), budget_bytes: bundle.budget.used, semantic_used: bundle.items.some(i => i.reasons.some(r => r.startsWith('semantic similarity'))), lexical_used: bundle.items.some(i => i.reasons.some(r => r.startsWith('lexical rank'))), effective: bundle.retrieval.effective, latency_ms: Number(latency.toFixed(2)), selected: bundle.items.map(i => ({ source: i.provenance.origin, reasons: i.reasons })) });
     }
@@ -41,7 +48,7 @@ try {
   if (!explanation.selection?.entries.length || context.budget.used > context.budget.requested) throw new Error('CLI explain/budget failed');
   const diagnostics = cli('doctor');
   const service = backend === 'ollama' ? await (await fetch('http://127.0.0.1:11434/api/version')).json() : backend === 'openviking' ? await (await fetch('http://127.0.0.1:1933/health')).json() : null;
-  const report = { backend, recorded_at: new Date().toISOString(), node: process.versions.node, platform: process.platform, service, cli: { search_modes: cliModes, explain: true, integrity: diagnostics.integrity, retrieval: diagnostics.retrieval }, method: '25 fixed synthetic cases; 3000-byte budgets; one measured query per mode/case; warm local services; cache setup excluded; all wrong-item labels reported', summary, rows };
+  const report = { backend, recorded_at: new Date().toISOString(), node: process.versions.node, platform: process.platform, service, cli: { search_modes: cliModes, explain: true, integrity: diagnostics.integrity, retrieval: diagnostics.retrieval }, method: '25 fixed synthetic cases with six shared background documents per project; 3000-byte budgets; one measured query per mode/case; warm local services; cache setup excluded; all wrong-item labels reported', summary, rows };
   console.log(JSON.stringify({ backend, summary }, null, 2));
   if (process.argv.includes('--write')) writeFileSync(`docs/retrieval-${backend}.json`, JSON.stringify(report, null, 2) + '\n');
 } finally { host.close(); rmSync(root, { recursive: true, force: true }); }

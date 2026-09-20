@@ -1,0 +1,10 @@
+{
+  "from": { "agent": "generic-agent", "session": "session-1" },
+  "task": { "goal": "Implement bounded reconnect", "status": "in_progress" },
+  "completed": ["Read project retry rule"],
+  "remaining": ["Implement reconnect and its regression test"],
+  "decisions": [],
+  "files_changed": [],
+  "risks": ["Unbounded retries can amplify an outage"],
+  "recommended_next_action": "Add a regression test for the retry limit"
+}

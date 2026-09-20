@@ -28,6 +28,15 @@ const handoffInput = {
   completed: ['Read rules'], remaining: ['Implement reconnect'], decisions: [], files_changed: [], risks: ['Retry storm'], recommended_next_action: 'Add bounded retry',
 };
 
+it('preserves an explicit source path ahead of incidental symbol matches', async () => {
+  const a = project('path-priority'); mkdirSync(join(a.path, 'src'));
+  writeFileSync(join(a.path, 'src', 'recovery.ts'), 'export const keepExistingBehavior = true;');
+  for (let n = 0; n < 8; n++) writeFileSync(join(a.path, `noise-${n}.md`), 'ONLY_API must remain stable. '.repeat(20));
+  const result = await a.client.context({ task: 'Fix src/recovery.ts. ONLY_API must remain stable.', budget: 2500 });
+  expect(result.items[0]?.provenance.origin).toBe('src/recovery.ts');
+  expect(result.budget.used).toBeLessThanOrEqual(2500);
+});
+
 describe('vertical slice', () => {
   it('isolates two projects, transfers handoffs and invalidates changed sources', async () => {
     const a = project('a'); const b = project('b');

@@ -11,6 +11,7 @@ const canonical = (path: string) => {
 export function verifyWorkspace(projectRoot: string, workspaceRoot: string): string {
   const project = canonical(projectRoot); const workspace = canonical(workspaceRoot);
   const git = (root: string, ...args: string[]) => execFileSync('git', ['-C', root, 'rev-parse', '--path-format=absolute', ...args], { encoding: 'utf8', timeout: 5000, maxBuffer: 65536, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  if (canonical(git(project, '--show-toplevel')) !== project) throw new Error('Only a full Git repository project can attach worktrees.');
   if (canonical(git(project, '--git-common-dir')) !== canonical(git(workspace, '--git-common-dir'))) throw new Error('Workspace belongs to another Git repository.');
   if (canonical(git(workspace, '--show-toplevel')) !== workspace) throw new Error('Workspace must be a Git worktree root.');
   // Check Git's registration too: a copied .git file is not an attached worktree.

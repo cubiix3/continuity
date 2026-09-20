@@ -95,6 +95,12 @@ it('rejects ambiguous project/workspace registration in either order', () => {
   expect(() => host.workspace(primary, another)).toThrow('already registered as a project');
 });
 
+it('does not widen a registered repository subdirectory to a whole worktree', () => {
+  const nested = join(primary, 'package'); mkdirSync(nested);
+  host.init(nested);
+  expect(() => host.workspace(nested, feature)).toThrow('Only a full Git repository');
+});
+
 it('authorizes only the selected workspace before invoking a semantic backend', async () => {
   const b = host.workspace(primary, feature); await b.sync(); await host.project(primary).sync(); await host.project(foreign).sync();
   const binding = b.status(); const work = new SqliteStorage(join(home, 'continuity.db'), binding.workspace!.workspace_id);

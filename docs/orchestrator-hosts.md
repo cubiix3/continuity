@@ -26,6 +26,8 @@ Use `host.project(root)` for the primary checkout. The host must derive roots fr
 its registration/worktree registry, never task text. Persist the host's project
 mapping in private local state. A clone is a new project; linking display names
 does not authorize shared context. Attaching a registered Git worktree is explicit.
+Only projects registered at the Git repository root can attach worktrees. A
+subdirectory project cannot widen its scope to the enclosing repository.
 
 Attached workspace source snapshots and semantic caches are separate. Reviewed
 memories belong to the project. Context provenance and handoffs include an opaque

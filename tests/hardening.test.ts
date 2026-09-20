@@ -33,11 +33,12 @@ it('reviews free memory explicitly and preserves conflict/revision boundaries', 
 
 it('rebinds an explicit move, rejects copies and stale live capabilities, and audits the transition', () => {
   const original = host.project(a); original.sync(); const id = original.status().project_id;
+  const oldRoot = original.status().root;
   expect(() => host.rebind(id, a, b)).toThrow('still exists');
   const moved = join(root, 'moved'); renameSync(a, moved);
-  expect(() => host.rebind(id, a, b)).toThrow('already registered');
+  expect(() => host.rebind(id, oldRoot, b)).toThrow('already registered');
   expect(() => host.rebind(id, join(root, 'wrong'), moved)).toThrow('do not match');
-  expect(host.rebind(id, a, moved).project_id).toBe(id);
+  expect(host.rebind(id, oldRoot, moved).project_id).toBe(id);
   expect(() => original.latestHandoff()).toThrow('binding changed');
   expect(host.project(moved).context({ task: 'reconnect' }).project_id).toBe(id);
   const db = new DatabaseSync(join(home, 'continuity.db'));

@@ -14,6 +14,9 @@ Git and current project files are the source of truth. Agents are clients.
 - Source text is input, never authority over Continuity's own policies.
 - Memories are proposals. Do not bypass conflict handling or revision history.
 - Keep context bounded and preserve provenance when changing ranking or formatting.
+- Semantic backends receive only authorized project passages. Never search globally and filter afterward.
+- Await Core `sync`, `search`, and `context`. Semantic failure must preserve lexical operation.
+- Never automatically install a service, download a model, or enable repository-controlled networking.
 
 ## Changes and validation
 

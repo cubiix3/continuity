@@ -1,5 +1,11 @@
 # Architecture
 
+Optional semantic adapters now feed the same broker through authorized passage
+snapshots. See [ADR 005](adr/005-hybrid-retrieval.md) for fusion, model revision keys,
+incremental cache writes, and post-await freshness checks. SDK `sync`, `search`, and
+`context` calls are asynchronous; callers must await them. Byte budgets still cover
+the complete compact JSON context bundle. Selection audit records remain local.
+
 Continuity's unit of access is a `ProjectClient`, created by a trusted host from a
 canonical directory registration. It exposes operations, not a namespace selector.
 Agent adapters receive a narrower `AgentAdapter` contract with six operations.

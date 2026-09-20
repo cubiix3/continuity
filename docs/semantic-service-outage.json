@@ -1,0 +1,42 @@
+{
+  "recorded_at": "2026-09-20T16:26:51.309Z",
+  "method": "Real compiled CLI with enabled local backends after their endpoints became unavailable; no restart or reconfiguration attempted",
+  "results": [
+    {
+      "provider": "ollama",
+      "sync_semantic": {
+        "status": "unavailable",
+        "reason": "fetch failed"
+      },
+      "context_retrieval": {
+        "requested": "hybrid",
+        "effective": "lexical",
+        "status": "fetch failed; FTS5 active"
+      },
+      "source_returned": true,
+      "budget_valid": true,
+      "doctor_semantic": {
+        "status": "unavailable",
+        "reason": "fetch failed"
+      }
+    },
+    {
+      "provider": "openviking",
+      "sync_semantic": {
+        "status": "unavailable",
+        "reason": "fetch failed"
+      },
+      "context_retrieval": {
+        "requested": "hybrid",
+        "effective": "lexical",
+        "status": "fetch failed; FTS5 active"
+      },
+      "source_returned": true,
+      "budget_valid": true,
+      "doctor_semantic": {
+        "status": "unavailable",
+        "reason": "fetch failed"
+      }
+    }
+  ]
+}

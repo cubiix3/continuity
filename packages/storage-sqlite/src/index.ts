@@ -3,7 +3,7 @@ import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { projectSchema } from '../../core/src/contracts.js';
-import type { ContextBundle, Handoff, Memory, Observation, Project, Provenance, Resource, StoragePort, SyncState } from '../../core/src/contracts.js';
+import type { ContextBundle, EmbeddingCache, RemoteResourceCache, Handoff, Memory, Observation, Project, Provenance, Resource, StoragePort, SyncState, SelectionAudit } from '../../core/src/contracts.js';
 import { migrate } from './migrations.js';
 
 function decode<T>(row: Record<string, unknown>): T { return JSON.parse(String(row.data)) as T; }
@@ -29,6 +29,50 @@ export class SqliteStorage implements StoragePort {
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   atomic<T>(action: () => T): T { return this.transaction(action); }
+  remoteResourceCache(projectId: string): RemoteResourceCache {
+    return {
+      read: backend => this.db.prepare('SELECT * FROM semantic_resources WHERE project_id = ? AND backend = ?').all(projectId, backend).map(r => ({ passage_id: String(r.passage_id), resource_id: String(r.resource_id), source_hash: String(r.source_hash), uri: String(r.uri) })),
+      replace: (backend, entries, complete = true) => this.transaction(() => {
+        for (const e of entries) this.assertCurrentResource(projectId, e.resource_id, e.source_hash);
+        if (complete) {
+          const ids = new Set(entries.map(e => e.passage_id));
+          for (const row of this.db.prepare('SELECT passage_id FROM semantic_resources WHERE project_id = ? AND backend = ?').all(projectId, backend)) {
+            if (!ids.has(String(row.passage_id))) this.db.prepare('DELETE FROM semantic_resources WHERE project_id = ? AND backend = ? AND passage_id = ?').run(projectId, backend, String(row.passage_id));
+          }
+        }
+        for (const e of entries) this.db.prepare(`INSERT INTO semantic_resources VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(project_id, backend, passage_id) DO UPDATE SET resource_id=excluded.resource_id, source_hash=excluded.source_hash, uri=excluded.uri
+          WHERE semantic_resources.resource_id != excluded.resource_id OR semantic_resources.source_hash != excluded.source_hash OR semantic_resources.uri != excluded.uri`).run(projectId, backend, e.passage_id, e.resource_id, e.source_hash, e.uri);
+      }),
+    };
+  }
+  embeddingCache(projectId: string): EmbeddingCache {
+    return {
+      read: model => this.db.prepare('SELECT * FROM embeddings WHERE project_id = ? AND model = ? ORDER BY passage_id').all(projectId, model).map(row => {
+        const bytes = Buffer.from(row.vector as Uint8Array); const dimensions = Number(row.dimensions);
+        if (!Number.isInteger(dimensions) || dimensions < 1 || dimensions > 8192 || bytes.length !== dimensions * 4) throw new Error('Corrupted embedding dimensions');
+        return { passage_id: String(row.passage_id), resource_id: String(row.resource_id), source_hash: String(row.source_hash), hash: String(row.passage_hash), vector: Array.from({ length: dimensions }, (_, i) => bytes.readFloatLE(i * 4)) };
+      }),
+      replace: (model, entries, complete = true) => this.transaction(() => {
+        for (const e of entries) this.assertCurrentResource(projectId, e.resource_id, e.source_hash);
+        const ids = new Set(entries.map(e => e.passage_id));
+        for (const row of complete ? this.db.prepare('SELECT passage_id FROM embeddings WHERE project_id = ?').all(projectId) : []) {
+          if (!ids.has(String(row.passage_id))) this.db.prepare('DELETE FROM embeddings WHERE project_id = ? AND passage_id = ?').run(projectId, String(row.passage_id));
+        }
+        for (const e of entries) {
+          if (!e.vector.length || e.vector.length > 8192 || e.vector.some(n => !Number.isFinite(n))) throw new Error('Invalid embedding vector');
+          const bytes = Buffer.alloc(e.vector.length * 4); e.vector.forEach((n, i) => bytes.writeFloatLE(n, i * 4));
+          this.db.prepare(`INSERT INTO embeddings VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(project_id, model, passage_id) DO UPDATE SET resource_id=excluded.resource_id, source_hash=excluded.source_hash, passage_hash=excluded.passage_hash, dimensions=excluded.dimensions, vector=excluded.vector
+            WHERE embeddings.source_hash != excluded.source_hash OR embeddings.passage_hash != excluded.passage_hash OR embeddings.dimensions != excluded.dimensions`).run(projectId, model, e.passage_id, e.resource_id, e.source_hash, e.hash, e.vector.length, bytes);
+        }
+      }),
+    };
+  }
+  private assertCurrentResource(projectId: string, id: string, hash: string) {
+    const row = this.db.prepare("SELECT data FROM resources WHERE project_id = ? AND id = ? AND state = 'fresh'").get(projectId, id);
+    if (!row || scoped<Resource>(row, projectId).hash !== hash) throw new Error('Sources changed during semantic indexing; run sync again.');
+  }
   private provenance(id: string, provenance: Provenance) {
     this.db.prepare('INSERT OR REPLACE INTO provenance VALUES (?, ?, ?)').run(id, provenance.project_id, JSON.stringify(provenance));
   }
@@ -63,17 +107,20 @@ export class SqliteStorage implements StoragePort {
     if (incoming.some(r => r.project_id !== projectId || r.provenance.project_id !== projectId)) throw new Error('Resource scope mismatch.');
     this.transaction(() => {
       const current = this.resources(projectId);
+      const freshByPath = new Map(current.filter(r => r.state === 'fresh').map(r => [r.path, r]));
       const byPath = new Map(incoming.map(r => [r.path, r]));
-      this.db.prepare('DELETE FROM resource_fts WHERE project_id = ?').run(projectId);
       for (const old of current.filter(r => r.state === 'fresh')) {
         const next = byPath.get(old.path);
         if (next?.hash === old.hash) continue;
         const updated = { ...old, state: next ? 'superseded' : 'missing', content: '' };
         this.db.prepare('UPDATE resources SET state = ?, data = ? WHERE project_id = ? AND id = ?').run(updated.state, JSON.stringify(updated), projectId, old.id);
+        this.db.prepare('DELETE FROM resource_fts WHERE project_id = ? AND id = ?').run(projectId, old.id);
+        if (!next) this.db.prepare('DELETE FROM embeddings WHERE project_id = ? AND resource_id = ?').run(projectId, old.id);
       }
       for (const next of incoming) {
-        const old = current.find(r => r.path === next.path && r.hash === next.hash && r.state === 'fresh');
-        const resource = old ?? next;
+        const old = freshByPath.get(next.path);
+        if (old?.hash === next.hash) continue;
+        const resource = next;
         this.db.prepare('INSERT OR REPLACE INTO resources VALUES (?, ?, ?, ?, ?)').run(resource.id, projectId, resource.path, resource.state, JSON.stringify(resource));
         this.db.prepare('INSERT INTO resource_fts VALUES (?, ?, ?)').run(resource.id, projectId, resource.content);
         this.provenance(resource.id, resource.provenance);
@@ -107,7 +154,16 @@ export class SqliteStorage implements StoragePort {
       this.provenance(handoff.id, handoff.provenance);
     });
   }
-  saveContext(bundle: ContextBundle): void { this.db.prepare('INSERT INTO contexts VALUES (?, ?, ?, ?)').run(bundle.context_id, bundle.project_id, JSON.stringify(bundle), new Date().toISOString()); }
+  saveContext(bundle: ContextBundle, selection?: SelectionAudit): void {
+    this.transaction(() => {
+      this.db.prepare('INSERT INTO contexts VALUES (?, ?, ?, ?)').run(bundle.context_id, bundle.project_id, JSON.stringify(bundle), new Date().toISOString());
+      if (selection) this.db.prepare('INSERT INTO context_selection VALUES (?, ?, ?)').run(bundle.context_id, bundle.project_id, JSON.stringify({ project_id: bundle.project_id, ...selection }));
+    });
+  }
+  selection(projectId: string, id: string): SelectionAudit | undefined {
+    const row = this.db.prepare('SELECT data FROM context_selection WHERE project_id = ? AND id = ?').get(projectId, id);
+    return row ? scoped<SelectionAudit>(row, projectId) : undefined;
+  }
   saveObservation(observation: Observation): void {
     this.transaction(() => {
       this.db.prepare('INSERT INTO observations VALUES (?, ?, ?)').run(observation.id, observation.project_id, JSON.stringify(observation));
@@ -127,7 +183,9 @@ export class SqliteStorage implements StoragePort {
     const problems: string[] = [];
     if (this.db.prepare('PRAGMA foreign_key_check').all().length) problems.push('orphaned foreign-key records');
     if (Number(this.db.prepare('SELECT count(*) AS n FROM provenance WHERE id NOT IN (SELECT id FROM resources UNION SELECT id FROM memories UNION SELECT id FROM handoffs UNION SELECT id FROM observations)').get()?.n)) problems.push('orphaned provenance records');
-    for (const table of ['projects', 'resources', 'memories', 'memory_revisions', 'handoffs', 'observations', 'provenance', 'contexts']) {
+    if (Number(this.db.prepare('SELECT count(*) AS n FROM embeddings e LEFT JOIN resources r ON r.id = e.resource_id AND r.project_id = e.project_id WHERE r.id IS NULL OR e.dimensions < 1 OR e.dimensions > 8192 OR length(e.vector) != e.dimensions * 4').get()?.n)) problems.push('corrupted embedding reference or dimensions');
+    if (Number(this.db.prepare('SELECT count(*) AS n FROM semantic_resources e LEFT JOIN resources r ON r.id = e.resource_id AND r.project_id = e.project_id WHERE r.id IS NULL').get()?.n)) problems.push('corrupted remote resource reference');
+    for (const table of ['projects', 'resources', 'memories', 'memory_revisions', 'handoffs', 'observations', 'provenance', 'contexts', 'context_selection']) {
       for (const row of this.db.prepare(`SELECT project_id, data FROM ${table}`).all()) {
         try {
           const value = scoped<Record<string, unknown>>(row, String(row.project_id));

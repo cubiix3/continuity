@@ -1,5 +1,21 @@
 # Security model
 
+## Optional semantic retrieval
+
+Semantic adapters receive only resources authorized by the host-bound project and
+the existing source scanner. Ollama scoring loads only that project's versioned
+vectors. OpenViking search receives exact current leaf URIs, with pre-retrieval URI
+filters; no empty or global target is permitted. Neither backend supplies content,
+trust, memory status or namespace grants to the broker. Unknown candidate IDs fail
+closed to lexical retrieval. Source hashes and bindings are rechecked after awaits.
+
+Configuration comes from the private Continuity home, not repository prose. Only
+literal loopback endpoints are supported; redirects and oversized responses are
+rejected. Network failures are reported as degraded retrieval. A malicious local
+backend can still impair relevance or availability; it cannot authorize another
+project through this capability. See [backend limits](retrieval.md), including
+OpenViking operator-managed revisions and retained remote resource versions.
+
 Project isolation is a security boundary within Continuity's interfaces. The
 trusted local user or host chooses a project before agent input is accepted.
 

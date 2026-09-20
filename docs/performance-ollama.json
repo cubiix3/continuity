@@ -1,0 +1,245 @@
+{
+  "backend": "ollama",
+  "recorded_at": "2026-09-20T16:11:12.025Z",
+  "node": "24.13.0",
+  "platform": "win32",
+  "method": "Wall time; same generated content per size; warm service; five queries; at most four 30s bounded sync calls explicitly resumed; incomplete runs reported, not discarded; incremental phase edits ten files",
+  "results": [
+    {
+      "resources": 100,
+      "passages": 100,
+      "first_sync": {
+        "completed": true,
+        "ms": 772.59,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 100; reused 0 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 100,
+            "total": 100
+          }
+        ]
+      },
+      "unchanged_sync": {
+        "completed": true,
+        "ms": 74.04,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 0; reused 100 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 100,
+            "total": 100
+          }
+        ]
+      },
+      "single_file_update": {
+        "completed": true,
+        "ms": 103.32,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 1; reused 99 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 100,
+            "total": 100
+          }
+        ]
+      },
+      "incremental_ten_files": {
+        "completed": true,
+        "ms": 164.02,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 10; reused 90 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 100,
+            "total": 100
+          }
+        ]
+      },
+      "query_ms": [
+        176.22,
+        134.89,
+        150.55,
+        128.44,
+        135.28
+      ],
+      "effective_modes": [
+        "hybrid",
+        "hybrid",
+        "hybrid",
+        "hybrid",
+        "hybrid"
+      ],
+      "storage_bytes": 974848,
+      "storage_note": "SQLite after close, including embeddings and five context bundles"
+    },
+    {
+      "resources": 1000,
+      "passages": 1000,
+      "first_sync": {
+        "completed": true,
+        "ms": 7047.23,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 1000; reused 0 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 1000,
+            "total": 1000
+          }
+        ]
+      },
+      "unchanged_sync": {
+        "completed": true,
+        "ms": 664.15,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 0; reused 1000 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 1000,
+            "total": 1000
+          }
+        ]
+      },
+      "single_file_update": {
+        "completed": true,
+        "ms": 604.93,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 1; reused 999 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 1000,
+            "total": 1000
+          }
+        ]
+      },
+      "incremental_ten_files": {
+        "completed": true,
+        "ms": 672.37,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 10; reused 990 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 1000,
+            "total": 1000
+          }
+        ]
+      },
+      "query_ms": [
+        1070.53,
+        1174.26,
+        975.59,
+        1054.48,
+        1015.2
+      ],
+      "effective_modes": [
+        "hybrid",
+        "hybrid",
+        "hybrid",
+        "hybrid",
+        "hybrid"
+      ],
+      "storage_bytes": 6385664,
+      "storage_note": "SQLite after close, including embeddings and five context bundles"
+    },
+    {
+      "resources": 1000,
+      "passages": 10000,
+      "first_sync": {
+        "completed": true,
+        "ms": 66823.72,
+        "attempts": [
+          {
+            "status": "unavailable",
+            "reason": "The operation was aborted due to timeout"
+          },
+          {
+            "status": "unavailable",
+            "reason": "The operation was aborted due to timeout"
+          },
+          {
+            "status": "ready",
+            "reason": "Embedded 112; reused 9888 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 10000,
+            "total": 10000
+          }
+        ]
+      },
+      "unchanged_sync": {
+        "completed": true,
+        "ms": 1623.83,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 0; reused 10000 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 10000,
+            "total": 10000
+          }
+        ]
+      },
+      "single_file_update": {
+        "completed": true,
+        "ms": 1723.79,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 1; reused 9999 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 10000,
+            "total": 10000
+          }
+        ]
+      },
+      "incremental_ten_files": {
+        "completed": true,
+        "ms": 1713.06,
+        "attempts": [
+          {
+            "status": "ready",
+            "reason": "Embedded 10; reused 9990 passages",
+            "model": "nomic-embed-text",
+            "dimensions": 768,
+            "indexed": 10000,
+            "total": 10000
+          }
+        ]
+      },
+      "query_ms": [
+        2397.56,
+        2467.27,
+        2385.72,
+        2536.66,
+        2604.04
+      ],
+      "effective_modes": [
+        "hybrid",
+        "hybrid",
+        "hybrid",
+        "hybrid",
+        "hybrid"
+      ],
+      "storage_bytes": 50712576,
+      "storage_note": "SQLite after close, including embeddings and five context bundles"
+    }
+  ]
+}

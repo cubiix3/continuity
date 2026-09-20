@@ -8,6 +8,12 @@ The generic contract supports `context`, `search`, `propose`, `createHandoff`, a
 `latestHandoff`, and `observe`. Providers normalize their input into these contracts. They do not
 implement policy, retrieval, or synchronization independently.
 
+`context`, `search`, and host `sync` are asynchronous in the hybrid retrieval
+slice. Await their promises in SDK integrations. Optional `mode` selects lexical,
+semantic, or hybrid candidates; it never selects a project or namespace.
+Search retains resource `id`, `project_id`, `hash`, `state` and `path`; added
+`passage_id`, line ranges and ranking reasons identify the selected excerpt.
+
 ## MCP stdio
 
 After `continuity init`, configure a compatible host to launch:
@@ -36,8 +42,8 @@ Six tools are available:
 
 | Tool | Input |
 | --- | --- |
-| `continuity_context` | `task`, optional `role`, optional `budget` in bytes |
-| `continuity_search` | `query` |
+| `continuity_context` | `task`, optional `role`, `mode`, `budget` in bytes |
+| `continuity_search` | `query`, optional `mode` |
 | `continuity_memory_propose` | `key`, `text`, `kind`, optional `source_path` |
 | `continuity_handoff_create` | [handoff fields](handoffs.md) |
 | `continuity_handoff_latest` | Empty object |

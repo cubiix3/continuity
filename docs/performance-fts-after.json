@@ -1,0 +1,177 @@
+{
+  "backend": "none",
+  "recorded_at": "2026-09-20T16:09:30.702Z",
+  "node": "24.13.0",
+  "platform": "win32",
+  "method": "Wall time; same generated content per size; warm service; five queries; at most four 30s bounded sync calls explicitly resumed; incomplete runs reported, not discarded; incremental phase edits ten files",
+  "results": [
+    {
+      "resources": 100,
+      "passages": 100,
+      "first_sync": {
+        "completed": true,
+        "ms": 57.57,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "unchanged_sync": {
+        "completed": true,
+        "ms": 43,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "single_file_update": {
+        "completed": true,
+        "ms": 46.41,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "incremental_ten_files": {
+        "completed": true,
+        "ms": 56.55,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "query_ms": [
+        48.48,
+        46.32,
+        43.91,
+        47.55,
+        51.77
+      ],
+      "effective_modes": [
+        "lexical",
+        "lexical",
+        "lexical",
+        "lexical",
+        "lexical"
+      ],
+      "storage_bytes": 372736,
+      "storage_note": "SQLite after close, including embeddings and five context bundles"
+    },
+    {
+      "resources": 1000,
+      "passages": 1000,
+      "first_sync": {
+        "completed": true,
+        "ms": 538.49,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "unchanged_sync": {
+        "completed": true,
+        "ms": 491.25,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "single_file_update": {
+        "completed": true,
+        "ms": 454.1,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "incremental_ten_files": {
+        "completed": true,
+        "ms": 406.35,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "query_ms": [
+        442.11,
+        455.15,
+        464.43,
+        415.97,
+        391.37
+      ],
+      "effective_modes": [
+        "lexical",
+        "lexical",
+        "lexical",
+        "lexical",
+        "lexical"
+      ],
+      "storage_bytes": 1896448,
+      "storage_note": "SQLite after close, including embeddings and five context bundles"
+    },
+    {
+      "resources": 1000,
+      "passages": 10000,
+      "first_sync": {
+        "completed": true,
+        "ms": 775.78,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "unchanged_sync": {
+        "completed": true,
+        "ms": 426.66,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "single_file_update": {
+        "completed": true,
+        "ms": 406.38,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "incremental_ten_files": {
+        "completed": true,
+        "ms": 405.5,
+        "attempts": [
+          {
+            "status": "disabled"
+          }
+        ]
+      },
+      "query_ms": [
+        497.15,
+        551.25,
+        453.23,
+        438.08,
+        456.05
+      ],
+      "effective_modes": [
+        "lexical",
+        "lexical",
+        "lexical",
+        "lexical",
+        "lexical"
+      ],
+      "storage_bytes": 7372800,
+      "storage_note": "SQLite after close, including embeddings and five context bundles"
+    }
+  ]
+}

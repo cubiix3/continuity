@@ -5,9 +5,13 @@ import { SqliteStorage } from '../../storage-sqlite/src/index.js';
 import { FileSources } from '../../source-files/src/index.js';
 import { reviewMemory } from '../../core/src/memory/review.js';
 import { accessSync, realpathSync, statSync } from 'node:fs';
+import { retrievalConfig } from './retrieval-config.js';
+import { OllamaRetrieval } from '../../retrieval-semantic/src/ollama.js';
+import { OpenVikingRetrieval } from '../../retrieval-semantic/src/openviking.js';
 
 /** Trusted composition root for local hosts. Do not pass this host into agent tools. */
 export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedir(), '.continuity')) {
+  const config = retrievalConfig(home);
   const storage = new SqliteStorage(join(home, 'continuity.db'));
   const resolver = new ProjectResolver(storage);
   const source = new FileSources(() => storage.projects().map(p => p.root));
@@ -17,7 +21,14 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
     review: (path: string, id: string, decision: 'accepted' | 'rejected', by: string) => reviewMemory(storage, resolver.resolve(path).project_id, id, decision, by),
     retention: (path: string) => ({ dry_run: true, classes: storage.retention(resolver.resolve(path).project_id, new Date().toISOString()) }),
     projects: () => storage.projects(),
-    project: (path: string) => new ProjectClient(storage, source, resolver.resolve(path)),
+    project: (path: string) => {
+      const project = resolver.resolve(path);
+      const s = config.semantic;
+      const semantic = !s?.enabled ? undefined : s.provider === 'openviking'
+        ? new OpenVikingRetrieval(storage.remoteResourceCache(project.project_id), s.endpoint ?? 'http://127.0.0.1:1933', s.revision ?? '')
+        : new OllamaRetrieval(storage.embeddingCache(project.project_id), s.endpoint, s.model, s.document_prefix, s.query_prefix);
+      return new ProjectClient(storage, source, project, undefined, semantic, semantic ? config.mode : 'lexical');
+    },
     doctor: () => {
       const health = storage.diagnose();
       const roots: { project_id: string; accessible: boolean }[] = [];

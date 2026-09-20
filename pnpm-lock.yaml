@@ -48,6 +48,8 @@ importers:
 
   packages/core: {}
 
+  packages/retrieval-semantic: {}
+
   packages/sdk: {}
 
   packages/server: {}

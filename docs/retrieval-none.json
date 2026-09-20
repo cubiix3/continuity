@@ -1,0 +1,2374 @@
+{
+  "backend": "none",
+  "recorded_at": "2026-09-20T16:25:31.527Z",
+  "node": "24.13.0",
+  "platform": "win32",
+  "service": null,
+  "cli": {
+    "search_modes": {
+      "lexical": true,
+      "semantic": true,
+      "hybrid": true
+    },
+    "explain": true,
+    "integrity": "ok",
+    "retrieval": {
+      "status": "disabled",
+      "reason": "FTS5 active"
+    }
+  },
+  "method": "25 fixed synthetic cases with six shared background documents per project; 3000-byte budgets; one measured query per mode/case; warm local services; cache setup excluded; all wrong-item labels reported",
+  "summary": {
+    "lexical": {
+      "positive_cases": 22,
+      "relevant_hits": 18,
+      "top3_hits": 18,
+      "wrong_items": 17,
+      "clean_negative_cases": 3,
+      "mean_latency_ms": 11.35
+    },
+    "semantic": {
+      "positive_cases": 22,
+      "relevant_hits": 18,
+      "top3_hits": 18,
+      "wrong_items": 17,
+      "clean_negative_cases": 3,
+      "mean_latency_ms": 11.2
+    },
+    "hybrid": {
+      "positive_cases": 22,
+      "relevant_hits": 18,
+      "top3_hits": 18,
+      "wrong_items": 17,
+      "clean_negative_cases": 3,
+      "mean_latency_ms": 11.22
+    }
+  },
+  "rows": [
+    {
+      "scenario": "exact symbol",
+      "mode": "lexical",
+      "query": "recoverConnection",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 947,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 11.04,
+      "selected": [
+        {
+          "source": "reconnect.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "exact symbol",
+      "mode": "semantic",
+      "query": "recoverConnection",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 967,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.91,
+      "selected": [
+        {
+          "source": "reconnect.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "exact symbol",
+      "mode": "hybrid",
+      "query": "recoverConnection",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 965,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.27,
+      "selected": [
+        {
+          "source": "reconnect.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "architecture decision",
+      "mode": "lexical",
+      "query": "single reconnect manager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "noise.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2211,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.67,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "noise.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "architecture decision",
+      "mode": "semantic",
+      "query": "single reconnect manager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "noise.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2231,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.69,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "noise.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "architecture decision",
+      "mode": "hybrid",
+      "query": "single reconnect manager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "noise.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2229,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.52,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "noise.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "wording variation",
+      "mode": "lexical",
+      "query": "restore dropped transport",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 307,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.04,
+      "selected": []
+    },
+    {
+      "scenario": "wording variation",
+      "mode": "semantic",
+      "query": "restore dropped transport",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 327,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.88,
+      "selected": []
+    },
+    {
+      "scenario": "wording variation",
+      "mode": "hybrid",
+      "query": "restore dropped transport",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 325,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.74,
+      "selected": []
+    },
+    {
+      "scenario": "outdated source",
+      "mode": "lexical",
+      "query": "reconnect legacy",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 895,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 7.89,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "outdated source",
+      "mode": "semantic",
+      "query": "reconnect legacy",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 915,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.44,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "outdated source",
+      "mode": "hybrid",
+      "query": "reconnect legacy",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 913,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 7.9,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "conflicting source",
+      "mode": "lexical",
+      "query": "reconnect manager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "contradiction.md"
+      ],
+      "budget_bytes": 1479,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.82,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "contradiction.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "conflicting source",
+      "mode": "semantic",
+      "query": "reconnect manager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "contradiction.md"
+      ],
+      "budget_bytes": 1499,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.95,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "contradiction.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "conflicting source",
+      "mode": "hybrid",
+      "query": "reconnect manager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "contradiction.md"
+      ],
+      "budget_bytes": 1497,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.4,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "contradiction.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "common generic terms",
+      "mode": "lexical",
+      "query": "fix state recovery",
+      "relevant_included": true,
+      "relevant_rank": 2,
+      "expected_empty": false,
+      "wrong_items": [
+        "noise.md",
+        "background/testing.md"
+      ],
+      "budget_bytes": 2191,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.26,
+      "selected": [
+        {
+          "source": "noise.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/testing.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "common generic terms",
+      "mode": "semantic",
+      "query": "fix state recovery",
+      "relevant_included": true,
+      "relevant_rank": 2,
+      "expected_empty": false,
+      "wrong_items": [
+        "noise.md",
+        "background/testing.md"
+      ],
+      "budget_bytes": 2211,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.17,
+      "selected": [
+        {
+          "source": "noise.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/testing.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "common generic terms",
+      "mode": "hybrid",
+      "query": "fix state recovery",
+      "relevant_included": true,
+      "relevant_rank": 2,
+      "expected_empty": false,
+      "wrong_items": [
+        "noise.md",
+        "background/testing.md"
+      ],
+      "budget_bytes": 2209,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.02,
+      "selected": [
+        {
+          "source": "noise.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/testing.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "similarly named files",
+      "mode": "lexical",
+      "query": "bounded retry",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 879,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.22,
+      "selected": [
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "similarly named files",
+      "mode": "semantic",
+      "query": "bounded retry",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 899,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.76,
+      "selected": [
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "similarly named files",
+      "mode": "hybrid",
+      "query": "bounded retry",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 897,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.84,
+      "selected": [
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "irrelevant large document",
+      "mode": "lexical",
+      "query": "bounded retry",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 879,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 10.41,
+      "selected": [
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "irrelevant large document",
+      "mode": "semantic",
+      "query": "bounded retry",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 899,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.44,
+      "selected": [
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "irrelevant large document",
+      "mode": "hybrid",
+      "query": "bounded retry",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 897,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.17,
+      "selected": [
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "exact path",
+      "mode": "lexical",
+      "query": "src/recovery.ts",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 903,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.56,
+      "selected": [
+        {
+          "source": "src/recovery.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "exact path",
+      "mode": "semantic",
+      "query": "src/recovery.ts",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 923,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.87,
+      "selected": [
+        {
+          "source": "src/recovery.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "exact path",
+      "mode": "hybrid",
+      "query": "src/recovery.ts",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 921,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 7.98,
+      "selected": [
+        {
+          "source": "src/recovery.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "architecture rule",
+      "mode": "lexical",
+      "query": "split reconnect into two managers",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "idea.md",
+        "background/formatting.md"
+      ],
+      "budget_bytes": 2275,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.85,
+      "selected": [
+        {
+          "source": "AGENTS.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "project rule applies to every role",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "idea.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/formatting.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "architecture rule",
+      "mode": "semantic",
+      "query": "split reconnect into two managers",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "idea.md",
+        "background/formatting.md"
+      ],
+      "budget_bytes": 2295,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.21,
+      "selected": [
+        {
+          "source": "AGENTS.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "project rule applies to every role",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "idea.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/formatting.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "architecture rule",
+      "mode": "hybrid",
+      "query": "split reconnect into two managers",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "idea.md",
+        "background/formatting.md"
+      ],
+      "budget_bytes": 2293,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.65,
+      "selected": [
+        {
+          "source": "AGENTS.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "project rule applies to every role",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "idea.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/formatting.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "natural paraphrase",
+      "mode": "lexical",
+      "query": "stop hammering the server after failures",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [
+        "limits.md",
+        "background/testing.md",
+        "background/formatting.md"
+      ],
+      "budget_bytes": 2397,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.59,
+      "selected": [
+        {
+          "source": "limits.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/testing.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/formatting.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "natural paraphrase",
+      "mode": "semantic",
+      "query": "stop hammering the server after failures",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [
+        "limits.md",
+        "background/testing.md",
+        "background/formatting.md"
+      ],
+      "budget_bytes": 2417,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.55,
+      "selected": [
+        {
+          "source": "limits.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/testing.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/formatting.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "natural paraphrase",
+      "mode": "hybrid",
+      "query": "stop hammering the server after failures",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [
+        "limits.md",
+        "background/testing.md",
+        "background/formatting.md"
+      ],
+      "budget_bytes": 2415,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.51,
+      "selected": [
+        {
+          "source": "limits.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/testing.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/formatting.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "synonym credentials",
+      "mode": "lexical",
+      "query": "renew expired login proof",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 307,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.21,
+      "selected": []
+    },
+    {
+      "scenario": "synonym credentials",
+      "mode": "semantic",
+      "query": "renew expired login proof",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 327,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 7.65,
+      "selected": []
+    },
+    {
+      "scenario": "synonym credentials",
+      "mode": "hybrid",
+      "query": "renew expired login proof",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 325,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.68,
+      "selected": []
+    },
+    {
+      "scenario": "partial terminology",
+      "mode": "lexical",
+      "query": "jitter",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 900,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.92,
+      "selected": [
+        {
+          "source": "retry.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "partial terminology",
+      "mode": "semantic",
+      "query": "jitter",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 920,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.15,
+      "selected": [
+        {
+          "source": "retry.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "partial terminology",
+      "mode": "hybrid",
+      "query": "jitter",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 918,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.95,
+      "selected": [
+        {
+          "source": "retry.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "competing relevant sources",
+      "mode": "lexical",
+      "query": "reconnect retry limit",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "ui.md"
+      ],
+      "budget_bytes": 1460,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.11,
+      "selected": [
+        {
+          "source": "retry.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "ui.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "competing relevant sources",
+      "mode": "semantic",
+      "query": "reconnect retry limit",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "ui.md"
+      ],
+      "budget_bytes": 1480,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.35,
+      "selected": [
+        {
+          "source": "retry.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "ui.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "competing relevant sources",
+      "mode": "hybrid",
+      "query": "reconnect retry limit",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "ui.md"
+      ],
+      "budget_bytes": 1478,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 10.44,
+      "selected": [
+        {
+          "source": "retry.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "ui.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "current decision beats proposal",
+      "mode": "lexical",
+      "query": "database storage choice",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "old.md"
+      ],
+      "budget_bytes": 1549,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.68,
+      "selected": [
+        {
+          "source": "AGENTS.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "project rule applies to every role",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "old.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "current decision beats proposal",
+      "mode": "semantic",
+      "query": "database storage choice",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "old.md"
+      ],
+      "budget_bytes": 1569,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.97,
+      "selected": [
+        {
+          "source": "AGENTS.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "project rule applies to every role",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "old.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "current decision beats proposal",
+      "mode": "hybrid",
+      "query": "database storage choice",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "old.md"
+      ],
+      "budget_bytes": 1567,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.73,
+      "selected": [
+        {
+          "source": "AGENTS.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "project rule applies to every role",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "old.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "historical decision",
+      "mode": "lexical",
+      "query": "why was polling abandoned",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 937,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.16,
+      "selected": [
+        {
+          "source": "history.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "historical decision",
+      "mode": "semantic",
+      "query": "why was polling abandoned",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 957,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.67,
+      "selected": [
+        {
+          "source": "history.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "historical decision",
+      "mode": "hybrid",
+      "query": "why was polling abandoned",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 955,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.18,
+      "selected": [
+        {
+          "source": "history.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "similarly named components",
+      "mode": "lexical",
+      "query": "TransportReconnectManager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 939,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.85,
+      "selected": [
+        {
+          "source": "transport.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "similarly named components",
+      "mode": "semantic",
+      "query": "TransportReconnectManager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 959,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.14,
+      "selected": [
+        {
+          "source": "transport.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "similarly named components",
+      "mode": "hybrid",
+      "query": "TransportReconnectManager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 957,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.95,
+      "selected": [
+        {
+          "source": "transport.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "large document target section",
+      "mode": "lexical",
+      "query": "recoverConnection",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 947,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 68.88,
+      "selected": [
+        {
+          "source": "guide.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "large document target section",
+      "mode": "semantic",
+      "query": "recoverConnection",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 967,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 68.94,
+      "selected": [
+        {
+          "source": "guide.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "large document target section",
+      "mode": "hybrid",
+      "query": "recoverConnection",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 965,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 67.64,
+      "selected": [
+        {
+          "source": "guide.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "code versus documentation",
+      "mode": "lexical",
+      "query": "ERR_RETRY_EXHAUSTED",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 935,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 11.34,
+      "selected": [
+        {
+          "source": "errors.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "code versus documentation",
+      "mode": "semantic",
+      "query": "ERR_RETRY_EXHAUSTED",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 955,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.06,
+      "selected": [
+        {
+          "source": "errors.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "code versus documentation",
+      "mode": "hybrid",
+      "query": "ERR_RETRY_EXHAUSTED",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [],
+      "budget_bytes": 953,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.07,
+      "selected": [
+        {
+          "source": "errors.ts",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "exact symbol or path match",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "memory versus authoritative rule",
+      "mode": "lexical",
+      "query": "reconnect manager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "agent:proposal"
+      ],
+      "budget_bytes": 1363,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 7.84,
+      "selected": [
+        {
+          "source": "AGENTS.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "project rule applies to every role",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "agent:proposal",
+          "reasons": [
+            "same project",
+            "human-reviewed claim; current sources take precedence",
+            "task term match"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "memory versus authoritative rule",
+      "mode": "semantic",
+      "query": "reconnect manager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "agent:proposal"
+      ],
+      "budget_bytes": 1383,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.87,
+      "selected": [
+        {
+          "source": "AGENTS.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "project rule applies to every role",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "agent:proposal",
+          "reasons": [
+            "same project",
+            "human-reviewed claim; current sources take precedence",
+            "task term match"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "memory versus authoritative rule",
+      "mode": "hybrid",
+      "query": "reconnect manager",
+      "relevant_included": true,
+      "relevant_rank": 1,
+      "expected_empty": false,
+      "wrong_items": [
+        "agent:proposal"
+      ],
+      "budget_bytes": 1381,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.26,
+      "selected": [
+        {
+          "source": "AGENTS.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "project rule applies to every role",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "agent:proposal",
+          "reasons": [
+            "same project",
+            "human-reviewed claim; current sources take precedence",
+            "task term match"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "handoff relevance",
+      "mode": "lexical",
+      "query": "remaining reconnect work",
+      "relevant_included": true,
+      "relevant_rank": 2,
+      "expected_empty": false,
+      "wrong_items": [
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 1650,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.27,
+      "selected": [
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "agent:fixture",
+          "reasons": [
+            "same project",
+            "latest structured handoff",
+            "task term match; agent report, not project policy"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "handoff relevance",
+      "mode": "semantic",
+      "query": "remaining reconnect work",
+      "relevant_included": true,
+      "relevant_rank": 2,
+      "expected_empty": false,
+      "wrong_items": [
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 1670,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.21,
+      "selected": [
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "agent:fixture",
+          "reasons": [
+            "same project",
+            "latest structured handoff",
+            "task term match; agent report, not project policy"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "handoff relevance",
+      "mode": "hybrid",
+      "query": "remaining reconnect work",
+      "relevant_included": true,
+      "relevant_rank": 2,
+      "expected_empty": false,
+      "wrong_items": [
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 1668,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 8.38,
+      "selected": [
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "agent:fixture",
+          "reasons": [
+            "same project",
+            "latest structured handoff",
+            "task term match; agent report, not project policy"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "unrelated noise",
+      "mode": "lexical",
+      "query": "banana bread oven temperature",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 307,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.03,
+      "selected": []
+    },
+    {
+      "scenario": "unrelated noise",
+      "mode": "semantic",
+      "query": "banana bread oven temperature",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 327,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.68,
+      "selected": []
+    },
+    {
+      "scenario": "unrelated noise",
+      "mode": "hybrid",
+      "query": "banana bread oven temperature",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 325,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 9.2,
+      "selected": []
+    },
+    {
+      "scenario": "cross-project canary",
+      "mode": "lexical",
+      "query": "B_CANARY transport recovery",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 307,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 7.47,
+      "selected": []
+    },
+    {
+      "scenario": "cross-project canary",
+      "mode": "semantic",
+      "query": "B_CANARY transport recovery",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 327,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.46,
+      "selected": []
+    },
+    {
+      "scenario": "cross-project canary",
+      "mode": "hybrid",
+      "query": "B_CANARY transport recovery",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 325,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.28,
+      "selected": []
+    },
+    {
+      "scenario": "deleted source",
+      "mode": "lexical",
+      "query": "legacy reconnect controller",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 307,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 9.13,
+      "selected": []
+    },
+    {
+      "scenario": "deleted source",
+      "mode": "semantic",
+      "query": "legacy reconnect controller",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 327,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.76,
+      "selected": []
+    },
+    {
+      "scenario": "deleted source",
+      "mode": "hybrid",
+      "query": "legacy reconnect controller",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": true,
+      "wrong_items": [],
+      "budget_bytes": 325,
+      "semantic_used": false,
+      "lexical_used": false,
+      "effective": "lexical",
+      "latency_ms": 8.28,
+      "selected": []
+    },
+    {
+      "scenario": "paraphrase durability",
+      "mode": "lexical",
+      "query": "keep work after the process crashes",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [
+        "tasks.md",
+        "background/release.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2370,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 10.56,
+      "selected": [
+        {
+          "source": "tasks.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/release.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "paraphrase durability",
+      "mode": "semantic",
+      "query": "keep work after the process crashes",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [
+        "tasks.md",
+        "background/release.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2390,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.15,
+      "selected": [
+        {
+          "source": "tasks.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/release.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "paraphrase durability",
+      "mode": "hybrid",
+      "query": "keep work after the process crashes",
+      "relevant_included": false,
+      "relevant_rank": null,
+      "expected_empty": false,
+      "wrong_items": [
+        "tasks.md",
+        "background/release.md",
+        "background/scheduler.md"
+      ],
+      "budget_bytes": 2388,
+      "semantic_used": false,
+      "lexical_used": true,
+      "effective": "lexical",
+      "latency_ms": 9.4,
+      "selected": [
+        {
+          "source": "tasks.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #1",
+            "final rank #1"
+          ]
+        },
+        {
+          "source": "background/release.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #2",
+            "final rank #2"
+          ]
+        },
+        {
+          "source": "background/scheduler.md",
+          "reasons": [
+            "same project",
+            "authoritative current source",
+            "source hash checked during this request",
+            "lexical rank #3",
+            "final rank #3"
+          ]
+        }
+      ]
+    }
+  ]
+}

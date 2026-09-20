@@ -21,7 +21,13 @@ export function createLocalServer(client: ProjectClient, token: string) {
       if (url.search) { send(400, { error: 'Query parameters are not supported.' }); return; }
       if (req.method === 'GET') {
         if (url.pathname === '/v1/health') { send(200, { schema_version: 1, status: 'ok' }); return; }
-        if (url.pathname === '/v1/diagnostics') { send(200, client.doctor()); return; }
+        if (url.pathname === '/v1/diagnostics') {
+          const health = client.doctor();
+          let retrieval: { status: string; reason: string };
+          try { retrieval = await client.retrievalHealth(); }
+          catch (error) { retrieval = { status: 'unavailable', reason: error instanceof Error ? error.message : 'Project binding cannot be inspected' }; }
+          send(200, { ...health, retrieval }); return;
+        }
         if (url.pathname === '/v1/projects') { const p = client.status(); send(200, [{ project_id: p.project_id, name: p.name }]); return; }
         if (url.pathname === '/v1/handoffs/latest') { send(200, client.latestHandoff()); return; }
         if (/^\/v1\/memory\/mem_[a-z0-9-]+$/.test(url.pathname)) {
@@ -39,10 +45,10 @@ export function createLocalServer(client: ProjectClient, token: string) {
           chunks.push(bytes);
         }
         const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        if (url.pathname === '/v1/context') { send(200, client.context(contextRequestSchema.parse(body))); return; }
+        if (url.pathname === '/v1/context') { send(200, await client.context(contextRequestSchema.parse(body))); return; }
         if (url.pathname === '/v1/memory/propose') { send(200, client.propose(memoryCandidateSchema.parse(body))); return; }
         if (url.pathname === '/v1/handoffs') { send(201, client.createHandoff(handoffInputSchema.parse(body))); return; }
-        if (url.pathname === '/v1/sync') { z.object({}).strict().parse(body); send(200, client.sync()); return; }
+        if (url.pathname === '/v1/sync') { z.object({}).strict().parse(body); send(200, await client.sync()); return; }
       }
       send(404, { error: 'Unknown v1 endpoint.' });
     } catch (error) {

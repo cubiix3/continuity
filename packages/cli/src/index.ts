@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { openContinuity } from '../../sdk/src/index.js';
-import type { ContextBundle, ContextRequest } from '../../core/src/index.js';
+import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
@@ -38,21 +38,25 @@ function contextOutput(bundle: ContextBundle): void {
 }
 program.command('init').description('Register this canonical project directory locally').option('--name <name>').action((options: { name?: string }) => output(runtime().init(program.opts<{ project: string }>().project, options.name)));
 program.command('status').description('Show project identity and last sync').action(() => output(client().status()));
-program.command('doctor').description('Check storage, registrations and runtime').action(() => { const health = runtime().doctor(); output(health); if (health.integrity !== 'ok' || !health.fts5 || health.problems.length) process.exitCode = 1; });
+program.command('doctor').description('Check storage, registrations and runtime').action(async () => {
+  const health = runtime().doctor();
+  let retrieval: { status: string; reason: string };
+  try { retrieval = await client().retrievalHealth(); }
+  catch (error) { retrieval = { status: 'unavailable', reason: error instanceof Error ? error.message : 'Project binding cannot be inspected' }; }
+  output({ ...health, retrieval, fallback: health.fts5 ? 'FTS5 active' : 'FTS5 unavailable' });
+  if (health.integrity !== 'ok' || !health.fts5 || health.problems.length) process.exitCode = 1;
+});
 const project = program.command('project').description('Manage local project identities');
 project.command('status').action(() => output(client().status()));
 project.command('list').action(() => output(runtime().projects()));
 project.command('rebind <id>').requiredOption('--from <path>', 'previous canonical root').requiredOption('--to <path>', 'verified destination directory').action((id: string, options: { from: string; to: string }) => output(runtime().rebind(id, options.from, options.to)));
 program.command('retention').command('status').action(() => output(runtime().retention(program.opts<{ project: string }>().project)));
 program.command('prune').requiredOption('--dry-run', 'preview only; deletion is not implemented').action(() => output(runtime().retention(program.opts<{ project: string }>().project)));
-program.command('sync').description('Refresh source hashes and search index').action(() => output(client().sync()));
-program.command('search <query>').description('Search current project sources').action((query: string) => output(client().search(query)));
-program.command('context <task>').description('Build a bounded context bundle').option('--role <role>', 'implementation, reviewer, planning', 'implementation').option('--budget <bytes>', 'maximum serialized UTF-8 bytes', '6000').action((task: string, options: { role: string; budget: string }) => contextOutput(client().context({ task, role: options.role as ContextRequest['role'], budget: Number(options.budget) })));
+program.command('sync').description('Refresh source hashes and optional semantic index').action(async () => output(await client().sync()));
+program.command('search <query>').description('Search current project sources').option('--mode <mode>', 'lexical, semantic, hybrid').action(async (query: string, options: { mode?: RetrievalMode }) => output(await client().search(query, options.mode)));
+program.command('context <task>').description('Build a bounded context bundle').option('--mode <mode>', 'lexical, semantic, hybrid').option('--role <role>', 'implementation, reviewer, planning', 'implementation').option('--budget <bytes>', 'maximum serialized UTF-8 bytes', '6000').action(async (task: string, options: { role: string; budget: string; mode?: RetrievalMode }) => contextOutput(await client().context({ task, role: options.role as ContextRequest['role'], budget: Number(options.budget), ...(options.mode ? { mode: options.mode } : {}) })));
 program.command('inspect <id>').description('Read a saved historical context bundle').action((id: string) => output(client().inspect(id)));
-program.command('explain <id>').description('Explain selection in a saved context bundle').action((id: string) => {
-  const bundle = client().inspect(id);
-  output({ context_id: id, historical: true, items: bundle.items.map(i => ({ id: i.id, source: i.provenance.origin, reasons: i.reasons })) });
-});
+program.command('explain <id>').description('Explain selection in a saved context bundle').option('--verbose', 'include bounded duplicate and budget exclusion records').action((id: string, options: { verbose?: boolean }) => output(client().explain(id, options.verbose)));
 const memory = program.command('memory').description('Propose and inspect durable source-backed knowledge');
 memory.command('list').action(() => output(client().memories()));
 memory.command('pending').action(() => output(client().memories().filter(m => ['proposed', 'needs_attention'].includes(m.status))));

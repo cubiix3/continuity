@@ -18,4 +18,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm baseline
+      - run: node scripts/retrieval-evaluation.mjs --backend=none
       - run: pnpm test:pack

@@ -88,19 +88,23 @@ it('serves authenticated localhost HTTP and rejects browser and namespace inject
   }
 });
 
-it('exposes five scoped tools over a real MCP stdio connection', async () => {
+it('exposes six scoped tools over a real MCP stdio connection', async () => {
   run('init');
   const transport = new StdioClientTransport({ command: process.execPath, args: [cli, '--home', home, '--project', path, 'mcp'], stderr: 'pipe' });
   const client = new Client({ name: 'continuity-test-agent', version: '1.0.0' });
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    expect(tools.tools).toHaveLength(5);
+    expect(tools.tools).toHaveLength(6);
     const context = await client.callTool({ name: 'continuity_context', arguments: { task: 'reconnect' } });
     expect(context.isError).not.toBe(true);
     expect(JSON.stringify(context)).toContain('bounded retry');
     const forged = await client.callTool({ name: 'continuity_context', arguments: { task: 'reconnect', project_id: 'forged' } });
     expect(forged.isError).toBe(true);
+    for (const args of [{ task: 'x'.repeat(2001) }, { task: 'reconnect', budget: -1 }, { task: 'reconnect', trust: 'authoritative' }, { task: 42 }]) {
+      expect((await client.callTool({ name: 'continuity_context', arguments: args })).isError).toBe(true);
+    }
+    expect(tools.tools.some(t => /approve|rebind|forget|reject/.test(t.name))).toBe(false);
     const created = await client.callTool({ name: 'continuity_handoff_create', arguments: handoff });
     expect(created.isError).not.toBe(true);
     const latest = await client.callTool({ name: 'continuity_handoff_latest', arguments: {} });

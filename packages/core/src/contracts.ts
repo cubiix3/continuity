@@ -27,16 +27,19 @@ export const memoryCandidateSchema = z.object({
   key: z.string().trim().min(1).max(120),
   text: z.string().trim().min(10).max(2000),
   kind: z.enum(['rule', 'decision', 'memory', 'experience']),
-  source_path: z.string().min(1).max(500),
+  source_path: z.string().min(1).max(500).optional(),
 }).strict();
 export type MemoryCandidate = z.infer<typeof memoryCandidateSchema>;
 export interface Memory extends MemoryCandidate {
   id: string;
   project_id: string;
-  status: 'persist' | 'reject' | 'needs_attention' | 'forgotten';
+  status: 'persist' | 'reject' | 'needs_attention' | 'forgotten' | 'proposed' | 'accepted' | 'rejected' | 'superseded';
   reason: string;
   provenance: Provenance;
+  review?: { by: string; at: string; decision: 'accepted' | 'rejected' };
 }
+export const observationSchema = z.object({ text: z.string().min(1).max(4000), agent: z.string().min(1).max(100), session: z.string().min(1).max(100) }).strict();
+export interface Observation extends z.infer<typeof observationSchema> { id: string; project_id: string; provenance: Provenance }
 const shortText = z.string().max(2000);
 const textList = z.array(shortText).max(50);
 export const handoffInputSchema = z.object({
@@ -48,7 +51,7 @@ export const handoffInputSchema = z.object({
   files_changed: textList,
   risks: textList,
   recommended_next_action: shortText,
-}).strict();
+}).strict().refine(value => Buffer.byteLength(JSON.stringify(value)) <= 60000, 'Handoff exceeds 60,000 UTF-8 bytes.');
 export type HandoffInput = z.infer<typeof handoffInputSchema>;
 export interface Handoff extends HandoffInput {
   schema_version: 1;
@@ -60,6 +63,7 @@ export const contextRequestSchema = z.object({
   task: z.string().trim().min(1).max(2000),
   role: z.enum(['implementation', 'reviewer', 'planning']).default('implementation'),
   budget: z.number().int().min(512).max(32000).default(6000),
+  provider_model_hint: z.string().max(100).optional(),
 }).strict();
 export type ContextRequest = z.input<typeof contextRequestSchema>;
 export interface ContextItem {
@@ -75,15 +79,19 @@ export interface ContextBundle {
   project_id: string;
   role: string;
   items: ContextItem[];
-  budget: { requested: number; used: number; unit: 'utf8_bytes' };
+  budget: { requested: number; used: number; unit: 'utf8_bytes'; estimated_tokens?: number; provider_model_hint?: string };
 }
 export interface SyncState { at: string; files: number; bytes: number }
+export interface TokenEstimator { estimate(text: string, modelHint?: string): number }
+export interface Diagnostics { integrity: string; schema_version: number; fts5: boolean; problems: string[] }
+export interface RetentionClass { name: string; records: number; eligible: number; policy: string }
 
 /** Trusted host port; never exposed to an agent adapter. Every operation is scoped. */
 export interface StoragePort {
   atomic<T>(action: () => T): T;
   projects(): Project[];
   register(project: Project): Project;
+  rebind(projectId: string, oldRoot: string, newRoot: string): Project;
   resources(projectId: string): Resource[];
   replaceResources(projectId: string, resources: Resource[], state: SyncState): void;
   search(projectId: string, query: string, limit: number): Resource[];
@@ -91,10 +99,12 @@ export interface StoragePort {
   saveMemory(memory: Memory): void;
   handoffs(projectId: string): Handoff[];
   saveHandoff(handoff: Handoff): void;
+  saveObservation(observation: Observation): void;
   saveContext(bundle: ContextBundle): void;
   context(projectId: string, id: string): ContextBundle | undefined;
   syncState(projectId: string): SyncState | undefined;
-  diagnose(): { integrity: string; schema_version: number; fts5: boolean };
+  diagnose(): Diagnostics;
+  retention(projectId: string, now: string): RetentionClass[];
   close(): void;
 }
 

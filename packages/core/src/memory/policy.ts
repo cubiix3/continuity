@@ -13,14 +13,16 @@ export function proposeMemory(storage: StoragePort, project: Project, input: unk
   let reason = 'Exact excerpt from a current project source; source remains authoritative.';
   if (/(tests? (passed|succeeded)|build (passed|succeeded)|i (modified|changed)|temporary debug)/i.test(candidate.text)) {
     status = 'reject'; reason = 'Routine execution output belongs in observations, not durable memory.';
+  } else if (!candidate.source_path) {
+    status = 'proposed'; reason = 'Free-form candidate requires explicit human review.';
   } else if (!source || !source.content.includes(candidate.text)) {
     status = 'needs_attention'; reason = 'Requires an exact excerpt from a current project source. Curate the source first.';
-  } else if (previous.some(m => m.key === candidate.key && m.status === 'persist' && m.text !== candidate.text)) {
+  } else if (previous.some(m => m.key === candidate.key && ['persist', 'accepted'].includes(m.status) && m.text !== candidate.text)) {
     status = 'needs_attention'; reason = 'Conflicting active key. Review and explicitly forget the old claim before proposing its replacement.';
   }
   const memory: Memory = {
     ...candidate, id: `mem_${randomUUID()}`, project_id: project.project_id, status, reason,
-    provenance: { project_id: project.project_id, origin: candidate.source_path, captured_at: new Date().toISOString(), source_version: source?.hash ?? 'unverified', trust: status === 'persist' ? 'derived' : 'untrusted' },
+    provenance: { project_id: project.project_id, origin: candidate.source_path ?? 'agent:proposal', captured_at: new Date().toISOString(), source_version: source?.hash ?? 'unverified', trust: status === 'persist' ? 'derived' : 'untrusted' },
   };
   storage.saveMemory(memory);
   return memory;

@@ -6,6 +6,7 @@ export interface AgentAdapter {
   propose(input: unknown): ReturnType<ProjectClient['propose']>;
   createHandoff(input: unknown): ReturnType<ProjectClient['createHandoff']>;
   latestHandoff(): ReturnType<ProjectClient['latestHandoff']>;
+  observe(input: unknown): ReturnType<ProjectClient['observe']>;
 }
 
 /** No storage, namespace selector, or long-term memory mutation is exposed. */
@@ -16,4 +17,5 @@ export class GenericAdapter implements AgentAdapter {
   propose(input: unknown) { return this.client.propose(input); }
   createHandoff(input: unknown) { return this.client.createHandoff(input); }
   latestHandoff() { return this.client.latestHandoff(); }
+  observe(input: unknown) { return this.client.observe(input); }
 }

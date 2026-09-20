@@ -17,6 +17,12 @@ CREATE TABLE observations (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFEREN
 CREATE TABLE sync_state (project_id TEXT PRIMARY KEY REFERENCES projects(project_id), data TEXT NOT NULL);
 CREATE TABLE provenance (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(project_id), data TEXT NOT NULL);
 CREATE TABLE contexts (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(project_id), data TEXT NOT NULL);
+`, String.raw`
+CREATE TABLE project_rebindings (sequence INTEGER PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(project_id), old_root TEXT NOT NULL, new_root TEXT NOT NULL, captured_at TEXT NOT NULL);
+ALTER TABLE contexts ADD COLUMN created_at TEXT;
+UPDATE contexts SET created_at = CURRENT_TIMESTAMP;
+ALTER TABLE sessions ADD COLUMN created_at TEXT;
+UPDATE sessions SET created_at = CURRENT_TIMESTAMP;
 `];
 
 export function migrate(db: DatabaseSync): void {

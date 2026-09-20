@@ -1,5 +1,5 @@
-import { realpathSync, statSync } from 'node:fs';
-import { basename, dirname } from 'node:path';
+import { existsSync, realpathSync, statSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Project, StoragePort } from '../contracts.js';
 
@@ -11,6 +11,12 @@ export function canonicalRoot(path: string): string {
 
 export class ProjectResolver {
   constructor(private readonly storage: StoragePort) {}
+  rebind(id: string, from: string, to: string): Project {
+    const oldRoot = process.platform === 'win32' ? resolve(from).toLowerCase() : resolve(from);
+    const newRoot = canonicalRoot(to);
+    if (existsSync(oldRoot)) throw new Error('Old root still exists. A copy must use a new identity; move it first.');
+    return this.storage.rebind(id, oldRoot, newRoot);
+  }
   init(path: string, name?: string): Project {
     const root = canonicalRoot(path);
     const existing = this.storage.projects().find(p => p.root === root);

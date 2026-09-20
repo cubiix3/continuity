@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { ProjectClient, ProjectResolver } from '../../core/src/index.js';
 import { SqliteStorage } from '../../storage-sqlite/src/index.js';
 import { FileSources } from '../../source-files/src/index.js';
+import { reviewMemory } from '../../core/src/memory/review.js';
+import { accessSync, realpathSync, statSync } from 'node:fs';
 
 /** Trusted composition root for local hosts. Do not pass this host into agent tools. */
 export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedir(), '.continuity')) {
@@ -11,9 +13,33 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
   const source = new FileSources(() => storage.projects().map(p => p.root));
   return {
     init: (path: string, name?: string) => resolver.init(path, name),
+    rebind: (id: string, from: string, to: string) => resolver.rebind(id, from, to),
+    review: (path: string, id: string, decision: 'accepted' | 'rejected', by: string) => reviewMemory(storage, resolver.resolve(path).project_id, id, decision, by),
+    retention: (path: string) => ({ dry_run: true, classes: storage.retention(resolver.resolve(path).project_id, new Date().toISOString()) }),
     projects: () => storage.projects(),
     project: (path: string) => new ProjectClient(storage, source, resolver.resolve(path)),
-    doctor: () => storage.diagnose(),
+    doctor: () => {
+      const health = storage.diagnose();
+      const roots: { project_id: string; accessible: boolean }[] = [];
+      if (!health.problems.includes('corrupted project identity')) {
+        for (const p of storage.projects()) {
+          try {
+            accessSync(p.root);
+            const canonical = realpathSync.native(p.root);
+            if (!statSync(p.root).isDirectory() || (process.platform === 'win32' ? canonical.toLowerCase() : canonical) !== p.root) throw new Error('Root binding changed');
+            roots.push({ project_id: p.project_id, accessible: true });
+          }
+          catch { roots.push({ project_id: p.project_id, accessible: false }); health.problems.push(`inaccessible/stale registration: ${p.project_id}`); }
+        }
+      }
+      const major = Number(process.versions.node.split('.')[0]);
+      const minor = Number(process.versions.node.split('.')[1]);
+      if (major < 24 || (major === 24 && minor < 13)) health.problems.push('unsupported Node runtime: use Node 24.13 or later');
+      const adapters = { generic: true, 'http-loopback': true, 'mcp-stdio': false };
+      try { import.meta.resolve('@modelcontextprotocol/sdk/server/mcp.js'); adapters['mcp-stdio'] = true; }
+      catch { health.problems.push('MCP SDK unavailable'); }
+      return { ...health, version: '0.1.0', node: process.versions.node, roots, adapters, runtime_note: 'node:sqlite is pre-stable in Node 24; warnings depend on the installed patch version.' };
+    },
     close: () => storage.close(),
   };
 }

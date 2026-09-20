@@ -49,6 +49,8 @@ export class FileSources implements SourcePort {
         const info = statSync(path);
         if (info.nlink > 1 || info.size > 65536) continue;
         const content = readFileSync(path, 'utf8');
+        const afterRead = statSync(path);
+        if (afterRead.size !== info.size || afterRead.mtimeMs !== info.mtimeMs || realpathSync.native(path) !== canonical) throw new Error('Source changed while being read; retry sync.');
         if (content.includes('\0') || looksSensitive(content)) continue;
         bytes += Buffer.byteLength(content);
         if (bytes > 8 * 1024 * 1024 || output.length >= 2000) throw new Error('Index limit exceeded (2,000 files / 8 MiB). Narrow the project or add ignore rules.');

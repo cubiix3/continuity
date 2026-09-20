@@ -1,0 +1,172 @@
+{
+  "method": "FTS5/BM25; eight synthetic fixtures; 3000-byte bundles; no embeddings",
+  "results": [
+    {
+      "scenario": "exact symbol",
+      "query": "recoverConnection",
+      "relevant_included": true,
+      "wrong_items": [],
+      "budget_bytes": 731,
+      "selected": [
+        {
+          "source": "reconnect.ts",
+          "reasons": [
+            "same project",
+            "authoritative project source",
+            "source hash checked during this request",
+            "FTS5 task match"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "architecture decision",
+      "query": "single reconnect manager",
+      "relevant_included": true,
+      "wrong_items": [
+        "noise.md"
+      ],
+      "budget_bytes": 1187,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative project source",
+            "source hash checked during this request",
+            "FTS5 task match"
+          ]
+        },
+        {
+          "source": "noise.md",
+          "reasons": [
+            "same project",
+            "authoritative project source",
+            "source hash checked during this request",
+            "FTS5 task match"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "wording variation",
+      "query": "restore dropped transport",
+      "relevant_included": false,
+      "wrong_items": [],
+      "budget_bytes": 226,
+      "selected": []
+    },
+    {
+      "scenario": "outdated source",
+      "query": "reconnect legacy",
+      "relevant_included": true,
+      "wrong_items": [],
+      "budget_bytes": 709,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative project source",
+            "source hash checked during this request",
+            "FTS5 task match"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "conflicting source",
+      "query": "reconnect manager",
+      "relevant_included": true,
+      "wrong_items": [
+        "contradiction.md"
+      ],
+      "budget_bytes": 1183,
+      "selected": [
+        {
+          "source": "decision.md",
+          "reasons": [
+            "same project",
+            "authoritative project source",
+            "source hash checked during this request",
+            "FTS5 task match"
+          ]
+        },
+        {
+          "source": "contradiction.md",
+          "reasons": [
+            "same project",
+            "authoritative project source",
+            "source hash checked during this request",
+            "FTS5 task match"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "common generic terms",
+      "query": "fix state recovery",
+      "relevant_included": true,
+      "wrong_items": [
+        "noise.md"
+      ],
+      "budget_bytes": 1169,
+      "selected": [
+        {
+          "source": "noise.md",
+          "reasons": [
+            "same project",
+            "authoritative project source",
+            "source hash checked during this request",
+            "FTS5 task match"
+          ]
+        },
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative project source",
+            "source hash checked during this request",
+            "FTS5 task match"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "similarly named files",
+      "query": "bounded retry",
+      "relevant_included": true,
+      "wrong_items": [],
+      "budget_bytes": 692,
+      "selected": [
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative project source",
+            "source hash checked during this request",
+            "FTS5 task match"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "irrelevant large document",
+      "query": "bounded retry",
+      "relevant_included": true,
+      "wrong_items": [],
+      "budget_bytes": 692,
+      "selected": [
+        {
+          "source": "reconnect.md",
+          "reasons": [
+            "same project",
+            "authoritative project source",
+            "source hash checked during this request",
+            "FTS5 task match"
+          ]
+        }
+      ]
+    }
+  ]
+}

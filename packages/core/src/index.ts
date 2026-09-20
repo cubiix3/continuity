@@ -4,7 +4,7 @@ import { handoffInputSchema, contextRequestSchema, memoryCandidateSchema, observ
 import { contextBroker } from './context/broker.js';
 import { proposeMemory } from './memory/policy.js';
 import { NamespaceGuard } from './security/namespace.js';
-import { passages } from './context/passages.js';
+import { passages, PassageLimitError } from './context/passages.js';
 import { rankPassages } from './context/ranking.js';
 
 export * from './contracts.js';
@@ -34,8 +34,8 @@ export class ProjectClient {
     for (const r of resources) { this.guard.assert(r.project_id); this.guard.assert(r.provenance.project_id); }
     return resources;
   }
-  private scope(resources = this.scopedResources()): SemanticScope {
-    return { project_id: this.project.project_id, passages: passages(resources) };
+  private scope(resources = this.scopedResources(), structuralBoundaries = true): SemanticScope {
+    return { project_id: this.project.project_id, passages: passages(resources, structuralBoundaries) };
   }
   private failure(error: unknown): SemanticHealth {
     const reason = error instanceof Error && error.name !== 'ZodError' ? error.message.slice(0, 180) : 'Malformed semantic backend response';
@@ -79,9 +79,24 @@ export class ProjectClient {
       }
     }
     const sources = this.scopedResources();
-    const lexical = effective === 'semantic' ? [] : this.storage.search(this.project.project_id, task, 100);
-    const lexicalIds = new Set(lexical.map(r => r.id));
-    const current = this.scope(effective === 'lexical' ? sources.filter(r => lexicalIds.has(r.id) || (includeRules && r.kind === 'rule') || task.toLowerCase().includes(r.path.toLowerCase())) : sources);
+    let lexical = effective === 'semantic' ? [] : this.storage.search(this.project.project_id, task, 100);
+    const lexicalResources = () => {
+      const ids = new Set(lexical.map(r => r.id));
+      return sources.filter(r => ids.has(r.id) || (includeRules && r.kind === 'rule') || task.toLowerCase().includes(r.path.toLowerCase()));
+    };
+    let current: SemanticScope;
+    try { current = this.scope(effective === 'lexical' ? lexicalResources() : sources); }
+    catch (error) {
+      if (!(error instanceof PassageLimitError)) throw error;
+      if (effective !== 'lexical') {
+        effective = 'lexical'; semantic = [];
+        lexical = this.storage.search(this.project.project_id, task, 100);
+        status = `${error.message}; FTS5 active`;
+      }
+      // Keep all candidate content; only pathological structural fragmentation is coalesced.
+      current = this.scope(lexicalResources(), false);
+      status += '; lexical passage limit: adjacent sections coalesced into bounded passages';
+    }
     const authorized = new Map(current.passages.map(p => [p.id, p]));
     const previous = new Map(scope.passages.map(p => [p.id, p]));
     semantic = semantic.filter(c => authorized.get(c.passage_id)?.source_hash === previous.get(c.passage_id)?.source_hash);

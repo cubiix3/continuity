@@ -237,3 +237,41 @@ it('does not disguise namespace, storage or binding failures as semantic degrada
   try { await expect(c.context({ task: 'reconnect' })).rejects.toThrow('Project binding changed'); }
   finally { projects.mockRestore(); }
 });
+
+it('coalesces oversized lexical candidates without losing source tails or escaping project bounds', async () => {
+  await client(b).sync();
+  for (const name of ['one', 'two']) {
+    mkdirSync(join(a, name));
+    writeFileSync(join(a, name, 'AGENTS.md'), '# r\n'.repeat(16000) + `\nrecoverConnection ${name} tail\n`);
+  }
+  const c = client();
+  for (const mode of ['lexical', undefined, 'hybrid', 'semantic'] as const) {
+    const results = await c.search('recoverConnection', mode);
+    expect(results.some(r => r.passage && r.passage.end_line >= 16002)).toBe(true);
+    expect(results.every(r => r.retrieval.effective === 'lexical' && r.retrieval.status.includes('sections coalesced'))).toBe(true);
+    const bundle = await c.context({ task: 'recoverConnection', budget: 6000, ...(mode ? { mode } : {}) });
+    expect(bundle.retrieval).toMatchObject({ effective: 'lexical', status: expect.stringContaining('sections coalesced') });
+    expect(bundle.items.some(i => i.content.includes('tail'))).toBe(true);
+    expect(bundle.items.every(i => i.provenance.project_id === c.status().project_id)).toBe(true);
+    expect(JSON.stringify([results, bundle])).not.toContain('B_CANARY');
+    expect(Buffer.byteLength(JSON.stringify(bundle))).toBe(bundle.budget.used);
+    expect(bundle.budget.used).toBeLessThanOrEqual(6000);
+  }
+  const resources = storage.resources(c.status().project_id);
+  const chunks = passages(resources, false);
+  expect(chunks.every(p => Buffer.byteLength(p.text) <= 2400)).toBe(true);
+  for (const resource of resources) expect(chunks.filter(p => p.resource_id === resource.id).map(p => p.text).join('')).toBe(resource.content);
+}, 30000);
+
+it('falls back if sources exceed the passage cap during a semantic request', async () => {
+  const backend: SemanticRetrievalPort = {
+    index: async () => ({ status: 'ready', reason: 'test' }), health: async () => ({ status: 'ready', reason: 'test' }),
+    search: async scope => {
+      for (let i = 0; i < 4; i++) writeFileSync(join(a, `fragmented-${i}.md`), '# Heading\n'.repeat(6000));
+      return scope.passages.map(p => ({ passage_id: p.id, similarity: 1 }));
+    },
+  };
+  const bundle = await client(a, backend).context({ task: 'reconnect', mode: 'semantic' });
+  expect(bundle.retrieval).toMatchObject({ effective: 'lexical', status: expect.stringContaining('Passage limit') });
+  expect(bundle.items[0]?.content).toContain('Reconnect recovery');
+});

@@ -13,6 +13,12 @@ Markdown headings and top-level declarations provide passage boundaries. Long
 units split at lines, with a 2,400-byte UTF-8 cap for pathological lines. IDs hash
 project, path, content, and duplicate occurrence, so edits elsewhere do not force
 new embeddings. Paths and line ranges remain in context provenance.
+Structural snapshots stop at 20,000 passages. On lexical candidate overflow,
+the same chunker retries without structural splits, retaining line and byte
+boundaries and all candidate content under the existing source size limits.
+This is reported in retrieval status; it does not create semantic embeddings
+or change ranking. A snapshot that grows beyond the limit during a backend wait
+also falls back to current lexical candidates.
 
 Ollama vectors use normalized cosine similarity and SQLite float32 blobs. Cache
 keys include endpoint, model name, model digest, adapter version, and instruction

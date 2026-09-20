@@ -61,6 +61,11 @@ Source scanning retains its existing file/byte limits. A retrieval snapshot also
 has a 20,000-passage limit to bound pathological heading/declaration fragmentation.
 Overly fragmented sources require explicit exclusion; they are not silently
 reported as a complete semantic index.
+If lexical candidates exceed the structural passage limit, the same chunker
+coalesces adjacent sections into line-aligned, 2,400-byte passages. It preserves
+candidate content, hashes and provenance, reports the coalescing in retrieval
+status, and applies the normal ranking and byte budget. Semantic indexing still
+rejects the oversized structural snapshot.
 
 ## OpenViking
 

@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { mkdtempSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { request } from 'node:http';
+import { createServer, request } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { openContinuity } from '../packages/sdk/src/index.js';
@@ -86,6 +86,44 @@ it('serves authenticated localhost HTTP and rejects browser and namespace inject
     expect((await fetch(`${base}/v1/context`, { method: 'POST', headers, body: 'x'.repeat(66000) })).status).toBe(413);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    host.close();
+  }
+});
+
+it('keeps HTTP diagnostics structured for missing and invalid roots with an unavailable backend', async () => {
+  const backend = createServer((_req, res) => { res.writeHead(503).end(); });
+  await new Promise<void>(resolve => backend.listen(0, '127.0.0.1', resolve));
+  const backendAddress = backend.address();
+  if (!backendAddress || typeof backendAddress === 'string') throw new Error('No backend address');
+  mkdirSync(home);
+  writeFileSync(join(home, 'retrieval.json'), JSON.stringify({ semantic: { enabled: true, provider: 'ollama', endpoint: `http://127.0.0.1:${backendAddress.port}` } }));
+  const host = openContinuity(home); host.init(path); const client = host.project(path);
+  const token = 'diagnostics-test-token-'.repeat(2); const server = createLocalServer(client, token);
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('No TCP address');
+  const base = `http://127.0.0.1:${address.port}`;
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  try {
+    const availableRoot = await fetch(`${base}/v1/diagnostics`, { headers });
+    expect(availableRoot.status).toBe(200);
+    expect(await availableRoot.json()).toMatchObject({ integrity: 'ok', fts5: true, retrieval: { status: 'unavailable', reason: 'Backend HTTP 503' } });
+    renameSync(path, join(root, 'moved-project'));
+    for (const state of ['missing', 'file']) {
+      if (state === 'file') writeFileSync(path, 'This is no longer a project directory.');
+      const diagnostic = await fetch(`${base}/v1/diagnostics`, { headers });
+      expect(diagnostic.status).toBe(200);
+      expect(await diagnostic.json()).toMatchObject({ integrity: 'ok', fts5: true, retrieval: { status: 'unavailable', reason: expect.stringMatching(/ENOENT|ENOTDIR/) } });
+      const context = await fetch(`${base}/v1/context`, { method: 'POST', headers, body: JSON.stringify({ task: 'reconnect' }) });
+      expect(context.status).toBe(500);
+      expect(await context.json()).toEqual({ error: 'Local operation failed. Run continuity doctor and continuity sync.' });
+    }
+    expect((await fetch(`${base}/v1/diagnostics`)).status).toBe(401);
+    const doctor = vi.spyOn(client, 'doctor').mockImplementation(() => { throw new Error('Storage failed'); });
+    try { expect((await fetch(`${base}/v1/diagnostics`, { headers })).status).toBe(500); }
+    finally { doctor.mockRestore(); }
+  } finally {
+    server.closeAllConnections(); backend.closeAllConnections();
+    await Promise.all([new Promise<void>(resolve => server.close(() => resolve())), new Promise<void>(resolve => backend.close(() => resolve()))]);
     host.close();
   }
 });

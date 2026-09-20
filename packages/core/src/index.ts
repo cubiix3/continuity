@@ -29,8 +29,12 @@ export class ProjectClient {
     this.storage.replaceResources(this.project.project_id, resources, state);
     return state;
   }
-  private scope(resources = this.storage.resources(this.project.project_id)): SemanticScope {
+  private scopedResources() {
+    const resources = this.storage.resources(this.project.project_id);
     for (const r of resources) { this.guard.assert(r.project_id); this.guard.assert(r.provenance.project_id); }
+    return resources;
+  }
+  private scope(resources = this.scopedResources()): SemanticScope {
     return { project_id: this.project.project_id, passages: passages(resources) };
   }
   private failure(error: unknown): SemanticHealth {
@@ -54,22 +58,27 @@ export class ProjectClient {
   }
   private async retrieve(task: string, mode = this.defaultMode, includeRules = true) {
     this.refresh();
-    const scope = mode !== 'lexical' && this.semantic ? this.scope() : { project_id: this.project.project_id, passages: [] };
+    // Storage and namespace failures are not optional semantic failures.
+    const resources = mode !== 'lexical' && this.semantic ? this.scopedResources() : [];
+    let scope: SemanticScope = { project_id: this.project.project_id, passages: [] };
     let semantic: readonly SemanticCandidate[] = []; let effective = mode; let status = 'FTS5 active';
     if (mode !== 'lexical') {
       if (!this.semantic) { effective = 'lexical'; status = 'Semantic disabled; FTS5 active'; }
       else {
         try {
+          scope = this.scope(resources);
           semantic = await this.semantic.search(scope, task, AbortSignal.timeout(3000));
           const allowed = new Set(scope.passages.map(p => p.id));
           if (semantic.length > 100 || semantic.some(c => !allowed.has(c.passage_id) || !Number.isFinite(c.similarity) || c.similarity < -1 || c.similarity > 1.000001)) throw new Error('Invalid semantic candidates');
           status = 'Semantic ready';
-        } catch (error) { effective = 'lexical'; semantic = []; status = `${this.failure(error).reason}; FTS5 active`; }
+        } catch (error) {
+          effective = 'lexical'; semantic = []; status = `${this.failure(error).reason}; FTS5 active`;
+        }
         // The network wait is outside SQLite transactions. Revalidate all sources and binding.
         this.refresh();
       }
     }
-    const sources = this.storage.resources(this.project.project_id);
+    const sources = this.scopedResources();
     const lexical = effective === 'semantic' ? [] : this.storage.search(this.project.project_id, task, 100);
     const lexicalIds = new Set(lexical.map(r => r.id));
     const current = this.scope(effective === 'lexical' ? sources.filter(r => lexicalIds.has(r.id) || (includeRules && r.kind === 'rule') || task.toLowerCase().includes(r.path.toLowerCase())) : sources);

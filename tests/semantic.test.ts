@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { mkdtempSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -194,4 +194,46 @@ it('explains duplicate and budget exclusions without spending bundle bytes on th
   expect(audit?.entries.some(e => e.outcome === 'budget')).toBe(true);
   expect(Buffer.byteLength(JSON.stringify(bundle))).toBe(bundle.budget.used);
   expect(() => client(b).explain(bundle.context_id, true)).toThrow('not found');
+});
+
+it('falls back from oversized semantic scopes for default, hybrid and semantic search and context', async () => {
+  await client(b).sync();
+  for (let i = 0; i < 4; i++) writeFileSync(join(a, `fragmented-${i}.md`), '# Heading\n'.repeat(6000));
+  const backend = new OllamaRetrieval(storage.embeddingCache(resolver.resolve(a).project_id), endpoint);
+  const search = vi.spyOn(backend, 'search'); const c = client(a, backend);
+  for (const mode of [undefined, 'hybrid', 'semantic'] as const) {
+    const results = await c.search('reconnect', mode);
+    expect(results[0]).toMatchObject({ path: 'README.md', state: 'fresh', retrieval: { effective: 'lexical', status: expect.stringMatching(/Passage limit.*FTS5 active/) } });
+    expect(JSON.stringify(results)).not.toContain('B_CANARY');
+    expect(Buffer.byteLength(JSON.stringify(results))).toBeLessThanOrEqual(16000);
+    const bundle = await c.context({ task: 'reconnect', budget: 3000, ...(mode ? { mode } : {}) });
+    expect(bundle.retrieval).toMatchObject({ effective: 'lexical', status: expect.stringMatching(/Passage limit.*FTS5 active/) });
+    expect(bundle.items[0]?.content).toContain('Reconnect recovery');
+    expect(bundle.items.every(i => i.provenance.project_id === c.status().project_id && Boolean(i.provenance.source_version))).toBe(true);
+    expect(JSON.stringify(bundle)).not.toContain('B_CANARY');
+    expect(Buffer.byteLength(JSON.stringify(bundle))).toBe(bundle.budget.used);
+    expect(bundle.budget.used).toBeLessThanOrEqual(3000);
+  }
+  expect(search).not.toHaveBeenCalled();
+});
+
+it('does not disguise namespace, storage or binding failures as semantic degradation', async () => {
+  const c = client(); await c.sync();
+  const own = storage.resources(c.status().project_id);
+  const resources = vi.spyOn(storage, 'resources');
+  try {
+    for (const corrupt of [
+      { ...own[0]!, project_id: resolver.resolve(b).project_id },
+      { ...own[0]!, provenance: { ...own[0]!.provenance, project_id: resolver.resolve(b).project_id } },
+    ]) {
+      resources.mockReturnValue([corrupt]);
+      await expect(c.context({ task: 'reconnect' })).rejects.toThrow('Project boundary denied');
+      await expect(c.search('reconnect')).rejects.toThrow('Project boundary denied');
+    }
+    resources.mockImplementation(() => { throw new Error('Storage read failed'); });
+    await expect(c.context({ task: 'reconnect' })).rejects.toThrow('Storage read failed');
+  } finally { resources.mockRestore(); }
+  const projects = vi.spyOn(storage, 'projects').mockReturnValue([]);
+  try { await expect(c.context({ task: 'reconnect' })).rejects.toThrow('Project binding changed'); }
+  finally { projects.mockRestore(); }
 });

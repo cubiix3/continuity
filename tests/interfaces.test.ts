@@ -96,6 +96,17 @@ it('exposes six scoped tools over a real MCP stdio connection', async () => {
     await client.connect(transport);
     const tools = await client.listTools();
     expect(tools.tools).toHaveLength(6);
+    const observed = await client.callTool({ name: 'continuity_observe', arguments: { text: 'Reconnect tests passed', agent: 'test', session: 'mcp-session' } });
+    expect(observed.isError).not.toBe(true);
+    expect(observed.structuredContent).toMatchObject({ result: { text: 'Reconnect tests passed', provenance: { trust: 'agent_observation', source_version: 'mcp-session' } } });
+    for (const args of [{ text: '', agent: 'test', session: 's' }, { text: 'x'.repeat(4001), agent: 'test', session: 's' }, { text: 'valid', agent: 'test', session: 's', project_id: 'foreign' }, { text: 'valid', agent: 'test', session: 's', trust: 'authoritative' }]) {
+      expect((await client.callTool({ name: 'continuity_observe', arguments: args })).isError).toBe(true);
+    }
+    const host = openContinuity(home);
+    try {
+      expect(host.retention(path).classes.find(c => c.name === 'observations')?.records).toBe(1);
+      expect(host.project(path).memories()).toEqual([]);
+    } finally { host.close(); }
     const context = await client.callTool({ name: 'continuity_context', arguments: { task: 'reconnect' } });
     expect(context.isError).not.toBe(true);
     expect(JSON.stringify(context)).toContain('bounded retry');

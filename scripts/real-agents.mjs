@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { openContinuity } from '../dist/packages/sdk/src/index.js';
+import { SqliteStorage } from '../dist/packages/storage-sqlite/src/index.js';
 
 const stage = process.argv[2] ?? 'setup';
 const stateFile = resolve('.continuity/real-run.json');
@@ -35,12 +36,30 @@ if (stage === 'setup') {
     if (JSON.stringify(bundle).includes('B_ONLY_CANARY') || Buffer.byteLength(JSON.stringify(bundle)) > 6000 || !bundle.items.every(i => i.provenance.project_id === a.status().project_id)) throw new Error('Isolation/budget/provenance failed');
     if (latest?.from.agent !== 'claude-code-return' || latest.task.status !== 'done') throw new Error('Successful return handoff missing');
     const logs = ['claude-start', 'codex', 'claude-return'].map(stage => ({ stage, text: readFileSync(join(s.root, `${stage}.jsonl`), 'utf8') }));
+    const audit = new SqliteStorage(join(s.home, 'continuity.db'));
+    let chain;
+    try { chain = audit.handoffs(a.status().project_id).reverse(); } finally { audit.close(); }
+    const labels = ['claude-code', 'codex', 'claude-code-return'];
+    if (chain.length !== 3 || chain.some((h, i) => h.from.agent !== labels[i]) || new Set(chain.map(h => h.from.session)).size !== 3) throw new Error('Expected three ordered handoffs from distinct agent sessions');
+    const runtimeSessions = logs.map(log => {
+      const events = log.text.trim().split(/\r?\n/).map(line => JSON.parse(line));
+      const start = events.find(e => e.type === 'thread.started' || (e.type === 'system' && e.subtype === 'init'));
+      const id = start?.thread_id ?? start?.session_id;
+      if (!id) throw new Error(`${log.stage}: runtime session evidence missing`);
+      return id;
+    });
+    if (new Set(runtimeSessions).size !== 3) throw new Error('Runtime sessions were reused');
+    for (let i = 1; i < chain.length; i++) {
+      if (!logs[i].text.includes(chain[i - 1].id)) throw new Error(`${logs[i].stage} did not receive preceding handoff`);
+    }
     for (const log of logs) {
       if (log.text.includes('B_ONLY_CANARY')) throw new Error('Project B marker in agent output');
       for (const tool of ['continuity_context', 'continuity_handoff_latest', 'continuity_handoff_create', 'continuity_memory_propose']) if (!log.text.includes(tool)) throw new Error(`${log.stage} did not use ${tool}`);
     }
     execFileSync(process.execPath, ['--test', 'reconnect.test.mjs'], { cwd: s.a, stdio: 'pipe' });
     const evidence = { workflow: 'Claude → Codex → Claude', verified: true, budget_used: bundle.budget.used, items: bundle.items.length, last_agent: latest.from.agent, no_project_b_marker: true, new_sessions: true, shared_transcript: false };
+    evidence.handoff_chain = chain.map(h => ({ id: h.id, agent: h.from.agent, session: h.from.session, status: h.task.status }));
+    evidence.runtime_sessions = runtimeSessions;
     console.log(JSON.stringify(evidence));
     writeFileSync('docs/integrations/real-agent-result.json', JSON.stringify(evidence, null, 2) + '\n');
     host.close();

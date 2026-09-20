@@ -1,5 +1,10 @@
 # Cross-agent validation
 
+The clean rerun verifies three ordered stored handoffs, distinct runtime session
+IDs from process initialization events, and receipt of the preceding handoff ID
+in each successor's output. Evidence is in `real-agent-result.json`. Earlier
+blocked attempts are kept separate from this fresh fixture.
+
 The live test uses `scripts/real-agents.mjs`. It creates a small existing reconnect
 manager in project A, with the rule **Do not introduce a second reconnect manager**.
 Project B uses similar reconnect terminology but contains a distinct canary and
@@ -28,6 +33,7 @@ local evidence, and described in the Codex guide. The later run explicitly selec
 the host's existing Windows sandbox mode, without removing workspace isolation.
 
 The verifier writes a small path-free `real-agent-result.json` only after all
-assertions pass. Full logs, local identities, account details, and machine paths
+assertions pass. Synthetic handoff/session IDs are included to identify the chain.
+Full logs, personal identities, account details, and machine paths
 are deliberately not committed. Live model tests are opt-in; CI validates the
 transport, contracts, failure boundaries and packed CLI without model credentials.

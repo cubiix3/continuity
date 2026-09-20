@@ -1,10 +1,35 @@
 {
   "workflow": "Claude → Codex → Claude",
   "verified": true,
-  "budget_used": 4876,
+  "budget_used": 4853,
   "items": 6,
   "last_agent": "claude-code-return",
   "no_project_b_marker": true,
   "new_sessions": true,
-  "shared_transcript": false
+  "shared_transcript": false,
+  "handoff_chain": [
+    {
+      "id": "handoff_029e619b-6377-4def-9e44-94ec2c727082",
+      "agent": "claude-code",
+      "session": "claude-code-reconnect-bounded-retry-20260920",
+      "status": "in_progress"
+    },
+    {
+      "id": "handoff_e4dd50ec-5e7f-4f52-a521-24d841025137",
+      "agent": "codex",
+      "session": "codex-reconnect-1789917521873-pd8638i5q18",
+      "status": "done"
+    },
+    {
+      "id": "handoff_ec161e54-7412-4fc9-ac66-f8a2fbad031c",
+      "agent": "claude-code-return",
+      "session": "claude-verify-1789921000000",
+      "status": "done"
+    }
+  ],
+  "runtime_sessions": [
+    "a3500e8a-5654-4580-8283-6344694674be",
+    "01a0bf64-fb10-73b0-96fa-fd6ef1660297",
+    "9c844bb7-628c-46ac-a728-79e2510acbbf"
+  ]
 }

@@ -16,7 +16,7 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
     candidates.push({ id: m.id, kind: m.kind, content: m.text, provenance: m.provenance, reasons: ['same project', m.status === 'accepted' ? 'human-reviewed claim; current sources take precedence' : 'source-backed memory; source version still current', 'task term match'] });
   }
   const handoff = storage.handoffs(project.project_id)[0];
-  if (handoff && terms.some(t => [handoff.task.goal, ...handoff.remaining, ...handoff.decisions].join(' ').toLowerCase().includes(t))) {
+  if (handoff && terms.some(t => [handoff.task.goal, ...handoff.remaining, ...handoff.decisions, handoff.recommended_next_action].join(' ').toLowerCase().includes(t))) {
     candidates.push({ id: handoff.id, kind: 'handoff', content: JSON.stringify({ task: handoff.task, remaining: handoff.remaining, decisions: handoff.decisions, recommended_next_action: handoff.recommended_next_action }), provenance: handoff.provenance, reasons: ['same project', 'latest structured handoff', 'task term match; agent report, not project policy'] });
   }
   const bundle: ContextBundle = { schema_version: 1, context_id: `ctx_${randomUUID()}`, project_id: project.project_id, role, items: [], budget: { requested: budget, used: 0, unit: 'utf8_bytes' } };

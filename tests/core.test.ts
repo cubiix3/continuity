@@ -111,6 +111,24 @@ describe('security boundaries', () => {
 });
 
 describe('retrieval and memory', () => {
+  it.each([
+    ['Fix the reconnect timeout.', true],
+    ['Document the release procedure.', false],
+  ] as const)('matches handoff recommendations without including unrelated handoffs: %s', async (recommendation, included) => {
+    const a = project('a'); const b = project('b');
+    const input = { ...handoffInput, task: { goal: 'Continue implementation', status: 'in_progress' }, remaining: ['Verify tests'], decisions: ['Reuse current manager'], recommended_next_action: recommendation };
+    const handoff = a.client.createHandoff(input);
+    b.client.createHandoff({ ...input, recommended_next_action: 'Fix reconnect timeout B_CANARY' });
+    const context = await a.client.context({ task: 'fix reconnect timeout', budget: 3000 });
+    const selected = context.items.find(i => i.id === handoff.id);
+    if (included) {
+      expect(selected).toMatchObject({ kind: 'handoff', provenance: { project_id: a.identity.project_id, trust: 'agent_observation' } });
+      expect(JSON.parse(selected!.content)).toMatchObject({ recommended_next_action: recommendation });
+    } else expect(context.items.filter(i => i.kind === 'handoff')).toEqual([]);
+    expect(JSON.stringify(context)).not.toContain('B_CANARY');
+    expect(Buffer.byteLength(JSON.stringify(context))).toBe(context.budget.used);
+    expect(context.budget.used).toBeLessThanOrEqual(3000);
+  });
   it('bounds the complete UTF-8 response, including provenance', async () => {
     const a = project('a'); writeFileSync(join(a.path, 'AGENTS.md'), 'Use bounded retries.');
     for (const budget of [512, 1024, 6000]) {

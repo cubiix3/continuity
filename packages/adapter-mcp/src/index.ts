@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { contextRequestSchema, handoffInputSchema, memoryCandidateSchema } from '../../core/src/contracts.js';
+import { contextRequestSchema, handoffInputSchema, memoryCandidateSchema, observationSchema } from '../../core/src/contracts.js';
 import type { AgentAdapter } from '../../adapter-generic/src/index.js';
 
 function result(action: () => unknown) {
@@ -15,6 +15,7 @@ function result(action: () => unknown) {
 export function createMcpServer(adapter: AgentAdapter): McpServer {
   const server = new McpServer({ name: 'continuity', version: '0.1.0' });
   const annotations = { destructiveHint: false, openWorldHint: false };
+  server.registerTool('continuity_observe', { description: 'Record bounded execution observations in this project. Observations never become memory automatically.', inputSchema: observationSchema, annotations }, args => result(() => adapter.observe(args)));
   server.registerTool('continuity_context', { description: 'Get a budgeted, source-checked context bundle for the host-configured project. Budget is UTF-8 bytes, including metadata.', inputSchema: contextRequestSchema, annotations }, args => result(() => adapter.context(args)));
   server.registerTool('continuity_search', { description: 'Search current sources in the host-configured project. Returns up to 10 excerpts with provenance.', inputSchema: z.object({ query: z.string().min(1).max(2000) }).strict(), annotations }, args => result(() => adapter.search(args.query)));
   server.registerTool('continuity_memory_propose', { description: 'Propose a durable source excerpt. Unsupported claims and conflicts need attention; routine output is rejected.', inputSchema: memoryCandidateSchema, annotations }, args => result(() => adapter.propose(args)));

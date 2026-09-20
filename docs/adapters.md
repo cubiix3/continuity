@@ -5,7 +5,7 @@ a project-bound client. An adapter never receives a database handle. Tool payloa
 cannot select a project, namespace, trust level, or active memory overwrite.
 
 The generic contract supports `context`, `search`, `propose`, `createHandoff`, and
-`latestHandoff`. Providers normalize their input into these contracts. They do not
+`latestHandoff`, and `observe`. Providers normalize their input into these contracts. They do not
 implement policy, retrieval, or synchronization independently.
 
 ## MCP stdio
@@ -32,15 +32,16 @@ outer configuration key is host-specific; this is the common `mcpServers` shape,
 not a claim that every runtime accepts it. Project selection belongs in host
 configuration and must not be synthesized from tool arguments.
 
-Five tools are available:
+Six tools are available:
 
 | Tool | Input |
 | --- | --- |
 | `continuity_context` | `task`, optional `role`, optional `budget` in bytes |
 | `continuity_search` | `query` |
-| `continuity_memory_propose` | `key`, `text`, `kind`, `source_path` |
+| `continuity_memory_propose` | `key`, `text`, `kind`, optional `source_path` |
 | `continuity_handoff_create` | [handoff fields](handoffs.md) |
 | `continuity_handoff_latest` | Empty object |
+| `continuity_observe` | `text`, `agent`, `session`; never auto-promoted to memory |
 
 Results contain JSON text and structured data under `result`. MCP framing is
 outside the Core bundle budget. stdout is reserved for protocol traffic; diagnostics

@@ -45,7 +45,7 @@ See the [runnable example](examples/README.md) for memory and handoff inputs.
 | Project identity | Local UUID bound to a canonical project directory, independent of its display name. |
 | Namespace | A project can read only its own data. Query text never grants access. |
 | Source | A bounded text index of current project files, with hashes and provenance. |
-| Memory | A proposed, source-backed claim. Conflicts require attention. |
+| Memory | Source-backed knowledge or an explicitly reviewed free-form claim. Conflicts require attention. |
 | Handoff | Structured work state that another agent can retrieve. |
 | Context bundle | A budgeted selection with an inspectable explanation. |
 
@@ -105,6 +105,7 @@ init                         Register the current directory locally
 status                       Project identity and last sync
 doctor                       SQLite integrity, schema, and FTS5 checks
 project status | list        Inspect local registrations
+project rebind <id>           Explicit move with --from and --to
 sync                         Refresh source index and invalidate old versions
 search <query>               Up to 10 current source excerpts (16 KB total)
 context <task>               Build a bounded context bundle
@@ -113,6 +114,10 @@ explain <context-id>         Explain its selection
 memory list | show <id>      Inspect proposals and durable memories
 memory remember <text>       Propose with --key and --source
 memory forget <id>           Deactivate a memory; preserve revision history
+memory pending               List proposals awaiting human review
+memory approve | reject <id>  Local review with --by <reviewer>
+retention status             Show retention classes and eligibility
+prune --dry-run               Preview only; never deletes data
 handoff create --file <path> Save structured JSON (use - for stdin)
 handoff latest | show <id>   Retrieve a handoff
 mcp                          Serve project-bound tools over stdio
@@ -145,22 +150,26 @@ policy. Secret detection is heuristic; local data is not encrypted. Read the
 | Integration | Status |
 | --- | --- |
 | CLI and generic TypeScript adapter | Implemented and integration-tested |
-| MCP stdio | Five tools; tested using the official SDK client |
+| MCP stdio | Six tools; tested using the official SDK client and real agents |
 | Local HTTP v1 | Implemented; token, origin, and scope boundaries tested |
-| Claude Code, Codex, Command Code, Grok, RIVET | Can be connected through compatible local clients; individual runtime setup is not yet verified |
+| Claude Code | Verified on Windows 2.1.278; [setup](docs/integrations/claude-code.md) |
+| Codex | Verified on Windows CLI 0.155.1; [setup and sandbox findings](docs/integrations/codex.md) |
+| Command Code, Grok, RIVET | Unverified; future runtime validation |
 | Semantic retrieval / OpenViking | Future optional adapters; not required or implemented |
 
 See [adapter contracts and configuration](docs/adapters.md).
+The [real cross-agent fixture](docs/integrations/cross-agent.md) passes structured
+work between fresh Claude and Codex sessions, without sharing chat transcripts.
+The [lexical baseline](docs/retrieval-baseline.md) documents successful retrieval
+and failures before any semantic retrieval dependency is introduced.
 
 ## Roadmap
 
 The initial vertical slice is implemented. Next work is intentionally narrow:
 
-- Verify and document Claude Code and Codex integrations with real runtimes.
-- Explicit relocation/rebinding of local project identities.
+- Extend live-runtime verification beyond the tested Windows installations.
 - Better passage selection, source-specific rules, and diagnostic detail.
-- An explicit human review workflow for free-form memory candidates.
-- Retention, secure deletion guidance, and incremental indexing for larger projects.
+- Reviewed retention execution, secure deletion, and incremental indexing for larger projects.
 - Optional semantic ranking after measuring the lexical baseline.
 
 Cross-project sharing, autonomous agents, a hosted service, and a UI are outside
@@ -180,5 +189,8 @@ pnpm check
 Build before running the compiled CLI integration tests. CI runs the same checks
 on Linux and Windows. See [contributing](CONTRIBUTING.md), [agent guidance](AGENTS.md),
 and the [security reporting policy](SECURITY.md).
+`pnpm test:pack` builds a whitelisted tarball, installs it into a fresh temporary
+project and exercises its real bin. `pnpm baseline` reruns the eight lexical cases.
+See [local operations](docs/operations.md) for rebind, review and retention previews.
 
 Licensed under [Apache-2.0](LICENSE).

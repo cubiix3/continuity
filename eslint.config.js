@@ -4,5 +4,6 @@ export default ts.config(
   { ignores: ['dist/**', '**/node_modules/**'] },
   js.configs.recommended,
   ...ts.configs.recommended,
+  { files: ['scripts/**/*.mjs'], languageOptions: { globals: { process: 'readonly', console: 'readonly', Buffer: 'readonly', setTimeout: 'readonly' } } },
   { files: ['**/*.ts'], rules: { '@typescript-eslint/no-explicit-any': 'error' } },
 );

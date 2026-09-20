@@ -14,7 +14,7 @@ trusted local user or host chooses a project before agent input is accepted.
 | Silent conflicts | Stable claim key; conflict becomes `needs_attention`; append revisions | Conflict, forget, and revision tests |
 | Deleted sources | Clear old searchable content; mark missing | Deleted-source test |
 | Malicious repository content | Text cannot change project capability or policy | Prompt scope test; fixed host binding |
-| Compromised agent using tools | Five-operation adapter without DB or namespace access | MCP tool inventory and injected scope rejection |
+| Compromised agent using tools | Six-operation adapter without DB or namespace access | MCP tool inventory and injected scope rejection |
 | API exposure | Loopback-only CLI binding, bearer token, host/origin checks, body limit | Real HTTP authentication, origin, Host, and oversized-body tests |
 
 ## Trust is provenance, not permission
@@ -62,7 +62,20 @@ Historical context bundles, handoffs, and memory revisions retain their original
 contents locally. `inspect` and `explain` are explicitly historical; they do not
 revalidate or claim current truth. `memory forget` deactivates a claim, not a
 secure erase. Deleting a source does not purge previous bundles, revisions, WAL,
-backups, or filesystem remnants. Retention and secure purge are future work.
+backups, or filesystem remnants. Retention previews now report eligibility;
+deletion and secure purge remain future work.
+
+Additional failure tests cover link chains/junctions, copied identity artifacts,
+hostile rules/handoffs, corrupted scope/source records, abandoned transactions,
+atomic sync rollback, concurrent process registration/proposals, and explicit
+relocation. Sync detects size/mtime/canonical-path changes during individual reads.
+Freshness is a checked filesystem snapshot, not a lock preventing another process
+from editing files after that snapshot. Retry failed syncs; stale fallback is not used.
+
+Human review is exposed only by the local host/CLI. It does not create a security
+boundary against an agent that can execute arbitrary CLI commands as that same user.
+Reviewer labels are audit metadata, not authentication. Approved free-form claims
+remain below current sources and do not gain source-authoritative trust.
 
 ## Local API
 

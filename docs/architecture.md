@@ -2,7 +2,7 @@
 
 Continuity's unit of access is a `ProjectClient`, created by a trusted host from a
 canonical directory registration. It exposes operations, not a namespace selector.
-Agent adapters receive a narrower `AgentAdapter` contract with five operations.
+Agent adapters receive a narrower `AgentAdapter` contract with six operations.
 
 | Module | Responsibility |
 | --- | --- |
@@ -12,7 +12,7 @@ Agent adapters receive a narrower `AgentAdapter` contract with five operations.
 | `sdk` | Trusted composition of Core and storage/source adapters |
 | `cli` | Local user commands and service startup |
 | `adapter-generic` | Small programmatic agent contract |
-| `adapter-mcp` | Five stdio MCP tools |
+| `adapter-mcp` | Six stdio MCP tools |
 | `server` | Local HTTP v1 transport |
 
 These are private pnpm workspace modules compiled together by one TypeScript
@@ -69,7 +69,9 @@ SQLite uses WAL, foreign keys, a busy timeout, and transactional numbered
 migrations via `user_version`. Future schema versions are refused. Tables cover
 projects, namespaces, resources, memories, memory revisions, handoffs, sessions,
 observations, sync state, provenance, and historical context bundles. The
-observations table is reserved; there is no public observation ingestion API yet.
+observation ingestion is available through the generic adapter and MCP, without
+automatic memory promotion. Schema v2 adds audited rebindings and timestamps for
+context/session retention previews; v1 data migrates transactionally.
 
 Memory policy decisions run inside a write transaction so concurrent local
 processes cannot bypass conflict checks. Handoffs and their session/provenance
@@ -78,3 +80,10 @@ records are written atomically. The default database is
 
 `SemanticRetrievalPort` reserves optional ranking over already scoped candidates.
 No vector storage, network service, embeddings, or OpenViking dependency exists.
+
+An optional host-supplied `TokenEstimator` reports estimated tokens for the selected
+items, with an optional `provider_model_hint`. There is no tokenizer dependency.
+Estimates are advisory; their metadata is counted inside the unchanged hard byte
+budget. Invalid estimates fail the request rather than weaken the byte limit.
+See [operations](operations.md) for trusted review/rebind capabilities, which are
+not passed to agents, and [the measured retrieval baseline](retrieval-baseline.md).

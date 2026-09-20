@@ -28,7 +28,7 @@ const handoff = {
   completed: ['Read source'], remaining: ['Implement retry'], decisions: [], files_changed: [], risks: [], recommended_next_action: 'Write regression test',
 };
 
-it('runs the real compiled CLI workflow across processes', () => {
+it('runs the real compiled CLI workflow across processes', async () => {
   expect(run('init')).toMatchObject({ identity_version: 1 });
   expect(run('project', 'list')).toHaveLength(1);
   expect(run('sync')).toMatchObject({ files: 1 });
@@ -46,14 +46,16 @@ it('runs the real compiled CLI workflow across processes', () => {
   expect(run('doctor')).toMatchObject({ integrity: 'ok', fts5: true });
 }, 30000);
 
-it('hands work between generic agent instances', () => {
+it('hands work between generic agent instances', async () => {
   const host = openContinuity(home);
   try {
     host.init(path);
     const a = new GenericAdapter(host.project(path)); const b = new GenericAdapter(host.project(path));
     const created = a.createHandoff(handoff);
     expect(b.latestHandoff()).toEqual(created);
-    expect(b.context({ task: 'reconnect' }).items).toHaveLength(1);
+    const items = (await b.context({ task: 'reconnect' })).items;
+    expect(items.map(i => i.kind)).toEqual(['rule', 'handoff']);
+    expect(items[1]?.id).toBe(created.id);
   } finally { host.close(); }
 });
 
@@ -110,6 +112,10 @@ it('exposes six scoped tools over a real MCP stdio connection', async () => {
     const context = await client.callTool({ name: 'continuity_context', arguments: { task: 'reconnect' } });
     expect(context.isError).not.toBe(true);
     expect(JSON.stringify(context)).toContain('bounded retry');
+    const search = await client.callTool({ name: 'continuity_search', arguments: { query: 'reconnect', mode: 'semantic' } });
+    expect(search.isError).not.toBe(true);
+    expect(JSON.stringify(search)).toContain('Semantic disabled; FTS5 active');
+    expect((await client.callTool({ name: 'continuity_search', arguments: { query: 'reconnect', mode: 'global' } })).isError).toBe(true);
     const forged = await client.callTool({ name: 'continuity_context', arguments: { task: 'reconnect', project_id: 'forged' } });
     expect(forged.isError).toBe(true);
     for (const args of [{ task: 'x'.repeat(2001) }, { task: 'reconnect', budget: -1 }, { task: 'reconnect', trust: 'authoritative' }, { task: 42 }]) {

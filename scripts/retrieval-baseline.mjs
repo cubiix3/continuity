@@ -16,16 +16,16 @@ const cases = [
 const root = mkdtempSync(join(tmpdir(), 'continuity-baseline-'));
 const host = openContinuity(join(root, 'state'));
 try {
-  const results = cases.map((c, index) => {
+  const results = await Promise.all(cases.map(async (c, index) => {
     const path = join(root, String(index)); mkdirSync(path);
     for (const [name, content] of Object.entries(c.files)) writeFileSync(join(path, name), content);
-    host.init(path); const client = host.project(path); client.sync();
+    host.init(path); const client = host.project(path); (await client.sync());
     if (c.replace) writeFileSync(join(path, 'decision.md'), 'Reconnect uses the current bounded strategy.');
-    const bundle = client.context({ task: c.query, budget: 3000 });
+    const bundle = (await client.context({ task: c.query, budget: 3000 }));
     const included = bundle.items.map(i => i.provenance.origin);
     if (bundle.budget.used > 3000 || (c.replace && bundle.items.some(i => i.content.includes('legacy')))) throw new Error('Baseline violated budget/freshness');
     return { scenario: c.name, query: c.query, relevant_included: included.includes(c.relevant), wrong_items: included.filter(p => p !== c.relevant), budget_bytes: bundle.budget.used, selected: bundle.items.map(i => ({ source: i.provenance.origin, reasons: i.reasons })) };
-  });
+  }));
   const report = { method: 'FTS5/BM25; eight synthetic fixtures; 3000-byte bundles; no embeddings', results };
   console.log(JSON.stringify(report, null, 2));
   if (process.argv.includes('--write')) writeFileSync('docs/retrieval-baseline.json', JSON.stringify(report, null, 2) + '\n');

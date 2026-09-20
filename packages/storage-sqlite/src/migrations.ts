@@ -23,6 +23,19 @@ ALTER TABLE contexts ADD COLUMN created_at TEXT;
 UPDATE contexts SET created_at = CURRENT_TIMESTAMP;
 ALTER TABLE sessions ADD COLUMN created_at TEXT;
 UPDATE sessions SET created_at = CURRENT_TIMESTAMP;
+`, String.raw`
+CREATE TABLE embeddings (
+  project_id TEXT NOT NULL REFERENCES projects(project_id), model TEXT NOT NULL,
+  passage_id TEXT NOT NULL, resource_id TEXT NOT NULL REFERENCES resources(id),
+  source_hash TEXT NOT NULL, passage_hash TEXT NOT NULL, dimensions INTEGER NOT NULL,
+  vector BLOB NOT NULL, PRIMARY KEY(project_id, model, passage_id)
+);
+CREATE TABLE semantic_resources (
+  project_id TEXT NOT NULL REFERENCES projects(project_id), backend TEXT NOT NULL,
+  passage_id TEXT NOT NULL, resource_id TEXT NOT NULL REFERENCES resources(id),
+  source_hash TEXT NOT NULL, uri TEXT NOT NULL, PRIMARY KEY(project_id, backend, passage_id)
+);
+CREATE TABLE context_selection (id TEXT PRIMARY KEY REFERENCES contexts(id), project_id TEXT NOT NULL REFERENCES projects(project_id), data TEXT NOT NULL);
 `];
 
 export function migrate(db: DatabaseSync): void {

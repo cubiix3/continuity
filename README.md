@@ -68,6 +68,13 @@ Policy lives in the Core. Adapters receive a scoped capability, never database
 access. SQLite is the default storage adapter; FTS5 works entirely offline.
 See [architecture](docs/architecture.md) and [decisions](docs/adr/README.md).
 
+## Retrieval
+
+Continuity works offline with SQLite FTS5 by default. Optional semantic adapters
+can improve natural-language retrieval. Project isolation and policy enforcement
+remain inside Continuity. See [setup and limits](docs/retrieval.md) and the
+[measured comparison](docs/retrieval-evaluation.md), including extra false positives.
+
 ## Quickstart
 
 Requirements: **Node.js 24 LTS** (24.13 or newer), **pnpm 10.30.1**, and Git.
@@ -129,7 +136,8 @@ Global flags: `--project <directory>`, `--home <directory>`, `--json`.
 
 ## Security and local-first operation
 
-- No network requests in indexing, retrieval, memory, or handoff operations.
+- No network requests in the default operation. Explicitly enabled semantic adapters
+  contact local services; memory and handoff operations remain local.
 - Identity, canonical paths, the database, and context history stay outside Git.
 - Retrieval refreshes source hashes before selecting context. Deleted or changed
   sources cannot silently support an old memory.
@@ -155,7 +163,7 @@ policy. Secret detection is heuristic; local data is not encrypted. Read the
 | Claude Code | Verified on Windows 2.1.278; [setup](docs/integrations/claude-code.md) |
 | Codex | Verified on Windows CLI 0.155.1; [setup and sandbox findings](docs/integrations/codex.md) |
 | Command Code, Grok, RIVET | Unverified; future runtime validation |
-| Semantic retrieval / OpenViking | Future optional adapters; not required or implemented |
+| Ollama / OpenViking | Optional local retrieval; [tested versions and limits](docs/retrieval.md) |
 
 See [adapter contracts and configuration](docs/adapters.md).
 The [real cross-agent fixture](docs/integrations/cross-agent.md) passes structured
@@ -168,9 +176,9 @@ and failures before any semantic retrieval dependency is introduced.
 The initial vertical slice is implemented. Next work is intentionally narrow:
 
 - Extend live-runtime verification beyond the tested Windows installations.
-- Better passage selection, source-specific rules, and diagnostic detail.
+- Source-specific rules and better handling of contradictory documents.
 - Reviewed retention execution, secure deletion, and incremental indexing for larger projects.
-- Optional semantic ranking after measuring the lexical baseline.
+- Retrieval quality on larger real-world corpora beyond the measured fixtures.
 
 Cross-project sharing, autonomous agents, a hosted service, and a UI are outside
 this release.

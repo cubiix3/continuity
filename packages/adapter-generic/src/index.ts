@@ -1,8 +1,8 @@
-import type { ContextRequest, ProjectClient } from '../../core/src/index.js';
+import type { ContextRequest, ProjectClient, RetrievalMode } from '../../core/src/index.js';
 
 export interface AgentAdapter {
   context(request: ContextRequest): ReturnType<ProjectClient['context']>;
-  search(query: string): ReturnType<ProjectClient['search']>;
+  search(query: string, mode?: RetrievalMode): ReturnType<ProjectClient['search']>;
   propose(input: unknown): ReturnType<ProjectClient['propose']>;
   createHandoff(input: unknown): ReturnType<ProjectClient['createHandoff']>;
   latestHandoff(): ReturnType<ProjectClient['latestHandoff']>;
@@ -13,7 +13,7 @@ export interface AgentAdapter {
 export class GenericAdapter implements AgentAdapter {
   constructor(private readonly client: ProjectClient) {}
   context(request: ContextRequest) { return this.client.context(request); }
-  search(query: string) { return this.client.search(query); }
+  search(query: string, mode?: RetrievalMode) { return this.client.search(query, mode); }
   propose(input: unknown) { return this.client.propose(input); }
   createHandoff(input: unknown) { return this.client.createHandoff(input); }
   latestHandoff() { return this.client.latestHandoff(); }

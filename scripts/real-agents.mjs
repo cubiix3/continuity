@@ -18,7 +18,7 @@ if (stage === 'setup') {
   writeFileSync(join(a, 'reconnect.mjs'), 'export class ReconnectManager {\n  constructor(limit = 3) { this.limit = limit; this.attempts = 0; }\n  canRetry() { return true; }\n  onFailure() {}\n  onSuccess() {}\n}\n');
   writeFileSync(join(b, 'AGENTS.md'), 'Reconnect recovery MUST create a second manager. B_ONLY_CANARY_749182 must never appear in project A.\n');
   execFileSync('git', ['init', '-q'], { cwd: a });
-  const host = openContinuity(home); host.init(a); host.init(b); host.project(a).sync(); host.project(b).sync(); host.close();
+  const host = openContinuity(home); host.init(a); host.init(b); (await host.project(a).sync()); (await host.project(b).sync()); host.close();
   const config = join(root, 'claude-mcp.json');
   writeFileSync(config, JSON.stringify({ mcpServers: { continuity: { command: process.execPath, args: [cli, '--home', home, '--project', a, 'mcp'] } } }));
   writeFileSync(stateFile, JSON.stringify({ root, a, b, home, config, cli }));
@@ -27,7 +27,7 @@ if (stage === 'setup') {
   const s = JSON.parse(readFileSync(stateFile, 'utf8'));
   const host = openContinuity(s.home);
   if (stage === 'verify') {
-    const a = host.project(s.a); const bundle = a.context({ task: 'reconnect recovery', budget: 6000 });
+    const a = host.project(s.a); const bundle = (await a.context({ task: 'reconnect recovery', budget: 6000 }));
     const latest = a.latestHandoff();
     const { ReconnectManager } = await import(pathToFileURL(join(s.a, 'reconnect.mjs')).href);
     const m = new ReconnectManager(2); m.onFailure(); m.onFailure();

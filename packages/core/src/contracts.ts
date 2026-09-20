@@ -4,10 +4,12 @@ export const projectSchema = z.object({
   project_id: z.string(), name: z.string(), identity_version: z.literal(1), root: z.string(),
 });
 export type Project = z.infer<typeof projectSchema>;
+export interface Workspace { workspace_id: string; project_id: string; root: string }
 export type ContextKind = 'source' | 'rule' | 'decision' | 'memory' | 'experience' | 'working_context' | 'handoff' | 'observation';
 export type Trust = 'authoritative' | 'verified' | 'derived' | 'agent_observation' | 'untrusted';
 export interface Provenance {
   project_id: string;
+  workspace_id?: string;
   origin: string;
   captured_at: string;
   source_version: string;
@@ -79,6 +81,7 @@ export interface ContextBundle {
   schema_version: 1;
   context_id: string;
   project_id: string;
+  workspace_id?: string;
   role: string;
   retrieval?: { requested: RetrievalMode; effective: RetrievalMode; status: string };
   items: ContextItem[];
@@ -97,6 +100,8 @@ export interface SelectionAudit {
 export interface StoragePort {
   atomic<T>(action: () => T): T;
   projects(): Project[];
+  workspaces(projectId: string): Workspace[];
+  registerWorkspace(workspace: Workspace): Workspace;
   register(project: Project): Project;
   rebind(projectId: string, oldRoot: string, newRoot: string): Project;
   resources(projectId: string): Resource[];

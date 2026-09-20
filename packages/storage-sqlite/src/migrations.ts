@@ -36,6 +36,14 @@ CREATE TABLE semantic_resources (
   source_hash TEXT NOT NULL, uri TEXT NOT NULL, PRIMARY KEY(project_id, backend, passage_id)
 );
 CREATE TABLE context_selection (id TEXT PRIMARY KEY REFERENCES contexts(id), project_id TEXT NOT NULL REFERENCES projects(project_id), data TEXT NOT NULL);
+`, String.raw`
+CREATE TABLE workspaces (workspace_id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(project_id), root TEXT NOT NULL UNIQUE);
+ALTER TABLE resources ADD COLUMN workspace_id TEXT NOT NULL DEFAULT '';
+CREATE INDEX resources_workspace ON resources(project_id, workspace_id, state);
+ALTER TABLE sync_state RENAME TO sync_state_v3;
+CREATE TABLE sync_state (project_id TEXT NOT NULL REFERENCES projects(project_id), workspace_id TEXT NOT NULL DEFAULT '', data TEXT NOT NULL, PRIMARY KEY(project_id, workspace_id));
+INSERT INTO sync_state SELECT project_id, '', data FROM sync_state_v3;
+DROP TABLE sync_state_v3;
 `];
 
 export function migrate(db: DatabaseSync): void {

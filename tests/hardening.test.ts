@@ -96,7 +96,7 @@ it('invalidates memory immediately after source deletion and refuses unreadable 
 it('rolls back an abandoned migration transaction and rejects a corrupt database', async () => {
   const dbPath = join(root, 'interrupted.db');
   execFileSync(process.execPath, ['--input-type=module', '-e', "import {DatabaseSync} from 'node:sqlite'; const db=new DatabaseSync(process.argv[1]); db.exec('BEGIN IMMEDIATE; CREATE TABLE half_done(x); PRAGMA user_version=1'); process.exit(0)", dbPath], { stdio: 'pipe' });
-  const recovered = new SqliteStorage(dbPath); expect(recovered.diagnose().schema_version).toBe(3); recovered.close();
+  const recovered = new SqliteStorage(dbPath); expect(recovered.diagnose().schema_version).toBe(4); recovered.close();
   const corrupt = join(root, 'corrupt.db'); writeFileSync(corrupt, 'not sqlite'.repeat(100));
   expect(() => new SqliteStorage(corrupt)).toThrow();
 });
@@ -120,12 +120,17 @@ it('upgrades populated v1 data without losing identity or context history', asyn
   const id = client.status().project_id; host.close();
   const db = new DatabaseSync(join(home, 'continuity.db'));
   // Reconstruct the previously released v1 schema while retaining its actual data.
-  db.exec('DROP TABLE context_selection; DROP TABLE semantic_resources; DROP TABLE embeddings; DROP TABLE project_rebindings; ALTER TABLE contexts DROP COLUMN created_at; ALTER TABLE sessions DROP COLUMN created_at; PRAGMA user_version = 1'); db.close();
+  db.exec(`DROP TABLE workspaces; DROP INDEX resources_workspace; ALTER TABLE resources DROP COLUMN workspace_id;
+    ALTER TABLE sync_state RENAME TO sync_state_new;
+    CREATE TABLE sync_state (project_id TEXT PRIMARY KEY REFERENCES projects(project_id), data TEXT NOT NULL);
+    INSERT INTO sync_state SELECT project_id, data FROM sync_state_new; DROP TABLE sync_state_new;
+    DROP TABLE context_selection; DROP TABLE semantic_resources; DROP TABLE embeddings; DROP TABLE project_rebindings;
+    ALTER TABLE contexts DROP COLUMN created_at; ALTER TABLE sessions DROP COLUMN created_at; PRAGMA user_version = 1`); db.close();
   host = openContinuity(home);
   expect(host.project(a).status().project_id).toBe(id);
   expect(host.project(a).inspect(bundle.context_id)).toEqual(bundle);
   expect(host.retention(a).classes.find(c => c.name === 'context history')?.eligible).toBe(0);
-  expect(host.doctor().schema_version).toBe(3);
+  expect(host.doctor().schema_version).toBe(4);
 });
 
 it('keeps token estimates advisory while enforcing exact byte limits', async () => {

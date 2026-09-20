@@ -17,7 +17,8 @@ export function passages(resources: readonly Resource[], structuralBoundaries = 
       if (result.length >= 20000) throw new PassageLimitError();
       const digest = hash(text); const occurrence = occurrences.get(digest) ?? 0;
       occurrences.set(digest, occurrence + 1);
-      result.push({ id: `psg_${hash(`${r.project_id}\0${r.path}\0${digest}\0${occurrence}`)}`, project_id: r.project_id, resource_id: r.id, source_hash: r.hash, hash: digest, path: r.path, text, start_line: start + 1, end_line: end + 1 });
+      const identity = `${r.project_id}\0${r.path}\0${digest}\0${occurrence}`;
+      result.push({ id: `psg_${hash(r.provenance.workspace_id ? `${identity}\0${r.provenance.workspace_id}` : identity)}`, project_id: r.project_id, resource_id: r.id, source_hash: r.hash, hash: digest, path: r.path, text, start_line: start + 1, end_line: end + 1 });
     };
     for (let n = 0; n < lines.length; n++) {
       const line = lines[n]!;

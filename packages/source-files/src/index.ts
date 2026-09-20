@@ -17,7 +17,7 @@ export function isWithin(root: string, path: string): boolean {
 interface IgnoreLayer { base: string; rules: Ignore }
 
 export class FileSources implements SourcePort {
-  constructor(private readonly registeredRoots: () => readonly string[] = () => []) {}
+  constructor(private readonly registeredRoots: () => readonly string[] = () => [], private readonly selection: { include?: readonly string[]; exclude?: readonly string[] } = {}) {}
   scan(project: Project): Resource[] {
     const root = realpathSync.native(project.root);
     const identityRoot = process.platform === 'win32' ? root.toLowerCase() : root;
@@ -26,6 +26,8 @@ export class FileSources implements SourcePort {
     let bytes = 0;
     let visited = 0;
     const nestedRoots = this.registeredRoots().filter(p => p !== project.root);
+    const excluded = ignore().add([...(this.selection.exclude ?? [])]);
+    const included = this.selection.include ? ignore().add([...this.selection.include]) : undefined;
     const walk = (directory: string, inherited: IgnoreLayer[]) => {
       const layers = [...inherited];
       const ignorePath = join(directory, '.gitignore');
@@ -37,6 +39,8 @@ export class FileSources implements SourcePort {
         if (++visited > 20000) throw new Error('Source traversal exceeds 20,000 entries; narrow the project root.');
         if (deniedName.test(entry.name) || entry.isSymbolicLink()) continue;
         const path = join(directory, entry.name);
+        const relativePath = relative(root, path).split(sep).join('/');
+        if (excluded.ignores(relativePath + (entry.isDirectory() ? '/' : ''))) continue;
         if (layers.some(layer => layer.rules.ignores(relative(layer.base, path).split(sep).join('/') + (entry.isDirectory() ? '/' : '')))) continue;
         const canonical = realpathSync.native(path);
         if (!isWithin(root, canonical) || canonical !== path) continue;
@@ -46,6 +50,7 @@ export class FileSources implements SourcePort {
           walk(path, layers); continue;
         }
         if (!entry.isFile() || (!allowedExtensions.has(extname(entry.name).toLowerCase()) && !/^(README|AGENTS|LICENSE)$/i.test(entry.name))) continue;
+        if (included && !included.ignores(relativePath)) continue;
         const info = statSync(path);
         if (info.nlink > 1 || info.size > 65536) continue;
         const content = readFileSync(path, 'utf8');

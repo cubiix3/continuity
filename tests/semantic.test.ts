@@ -19,6 +19,7 @@ let remote: Map<string, string>; let targets: string[];
 const server = createServer(async (req, res) => {
   if (mode === 'timeout') return;
   if (mode === 'unavailable') { res.writeHead(503).end(); return; }
+  if (mode === 'invalid-json') { res.end('B_CANARY invalid backend text'); return; }
   if (mode.startsWith('viking')) {
     if (req.url === '/health') { res.end(JSON.stringify({ healthy: true, version: '0.4.20' })); return; }
     if (req.url?.startsWith('/api/v1/fs/stat')) { const uri = new URL(req.url, endpoint).searchParams.get('uri')!; res.writeHead(remote.has(uri) ? 200 : 404).end('{}'); return; }
@@ -73,12 +74,13 @@ it('indexes only the bound project and reuses unchanged passages across source e
 
 it('falls back for unavailable, missing, malformed and incompatible embeddings', async () => {
   const c = client(); await c.sync();
-  for (const failure of ['unavailable', 'missing', 'malformed', 'dimensions']) {
+  for (const failure of ['unavailable', 'missing', 'malformed', 'dimensions', 'invalid-json']) {
     mode = failure;
     const bundle = await c.context({ task: 'reconnect' });
     expect(bundle.retrieval?.effective).toBe('lexical');
     expect(bundle.items[0]?.content).toContain('Reconnect');
-    expect((await c.retrievalHealth()).status).not.toBe('disabled');
+    expect(JSON.stringify(bundle)).not.toContain('B_CANARY');
+    expect((await c.retrievalHealth()).status).toBe('unavailable');
   }
 });
 
@@ -128,6 +130,17 @@ it('revalidates sources when concurrent retrieval waits for a slow backend', asy
   await entered; writeFileSync(join(a, 'README.md'), 'Current reconnect implementation.'); await c.sync(); release();
   for (const bundle of await Promise.all(requests)) { expect(JSON.stringify(bundle)).not.toContain('bounded retries'); expect(JSON.stringify(bundle)).toContain('Current reconnect'); }
   expect(storage.diagnose().integrity).toBe('ok');
+});
+
+it('does not double-count weak OR matches over a semantic paraphrase', async () => {
+  writeFileSync(join(a, 'metrics.md'), 'Transport metrics are recorded for logging.');
+  const backend: SemanticRetrievalPort = {
+    index: async () => ({ status: 'ready', reason: 'test' }), health: async () => ({ status: 'ready', reason: 'test' }),
+    search: async scope => scope.passages.map(p => ({ passage_id: p.id, similarity: p.path === 'README.md' ? 0.85 : 0.6 })).sort((a, b) => b.similarity - a.similarity),
+  };
+  const bundle = await client(a, backend).context({ task: 'restore dropped transport' });
+  expect(bundle.items[0]?.provenance.origin).toBe('README.md');
+  expect(bundle.items.find(i => i.provenance.origin === 'metrics.md')?.reasons.some(r => r.includes('no lexical fusion vote'))).toBe(true);
 });
 
 it('keeps exact symbols and current rules ahead of semantic similarity and reviewed memory', async () => {

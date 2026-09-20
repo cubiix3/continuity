@@ -30,6 +30,8 @@ reach its 30-second deadline; completed batches survive. Run sync explicitly aga
 to complete the index. Context/search never launch a full embedding job. An
 incomplete index, absent model, invalid response, unavailable service or query
 timeout falls back to current lexical retrieval.
+Doctor sends a small embedding probe and checks its dimensions against the current
+cache; a model listing alone is not treated as a healthy embedding endpoint.
 
 ```sh
 continuity search "restore dropped transport" --mode lexical
@@ -98,6 +100,9 @@ Continuity sends no telemetry and supports no remote endpoint in this release.
 The original [eight-case baseline](retrieval-baseline.md) is retained unchanged.
 The [comparative evaluation](retrieval-evaluation.md) reports all 25 fixed cases,
 including contradictory documents and false positives. Reproduce using:
+
+[Scale measurements](retrieval-performance.md) include 100, 1,000 and 10,000
+passages, interrupted indexing and OpenViking's incomplete larger runs.
 
 ```sh
 pnpm build

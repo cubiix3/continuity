@@ -57,10 +57,13 @@ export class OllamaRetrieval implements SemanticRetrievalPort {
     return this.cache.read(model).filter(e => { const p = allowed.get(e.passage_id); return p && p.hash === e.hash && p.source_hash === e.source_hash && p.resource_id === e.resource_id; });
   }
   async health(scope: SemanticScope, signal: AbortSignal): Promise<SemanticHealth> {
-    const entries = this.current(scope, await this.identity(signal));
-    const dimensions = entries[0]?.vector.length;
-    if (new Set(entries.map(e => e.vector.length)).size > 1 || entries.some(e => e.vector.some(n => !Number.isFinite(n)))) throw new Error('Invalid cached embedding dimensions or values');
-    return { status: entries.length === scope.passages.length ? 'ready' : 'incomplete', reason: entries.length === scope.passages.length ? 'Index current' : 'Run continuity sync to refresh embeddings', model: this.model, ...(dimensions ? { dimensions } : {}), indexed: entries.length, total: scope.passages.length };
+    const model = await this.identity(signal);
+    const entries = this.current(scope, model);
+    const [probe] = await this.embed([this.queryPrefix + 'Continuity health check'], signal);
+    const dimensions = probe!.length;
+    if (entries.some(e => e.vector.length !== dimensions || e.vector.some(n => !Number.isFinite(n)) || e.vector.every(n => n === 0))) throw new Error('Invalid cached embedding dimensions or values');
+    if (await this.identity(signal) !== model) throw new Error('Embedding model changed during health check');
+    return { status: entries.length === scope.passages.length ? 'ready' : 'incomplete', reason: entries.length === scope.passages.length ? 'Index current; embedding probe passed' : 'Run continuity sync to refresh embeddings', model: this.model, dimensions, indexed: entries.length, total: scope.passages.length };
   }
   async search(scope: SemanticScope, task: string, signal: AbortSignal) {
     const model = await this.identity(signal);

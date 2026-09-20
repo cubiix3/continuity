@@ -16,6 +16,11 @@ export async function requestJson(endpoint: string, path: string, signal: AbortS
       if (size > 8 * 1024 * 1024) throw new Error('Backend response exceeds 8 MiB');
       chunks.push(chunk.value);
     }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown; }
+    catch (error) {
+      // JSON parser errors can echo backend content. Never expose that text in a bundle.
+      if (error instanceof SyntaxError) throw new Error('Malformed semantic backend response', { cause: error });
+      throw error;
+    }
   } finally { await reader.cancel(); }
 }

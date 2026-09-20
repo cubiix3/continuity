@@ -23,6 +23,10 @@ No external vector database is required. Linear scoring is measured before addin
 an approximate index.
 
 Hybrid ranking uses reciprocal ranks (constant 60) from FTS5 and semantic search.
+An FTS OR hit covering fewer than half the distinct meaningful query terms gets no
+lexical fusion vote; a small English function-word list is ignored for this gate.
+This prevents weak generic overlaps receiving two votes over a good paraphrase.
+Lexical-only ranking is unchanged by that gate, and exact matches remain protected.
 Current project rules sort first, then exact symbols/paths, then fused ranks.
 Passage term coverage and path/line order break ties. Source-backed and reviewed
 memories and the relevant latest handoff follow sources. Similarity is not trust.

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ContextRequest, Handoff, Project, SourcePort, StoragePort, TokenEstimator, SemanticRetrievalPort, SemanticScope, SemanticHealth, RetrievalMode, SemanticCandidate } from './contracts.js';
+import type { ContextRequest, Handoff, Project, SourcePort, StoragePort, TokenEstimator, SemanticRetrievalPort, SemanticScope, SemanticHealth, RetrievalMode, SemanticCandidate, Workspace } from './contracts.js';
 import { handoffInputSchema, contextRequestSchema, memoryCandidateSchema, observationSchema } from './contracts.js';
 import { contextBroker } from './context/broker.js';
 import { proposeMemory } from './memory/policy.js';
@@ -14,16 +14,18 @@ export * from './security/namespace.js';
 /** A host-created, project-bound capability. Adapters receive this, never storage. */
 export class ProjectClient {
   private readonly guard: NamespaceGuard;
-  constructor(private readonly storage: StoragePort, private readonly source: SourcePort, private readonly project: Project, private readonly estimator?: TokenEstimator, private readonly semantic?: SemanticRetrievalPort, private readonly defaultMode: RetrievalMode = semantic ? 'hybrid' : 'lexical') {
+  constructor(private readonly storage: StoragePort, private readonly source: SourcePort, private readonly project: Project, private readonly estimator?: TokenEstimator, private readonly semantic?: SemanticRetrievalPort, private readonly defaultMode: RetrievalMode = semantic ? 'hybrid' : 'lexical', private readonly workspace?: Workspace) {
     this.guard = new NamespaceGuard(project);
   }
   private assertBinding() {
     if (!this.storage.projects().some(p => p.project_id === this.project.project_id && p.root === this.project.root)) throw new Error('Project binding changed. Reconnect the adapter.');
+    if (this.workspace && !this.storage.workspaces(this.project.project_id).some(w => w.workspace_id === this.workspace!.workspace_id && w.root === this.workspace!.root)) throw new Error('Workspace binding changed. Reconnect the adapter.');
   }
-  status() { this.assertBinding(); return { ...this.project, sync: this.storage.syncState(this.project.project_id) }; }
+  status() { this.assertBinding(); return { ...this.project, ...(this.workspace ? { workspace: this.workspace } : {}), sync: this.storage.syncState(this.project.project_id) }; }
   private refresh() {
     this.assertBinding();
-    const resources = this.source.scan(this.project);
+    const resources = this.source.scan(this.workspace ? { ...this.project, root: this.workspace.root } : this.project);
+    if (this.workspace) for (const resource of resources) resource.provenance.workspace_id = this.workspace.workspace_id;
     for (const resource of resources) this.guard.assert(resource.project_id);
     const state = { at: new Date().toISOString(), files: resources.length, bytes: resources.reduce((sum, r) => sum + Buffer.byteLength(r.content), 0) };
     this.storage.replaceResources(this.project.project_id, resources, state);
@@ -32,6 +34,7 @@ export class ProjectClient {
   private scopedResources() {
     const resources = this.storage.resources(this.project.project_id);
     for (const r of resources) { this.guard.assert(r.project_id); this.guard.assert(r.provenance.project_id); }
+    if (resources.some(r => r.provenance.workspace_id !== this.workspace?.workspace_id)) throw new Error('Workspace boundary denied.');
     return resources;
   }
   private scope(resources = this.scopedResources(), structuralBoundaries = true): SemanticScope {
@@ -120,12 +123,13 @@ export class ProjectClient {
   async context(request: ContextRequest) {
     const parsed = contextRequestSchema.parse(request);
     const ranked = await this.retrieve(parsed.task, parsed.mode);
-    return contextBroker(this.storage, this.project, request, ranked.sources, this.estimator, ranked);
+    return contextBroker(this.storage, this.project, request, ranked.sources, this.estimator, ranked, this.workspace?.workspace_id);
   }
   inspect(id: string) {
     this.assertBinding();
     const bundle = this.storage.context(this.project.project_id, id);
     if (!bundle) throw new Error('Context not found in this project.');
+    if (bundle.workspace_id !== this.workspace?.workspace_id) throw new Error('Context not found in this workspace.');
     return bundle;
   }
   explain(id: string, verbose = false) {
@@ -153,7 +157,7 @@ export class ProjectClient {
     this.assertBinding();
     const parsed = handoffInputSchema.parse(input);
     const handoff: Handoff = { ...parsed, schema_version: 1, id: `handoff_${randomUUID()}`, project_id: this.project.project_id,
-      provenance: { project_id: this.project.project_id, origin: `agent:${parsed.from.agent}`, captured_at: new Date().toISOString(), source_version: parsed.from.session, trust: 'agent_observation' } };
+      provenance: { project_id: this.project.project_id, ...(this.workspace ? { workspace_id: this.workspace.workspace_id } : {}), origin: `agent:${parsed.from.agent}`, captured_at: new Date().toISOString(), source_version: parsed.from.session, trust: 'agent_observation' } };
     this.storage.saveHandoff(handoff);
     return handoff;
   }
@@ -161,11 +165,11 @@ export class ProjectClient {
     this.assertBinding();
     const parsed = observationSchema.parse(input);
     const observation = { ...parsed, id: `obs_${randomUUID()}`, project_id: this.project.project_id,
-      provenance: { project_id: this.project.project_id, origin: `agent:${parsed.agent}`, captured_at: new Date().toISOString(), source_version: parsed.session, trust: 'agent_observation' as const } };
+      provenance: { project_id: this.project.project_id, ...(this.workspace ? { workspace_id: this.workspace.workspace_id } : {}), origin: `agent:${parsed.agent}`, captured_at: new Date().toISOString(), source_version: parsed.session, trust: 'agent_observation' as const } };
     this.storage.saveObservation(observation);
     return observation;
   }
-  latestHandoff() { this.assertBinding(); return this.storage.handoffs(this.project.project_id)[0] ?? null; }
+  latestHandoff() { this.assertBinding(); return this.storage.handoffs(this.project.project_id).find(h => h.provenance.workspace_id === this.workspace?.workspace_id) ?? null; }
   handoff(id: string) {
     this.assertBinding();
     const handoff = this.storage.handoffs(this.project.project_id).find(h => h.id === id);

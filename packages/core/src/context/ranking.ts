@@ -23,8 +23,9 @@ export function rankPassages(sources: Resource[], chunks: readonly Passage[], ma
     const score = (lexical && !weakLexical ? 1 / (60 + lexical) : 0) + (sem ? 1 / (60 + sem.rank) : 0);
     const item: ContextItem = { id: p.id, kind: r.kind, content: p.text, provenance: r.provenance, passage: { path: p.path, start_line: p.start_line, end_line: p.end_line }, reasons: ['same project', 'authoritative current source', 'source hash checked during this request', ...(r.kind === 'rule' ? ['project rule applies to every role'] : []), ...(exact ? ['exact symbol or path match'] : []), ...(lexical ? [`lexical rank #${lexical}`] : []), ...(sem ? [`semantic similarity ${sem.similarity.toFixed(3)}; rank #${sem.rank}`] : [])] };
     if (lexical && weakLexical) item.reasons.push(`weak OR match: ${meaningfulCoverage}/${meaningful.length} query terms; no lexical fusion vote`);
-    return [{ item, rule: r.kind === 'rule', exact: mode !== 'semantic' && exact, score, coverage, path: p.path, line: p.start_line }];
+    if (pathMatch && mode !== 'semantic') item.reasons.push('explicit source path requested');
+    return [{ item, rule: r.kind === 'rule', requestedPath: mode !== 'semantic' && pathMatch, exact: mode !== 'semantic' && exact, score, coverage, path: p.path, line: p.start_line }];
   });
-  scored.sort((a, b) => Number(b.rule) - Number(a.rule) || Number(b.exact) - Number(a.exact) || b.score - a.score || b.coverage - a.coverage || a.path.localeCompare(b.path) || a.line - b.line);
+  scored.sort((a, b) => Number(b.rule) - Number(a.rule) || Number(b.requestedPath) - Number(a.requestedPath) || Number(b.exact) - Number(a.exact) || b.score - a.score || b.coverage - a.coverage || a.path.localeCompare(b.path) || a.line - b.line);
   return scored.map((s, i) => ({ ...s.item, reasons: [...s.item.reasons, `final rank #${i + 1}`] }));
 }

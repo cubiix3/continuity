@@ -22,7 +22,7 @@ export function proposeMemory(storage: StoragePort, project: Project, input: unk
   }
   const memory: Memory = {
     ...candidate, id: `mem_${randomUUID()}`, project_id: project.project_id, status, reason,
-    provenance: { project_id: project.project_id, origin: candidate.source_path ?? 'agent:proposal', captured_at: new Date().toISOString(), source_version: source?.hash ?? 'unverified', trust: status === 'persist' ? 'derived' : 'untrusted' },
+    provenance: { project_id: project.project_id, ...(source?.provenance.workspace_id ? { workspace_id: source.provenance.workspace_id } : {}), origin: candidate.source_path ?? 'agent:proposal', captured_at: new Date().toISOString(), source_version: source?.hash ?? 'unverified', trust: status === 'persist' ? 'derived' : 'untrusted' },
   };
   storage.saveMemory(memory);
   return memory;

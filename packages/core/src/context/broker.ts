@@ -5,7 +5,7 @@ import { passages } from './passages.js';
 import { rankPassages } from './ranking.js';
 import { NamespaceGuard } from '../security/namespace.js';
 
-export function contextBroker(storage: StoragePort, project: Project, request: ContextRequest, sources: Resource[], estimator?: TokenEstimator, ranked?: { items: ContextItem[]; retrieval: NonNullable<ContextBundle['retrieval']> }): ContextBundle {
+export function contextBroker(storage: StoragePort, project: Project, request: ContextRequest, sources: Resource[], estimator?: TokenEstimator, ranked?: { items: ContextItem[]; retrieval: NonNullable<ContextBundle['retrieval']> }, workspaceId?: string): ContextBundle {
   const { task, role, budget, provider_model_hint } = contextRequestSchema.parse(request);
   const guard = new NamespaceGuard(project);
   const candidates: ContextItem[] = ranked?.items ?? rankPassages(sources, passages(sources), storage.search(project.project_id, task, 100), [], task, 'lexical');
@@ -15,11 +15,12 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
     if (m.source_path && !sources.some(r => r.state === 'fresh' && r.path === m.source_path && r.hash === m.provenance.source_version)) continue;
     candidates.push({ id: m.id, kind: m.kind, content: m.text, provenance: m.provenance, reasons: ['same project', m.status === 'accepted' ? 'human-reviewed claim; current sources take precedence' : 'source-backed memory; source version still current', 'task term match'] });
   }
-  const handoff = storage.handoffs(project.project_id)[0];
+  const handoff = storage.handoffs(project.project_id).find(h => h.provenance.workspace_id === workspaceId);
   if (handoff && terms.some(t => [handoff.task.goal, ...handoff.remaining, ...handoff.decisions, handoff.recommended_next_action].join(' ').toLowerCase().includes(t))) {
     candidates.push({ id: handoff.id, kind: 'handoff', content: JSON.stringify({ task: handoff.task, remaining: handoff.remaining, decisions: handoff.decisions, recommended_next_action: handoff.recommended_next_action }), provenance: handoff.provenance, reasons: ['same project', 'latest structured handoff', 'task term match; agent report, not project policy'] });
   }
   const bundle: ContextBundle = { schema_version: 1, context_id: `ctx_${randomUUID()}`, project_id: project.project_id, role, items: [], budget: { requested: budget, used: 0, unit: 'utf8_bytes' } };
+  if (workspaceId) bundle.workspace_id = workspaceId;
   if (ranked) bundle.retrieval = ranked.retrieval;
   // Budget covers the entire serialized bundle, including metadata. No tokenizer dependency.
   const size = () => Buffer.byteLength(JSON.stringify(bundle), 'utf8');

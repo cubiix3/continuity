@@ -3,7 +3,7 @@ import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { projectSchema } from '../../core/src/contracts.js';
-import type { ContextBundle, EmbeddingCache, RemoteResourceCache, Handoff, Memory, Observation, Project, Provenance, Resource, StoragePort, SyncState, SelectionAudit } from '../../core/src/contracts.js';
+import type { ContextBundle, EmbeddingCache, RemoteResourceCache, Handoff, Memory, Observation, Project, Provenance, Resource, StoragePort, SyncState, SelectionAudit, Workspace } from '../../core/src/contracts.js';
 import { migrate } from './migrations.js';
 
 function decode<T>(row: Record<string, unknown>): T { return JSON.parse(String(row.data)) as T; }
@@ -16,7 +16,7 @@ function scoped<T>(row: Record<string, unknown>, projectId: string): T {
 export class SqliteStorage implements StoragePort {
   private readonly db: DatabaseSync;
   private closed = false;
-  constructor(path: string) {
+  constructor(path: string, private readonly workspaceId = '') {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path, { timeout: 5000, enableForeignKeyConstraints: true });
     if (path !== ':memory:') chmodSync(path, 0o600);
@@ -29,14 +29,26 @@ export class SqliteStorage implements StoragePort {
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   atomic<T>(action: () => T): T { return this.transaction(action); }
+  workspaces(projectId: string): Workspace[] {
+    return this.db.prepare('SELECT * FROM workspaces WHERE project_id = ? ORDER BY root').all(projectId).map(r => ({ workspace_id: String(r.workspace_id), project_id: String(r.project_id), root: String(r.root) }));
+  }
+  registerWorkspace(workspace: Workspace): Workspace {
+    return this.transaction(() => {
+      if (this.db.prepare('SELECT 1 FROM projects WHERE root = ?').get(workspace.root)) throw new Error('Workspace root is already registered as a project.');
+      this.db.prepare('INSERT OR IGNORE INTO workspaces VALUES (?, ?, ?)').run(workspace.workspace_id, workspace.project_id, workspace.root);
+      const result = this.workspaces(workspace.project_id).find(w => w.root === workspace.root);
+      if (!result) throw new Error('Workspace is already bound to another project.');
+      return result;
+    });
+  }
   remoteResourceCache(projectId: string): RemoteResourceCache {
     return {
-      read: backend => this.db.prepare('SELECT * FROM semantic_resources WHERE project_id = ? AND backend = ?').all(projectId, backend).map(r => ({ passage_id: String(r.passage_id), resource_id: String(r.resource_id), source_hash: String(r.source_hash), uri: String(r.uri) })),
+      read: backend => this.db.prepare('SELECT e.* FROM semantic_resources e JOIN resources r ON r.id = e.resource_id WHERE e.project_id = ? AND e.backend = ? AND r.workspace_id = ?').all(projectId, backend, this.workspaceId).map(r => ({ passage_id: String(r.passage_id), resource_id: String(r.resource_id), source_hash: String(r.source_hash), uri: String(r.uri) })),
       replace: (backend, entries, complete = true) => this.transaction(() => {
         for (const e of entries) this.assertCurrentResource(projectId, e.resource_id, e.source_hash);
         if (complete) {
           const ids = new Set(entries.map(e => e.passage_id));
-          for (const row of this.db.prepare('SELECT passage_id FROM semantic_resources WHERE project_id = ? AND backend = ?').all(projectId, backend)) {
+          for (const row of this.db.prepare('SELECT e.passage_id FROM semantic_resources e JOIN resources r ON r.id = e.resource_id WHERE e.project_id = ? AND e.backend = ? AND r.workspace_id = ?').all(projectId, backend, this.workspaceId)) {
             if (!ids.has(String(row.passage_id))) this.db.prepare('DELETE FROM semantic_resources WHERE project_id = ? AND backend = ? AND passage_id = ?').run(projectId, backend, String(row.passage_id));
           }
         }
@@ -48,7 +60,7 @@ export class SqliteStorage implements StoragePort {
   }
   embeddingCache(projectId: string): EmbeddingCache {
     return {
-      read: model => this.db.prepare('SELECT * FROM embeddings WHERE project_id = ? AND model = ? ORDER BY passage_id').all(projectId, model).map(row => {
+      read: model => this.db.prepare('SELECT e.* FROM embeddings e JOIN resources r ON r.id = e.resource_id WHERE e.project_id = ? AND e.model = ? AND r.workspace_id = ? ORDER BY e.passage_id').all(projectId, model, this.workspaceId).map(row => {
         const bytes = Buffer.from(row.vector as Uint8Array); const dimensions = Number(row.dimensions);
         if (!Number.isInteger(dimensions) || dimensions < 1 || dimensions > 8192 || bytes.length !== dimensions * 4) throw new Error('Corrupted embedding dimensions');
         return { passage_id: String(row.passage_id), resource_id: String(row.resource_id), source_hash: String(row.source_hash), hash: String(row.passage_hash), vector: Array.from({ length: dimensions }, (_, i) => bytes.readFloatLE(i * 4)) };
@@ -56,7 +68,7 @@ export class SqliteStorage implements StoragePort {
       replace: (model, entries, complete = true) => this.transaction(() => {
         for (const e of entries) this.assertCurrentResource(projectId, e.resource_id, e.source_hash);
         const ids = new Set(entries.map(e => e.passage_id));
-        for (const row of complete ? this.db.prepare('SELECT passage_id FROM embeddings WHERE project_id = ?').all(projectId) : []) {
+        for (const row of complete ? this.db.prepare('SELECT e.passage_id FROM embeddings e JOIN resources r ON r.id = e.resource_id WHERE e.project_id = ? AND r.workspace_id = ?').all(projectId, this.workspaceId) : []) {
           if (!ids.has(String(row.passage_id))) this.db.prepare('DELETE FROM embeddings WHERE project_id = ? AND passage_id = ?').run(projectId, String(row.passage_id));
         }
         for (const e of entries) {
@@ -70,7 +82,7 @@ export class SqliteStorage implements StoragePort {
     };
   }
   private assertCurrentResource(projectId: string, id: string, hash: string) {
-    const row = this.db.prepare("SELECT data FROM resources WHERE project_id = ? AND id = ? AND state = 'fresh'").get(projectId, id);
+    const row = this.db.prepare("SELECT data FROM resources WHERE project_id = ? AND id = ? AND state = 'fresh' AND workspace_id = ?").get(projectId, id, this.workspaceId);
     if (!row || scoped<Resource>(row, projectId).hash !== hash) throw new Error('Sources changed during semantic indexing; run sync again.');
   }
   private provenance(id: string, provenance: Provenance) {
@@ -85,7 +97,7 @@ export class SqliteStorage implements StoragePort {
     return this.transaction(() => {
       const project = this.projects().find(p => p.project_id === projectId && p.root === oldRoot);
       if (!project) throw new Error('Identity and previous canonical root do not match.');
-      if (this.projects().some(p => p.root === newRoot)) throw new Error('Destination is already registered.');
+      if (this.projects().some(p => p.root === newRoot) || this.db.prepare('SELECT 1 FROM workspaces WHERE root = ?').get(newRoot)) throw new Error('Destination is already registered.');
       const updated = { ...project, root: newRoot };
       this.db.prepare('UPDATE projects SET root = ?, data = ? WHERE project_id = ?').run(newRoot, JSON.stringify(updated), projectId);
       this.db.prepare('INSERT INTO project_rebindings(project_id, old_root, new_root, captured_at) VALUES (?, ?, ?, ?)').run(projectId, oldRoot, newRoot, new Date().toISOString());
@@ -94,6 +106,7 @@ export class SqliteStorage implements StoragePort {
   }
   register(project: Project): Project {
     return this.transaction(() => {
+      if (this.db.prepare('SELECT 1 FROM workspaces WHERE root = ?').get(project.root)) throw new Error('Root is already registered as a workspace.');
       this.db.prepare('INSERT OR IGNORE INTO projects VALUES (?, ?, ?)').run(project.project_id, project.root, JSON.stringify(project));
       const stored = decode<Project>(this.db.prepare('SELECT data FROM projects WHERE root = ?').get(project.root)!);
       this.db.prepare('INSERT OR IGNORE INTO namespaces VALUES (?, ?)').run(`project:${stored.project_id}`, stored.project_id);
@@ -101,10 +114,14 @@ export class SqliteStorage implements StoragePort {
     });
   }
   resources(projectId: string): Resource[] {
-    return this.db.prepare('SELECT data FROM resources WHERE project_id = ? ORDER BY path, id').all(projectId).map(r => scoped<Resource>(r, projectId));
+    return this.db.prepare('SELECT data FROM resources WHERE project_id = ? AND workspace_id = ? ORDER BY path, id').all(projectId, this.workspaceId).map(r => {
+      const resource = scoped<Resource>(r, projectId);
+      if ((resource.provenance.workspace_id ?? '') !== this.workspaceId) throw new Error('Corrupted resource workspace.');
+      return resource;
+    });
   }
   replaceResources(projectId: string, incoming: Resource[], state: SyncState): void {
-    if (incoming.some(r => r.project_id !== projectId || r.provenance.project_id !== projectId)) throw new Error('Resource scope mismatch.');
+    if (incoming.some(r => r.project_id !== projectId || r.provenance.project_id !== projectId || (r.provenance.workspace_id ?? '') !== this.workspaceId)) throw new Error('Resource scope mismatch.');
     this.transaction(() => {
       const current = this.resources(projectId);
       const freshByPath = new Map(current.filter(r => r.state === 'fresh').map(r => [r.path, r]));
@@ -121,11 +138,11 @@ export class SqliteStorage implements StoragePort {
         const old = freshByPath.get(next.path);
         if (old?.hash === next.hash) continue;
         const resource = next;
-        this.db.prepare('INSERT OR REPLACE INTO resources VALUES (?, ?, ?, ?, ?)').run(resource.id, projectId, resource.path, resource.state, JSON.stringify(resource));
+        this.db.prepare('INSERT OR REPLACE INTO resources VALUES (?, ?, ?, ?, ?, ?)').run(resource.id, projectId, resource.path, resource.state, JSON.stringify(resource), this.workspaceId);
         this.db.prepare('INSERT INTO resource_fts VALUES (?, ?, ?)').run(resource.id, projectId, resource.content);
         this.provenance(resource.id, resource.provenance);
       }
-      this.db.prepare('INSERT OR REPLACE INTO sync_state VALUES (?, ?)').run(projectId, JSON.stringify(state));
+      this.db.prepare('INSERT OR REPLACE INTO sync_state VALUES (?, ?, ?)').run(projectId, this.workspaceId, JSON.stringify(state));
     });
   }
   search(projectId: string, query: string, limit: number): Resource[] {
@@ -133,8 +150,8 @@ export class SqliteStorage implements StoragePort {
     if (!tokens.length) return [];
     const match = tokens.map(t => `"${t}"`).join(' OR ');
     return this.db.prepare(`SELECT r.data FROM resource_fts f JOIN resources r ON r.id = f.id
-      WHERE resource_fts MATCH ? AND f.project_id = ? AND r.project_id = ? AND r.state = 'fresh'
-      ORDER BY bm25(resource_fts), r.path, r.id LIMIT ?`).all(match, projectId, projectId, Math.max(1, Math.min(limit, 100))).map(r => scoped<Resource>(r, projectId));
+      WHERE resource_fts MATCH ? AND f.project_id = ? AND r.project_id = ? AND r.state = 'fresh' AND r.workspace_id = ?
+      ORDER BY bm25(resource_fts), r.path, r.id LIMIT ?`).all(match, projectId, projectId, this.workspaceId, Math.max(1, Math.min(limit, 100))).map(r => scoped<Resource>(r, projectId));
   }
   memories(projectId: string): Memory[] { return this.db.prepare('SELECT data FROM memories WHERE project_id = ? ORDER BY id').all(projectId).map(r => scoped<Memory>(r, projectId)); }
   saveMemory(memory: Memory): void {
@@ -176,7 +193,7 @@ export class SqliteStorage implements StoragePort {
     return row ? scoped<ContextBundle>(row, projectId) : undefined;
   }
   syncState(projectId: string): SyncState | undefined {
-    const row = this.db.prepare('SELECT data FROM sync_state WHERE project_id = ?').get(projectId);
+    const row = this.db.prepare('SELECT data FROM sync_state WHERE project_id = ? AND workspace_id = ?').get(projectId, this.workspaceId);
     return row ? decode<SyncState>(row) : undefined;
   }
   diagnose() {

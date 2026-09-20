@@ -28,6 +28,15 @@ const handoffInput = {
   completed: ['Read rules'], remaining: ['Implement reconnect'], decisions: [], files_changed: [], risks: ['Retry storm'], recommended_next_action: 'Add bounded retry',
 };
 
+it('preserves an explicit source path ahead of incidental symbol matches', async () => {
+  const a = project('path-priority'); mkdirSync(join(a.path, 'src'));
+  writeFileSync(join(a.path, 'src', 'recovery.ts'), 'export const keepExistingBehavior = true;');
+  for (let n = 0; n < 8; n++) writeFileSync(join(a.path, `noise-${n}.md`), 'ONLY_API must remain stable. '.repeat(20));
+  const result = await a.client.context({ task: 'Fix src/recovery.ts. ONLY_API must remain stable.', budget: 2500 });
+  expect(result.items[0]?.provenance.origin).toBe('src/recovery.ts');
+  expect(result.budget.used).toBeLessThanOrEqual(2500);
+});
+
 describe('vertical slice', () => {
   it('isolates two projects, transfers handoffs and invalidates changed sources', async () => {
     const a = project('a'); const b = project('b');
@@ -51,7 +60,7 @@ describe('vertical slice', () => {
     const fresh = (await a.client.context({ task: 'reconnect' }));
     expect(fresh.items.some(i => i.provenance.source_version === oldHash)).toBe(false);
     expect(storage.resources(a.identity.project_id).some(r => r.state === 'superseded')).toBe(true);
-    expect(a.client.doctor()).toMatchObject({ integrity: 'ok', schema_version: 3, fts5: true, problems: [] });
+    expect(a.client.doctor()).toMatchObject({ integrity: 'ok', schema_version: 4, fts5: true, problems: [] });
   });
   it('keeps identity stable through canonical aliases and restart', async () => {
     const a = project('a');
@@ -176,7 +185,7 @@ describe('migrations', () => {
     expect(Number(db.prepare('SELECT count(*) AS n FROM memory_revisions').get()?.n)).toBe(2);
     db.close();
     storage.close(); storage = new SqliteStorage(join(root, 'state', 'continuity.db'));
-    expect(storage.diagnose().schema_version).toBe(3);
+    expect(storage.diagnose().schema_version).toBe(4);
     expect(storage.memories(a.identity.project_id)[0]?.status).toBe('forgotten');
   });
   it('refuses future schemas without modifying them', async () => {

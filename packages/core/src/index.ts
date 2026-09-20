@@ -82,9 +82,12 @@ export class ProjectClient {
     if (!query.trim() || query.length > 2000) throw new Error('Search requires 1–2000 characters.');
     if (mode && !['lexical', 'semantic', 'hybrid'].includes(mode)) throw new Error('Unknown retrieval mode');
     const ranked = await this.retrieve(query, mode, false);
+    const originals = new Map(ranked.sources.filter(r => r.state === 'fresh').map(r => [`${r.path}\0${r.hash}`, r]));
     const results = [];
     for (const resource of ranked.items.slice(0, 10)) {
-      const excerpt = { ...resource, path: resource.passage?.path, content: Array.from(resource.content).slice(0, 300).join(''), truncated: Array.from(resource.content).length > 300, retrieval: ranked.retrieval };
+      const original = originals.get(`${resource.passage!.path}\0${resource.provenance.source_version}`);
+      if (!original) throw new Error('Selected source version is unavailable');
+      const excerpt = { ...original, ...resource, id: original.id, passage_id: resource.id, content: Array.from(resource.content).slice(0, 300).join(''), truncated: Array.from(resource.content).length > 300, retrieval: ranked.retrieval };
       if (Buffer.byteLength(JSON.stringify([...results, excerpt])) > 16000) break;
       results.push(excerpt);
     }

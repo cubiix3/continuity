@@ -55,6 +55,11 @@ Nomic documents and queries use its documented `search_document:` and
 Changing the model digest or prefixes requires reindexing; incompatible vectors
 are never mixed. No provider SDK or tokenizer is a Core dependency.
 
+Source scanning retains its existing file/byte limits. A retrieval snapshot also
+has a 20,000-passage limit to bound pathological heading/declaration fragmentation.
+Overly fragmented sources require explicit exclusion; they are not silently
+reported as a complete semantic index.
+
 ## OpenViking
 
 The adapter is tested against an already-running local OpenViking **0.4.20** dev

@@ -140,6 +140,7 @@ it('keeps exact symbols and current rules ahead of semantic similarity and revie
   expect(bundle.items[0]?.kind).toBe('rule');
   expect(bundle.items[1]?.provenance.origin).toBe('reconnect.ts');
   expect(bundle.items[1]?.reasons).toContain('exact symbol or path match');
+  expect((await c.search('recoverConnection', 'hybrid'))[0]).toMatchObject({ project_id: c.status().project_id, state: 'fresh', path: 'reconnect.ts' });
   expect((await c.context({ task: 'reconnect.ts' })).items.some(i => i.provenance.origin === 'reconnect.ts')).toBe(true);
   const recovery = await c.context({ task: 'reconnect manager' });
   expect(recovery.items.findIndex(i => i.id === m.id)).toBeGreaterThan(recovery.items.findIndex(i => i.kind === 'rule'));
@@ -165,6 +166,9 @@ it('bounds Unicode passages and refuses nonlocal/redirectable endpoint configura
   const chunks = passages(storage.resources(resolver.resolve(a).project_id));
   expect(chunks.every(p => Buffer.byteLength(p.text) <= 2400)).toBe(true);
   expect(chunks.some(p => p.text.includes('\ufffd'))).toBe(false);
+  for (let i = 0; i < 4; i++) writeFileSync(join(a, `fragmented-${i}.md`), '# Heading\n'.repeat(6000));
+  expect(await client().sync()).toMatchObject({ semantic: { status: 'unavailable', reason: expect.stringContaining('Passage limit') } });
+  expect((await client().context({ task: 'reconnect', mode: 'lexical' })).items).not.toHaveLength(0);
 });
 
 it('explains duplicate and budget exclusions without spending bundle bytes on the audit', async () => {

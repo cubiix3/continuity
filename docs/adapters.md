@@ -11,6 +11,8 @@ implement policy, retrieval, or synchronization independently.
 `context`, `search`, and host `sync` are asynchronous in the hybrid retrieval
 slice. Await their promises in SDK integrations. Optional `mode` selects lexical,
 semantic, or hybrid candidates; it never selects a project or namespace.
+Search retains resource `id`, `project_id`, `hash`, `state` and `path`; added
+`passage_id`, line ranges and ranking reasons identify the selected excerpt.
 
 ## MCP stdio
 

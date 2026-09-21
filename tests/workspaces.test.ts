@@ -26,7 +26,8 @@ beforeEach(() => {
 });
 afterEach(() => { host.close(); rmSync(root, { recursive: true, force: true }); });
 
-it('keeps concurrent worktree sources separate while sharing reviewed project memories', async () => {
+it.each(['flat', 'source-diversity'] as const)('keeps concurrent worktree sources separate with %s composition while sharing reviewed project memories', async (composition) => {
+  host.close(); host = openContinuity(home, { composition });
   expect(CONTINUITY_HOST_API_VERSION).toBe(1);
   const a = host.project(primary); const b = host.workspace(primary, feature);
   const memory = a.propose({ key: 'retry', kind: 'experience', text: 'Reconnect recovery preserves request identifiers.' });

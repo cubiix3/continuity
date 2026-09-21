@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -96,4 +96,16 @@ test('large memory lists stay paginated and status filtering finds older pending
   await page.getByRole('button', { name: 'Next page', exact: true }).click(); await expect(page.locator('tbody tr')).toHaveCount(20);
   await page.getByLabel('Memory status', { exact: true }).selectOption('proposed'); await expect(page.getByRole('link', { name: 'retry-budget', exact: true })).toBeVisible(); await expect(page.locator('tbody tr')).toHaveCount(2);
   console.log(JSON.stringify({ dashboard_measurement: { records: 1002, page_rows: 20, initial_with_project_switch_ms: Math.round(initialMs), list_navigation_ms: Math.round(listMs) } }));
+});
+
+test('long handoffs and memory stay readable; inaccessible roots show an actionable error', async ({ page }) => {
+  const client = host.project(primary);
+  const h = client.createHandoff({ from: { agent: 'Demo reviewer', session: 'long-content' }, task: { goal: 'Review a long implementation handoff', status: 'blocked' }, completed: Array.from({ length: 10 }, () => 'Implementation detail '.repeat(80)), remaining: ['Verify the boundary tests.'], decisions: [], files_changed: ['src/' + 'long-segment/'.repeat(25) + 'implementation.ts'], risks: [], recommended_next_action: 'Inspect the original source before continuing.' });
+  const memory = client.propose({ key: 'long-memory', kind: 'memory', text: 'Detailed project knowledge. '.repeat(65) });
+  await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' });
+  await page.getByRole('link', { name: h.task.goal, exact: true }).click(); await expect(page.getByRole('heading', { name: 'Files changed' })).toBeVisible(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.emulateMedia({ colorScheme: 'dark' }); await page.screenshot({ path: test.info().outputPath('handoff-dark.png'), fullPage: true });
+  await page.getByRole('link', { name: 'Memories', exact: true }).click(); await page.getByRole('link', { name: memory.key, exact: true }).click(); await expect(page.locator('pre').first()).toContainText('Detailed project knowledge.'); await page.screenshot({ path: test.info().outputPath('memory-dark.png'), fullPage: true });
+  renameSync(primary, join(root, 'moved-project'));
+  await page.getByRole('link', { name: 'Workspaces', exact: true }).click(); await expect(page.getByRole('alert')).toContainText('unavailable'); await expect(page.getByRole('link', { name: 'Run diagnostics', exact: true })).toBeVisible(); await page.screenshot({ path: test.info().outputPath('error-dark.png'), fullPage: true });
 });

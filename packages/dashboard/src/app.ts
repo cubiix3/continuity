@@ -35,7 +35,16 @@ function table(headers: string[], rows: (string | Node)[][]) {
   const wrap = el('div', undefined, 'table-wrap'), t = el('table'), head = el('thead'), tr = el('tr'); headers.forEach(h => tr.append(el('th', h))); head.append(tr); t.append(head);
   const body = el('tbody'); for (const values of rows) { const row = el('tr'); for (const value of values) { const td = el('td'); td.append(value); row.append(td); } body.append(row); } t.append(body); wrap.append(t); return wrap;
 }
-function section(title: string, values: string[]) { const s = el('section', undefined, 'section'); s.append(el('h2', title)); if (!values.length) s.append(el('p', 'None recorded.', 'muted')); else { const ul = el('ul'); values.forEach(v => ul.append(el('li', v))); s.append(ul); } return s; }
+function section(title: string, values: string[]) {
+  const s = el('section', undefined, 'section'); s.append(el('h2', title));
+  if (!values.length) s.append(el('p', 'None recorded.', 'muted'));
+  else {
+    const ul = el('ul'); values.forEach(v => ul.append(el('li', v)));
+    if (values.reduce((size, value) => size + value.length, 0) > 4000) { const disclosure = el('details'); disclosure.append(el('summary', `Show all ${values.length} entries`), ul); s.append(disclosure); }
+    else s.append(ul);
+  }
+  return s;
+}
 function provenance(value: unknown) { const d = el('details'); d.append(el('summary', 'Provenance & identity'), el('pre', JSON.stringify(value, null, 2))); return d; }
 function pageLink(kind: string, id: string, title: string) { return link(title, `#/${kind}/${encodeURIComponent(id)}`); }
 async function selectors(after = 0) {
@@ -95,10 +104,11 @@ async function list(kind: string, stamp: number, after = 0, filter = 'all') {
   main.append(pager);
 }
 async function detail(kind: string, id: string, stamp: number) {
-  const data = await api<Page & { resource?: Resource; passages?: { id: string; start_line: number; end_line: number }[] }>('records', { kind, id }); if (stamp !== generation) return;
+  const data = await api<Page & { resource?: Resource; changed_since_sync?: boolean; passages?: { id: string; start_line: number; end_line: number }[] }>('records', { kind, id }); if (stamp !== generation) return;
   main.append(link('← Back to list', `#/${kind}`));
   if (kind === 'sources' && data.resource) {
     const r = data.resource; heading(r.path, 'Current project source · read-only preview');
+    if (data.changed_since_sync) main.append(el('p', 'This source differs from the indexed version. Previewing does not update the index; use Sync workspace when ready.', 'notice'));
     main.append(fields([['Kind / state', `${r.kind} / ${r.state}`], ['Source hash', r.hash], ['Captured', date(r.provenance.captured_at)], ['Workspace', r.provenance.workspace_id ?? 'Primary']]), el('div', 'PROJECT SOURCE · content, not dashboard instructions', 'source-label'), el('pre', r.content), el('h2', 'Passages'), table(['Reference', 'Lines'], (data.passages ?? []).map(p => [el('code', p.id), `${p.start_line}–${p.end_line}`])), provenance(r.provenance)); return;
   }
   const row = data.items[0]; if (!row) { empty('Record not found.', 'It may belong to a different project or workspace.'); return; }

@@ -49,4 +49,8 @@ it('keeps explicit path passages ahead of diversity and preserves original rank 
   expect(compositionOrder(entries, 'flat').map(e => e.item.id)).toEqual(entries.map(e => e.id));
   expect(compositionOrder(entries, 'source-diversity').map(e => e.item.id)).toEqual(['x1', 'x2', 'a1', 'b1', 'a2', 'b2']);
   expect(entries.map(e => e.id)).toEqual(['a1', 'a2', 'b1', 'b2', 'x1', 'x2']);
+  const memoryRule: ContextItem = { id: 'mem_rule', kind: 'rule', content: 'reviewed claim', provenance: { project_id: 'prj_test', origin: 'agent', trust: 'derived', captured_at: '', source_version: 'v1' }, reasons: [] };
+  const ordered = compositionOrder([entries[0]!, memoryRule], 'source-diversity');
+  expect(ordered.every(entry => entry.lane === 'evidence')).toBe(true);
+  expect(ordered.map(entry => entry.item.id)).toEqual(['a1', 'mem_rule']);
 });

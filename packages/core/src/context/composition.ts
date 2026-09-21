@@ -5,7 +5,8 @@ export interface CompositionEntry { item: ContextItem; lane: 'control' | 'eviden
 
 /** Host-selected composition only. Candidate retrieval and rank are unchanged. */
 export function compositionOrder(items: readonly ContextItem[], policy: CompositionPolicy): CompositionEntry[] {
-  const entries = items.map(item => ({ item, lane: item.kind === 'rule' ? 'control' as const : 'evidence' as const, pass: 'primary' as const }));
+  // A reviewed memory classified as a rule is still a claim, not an authoritative source rule.
+  const entries = items.map(item => ({ item, lane: item.kind === 'rule' && item.passage ? 'control' as const : 'evidence' as const, pass: 'primary' as const }));
   if (policy === 'flat') return entries;
   const control = entries.filter(entry => entry.lane === 'control');
   const requested = entries.filter(entry => entry.lane === 'evidence' && entry.item.reasons.includes('explicit source path requested'));

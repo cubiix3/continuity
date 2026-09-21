@@ -10,7 +10,7 @@ export function passages(resources: readonly Resource[], structuralBoundaries = 
   const result: Passage[] = [];
   for (const r of resources.filter(r => r.state === 'fresh')) {
     const lines = r.content.split('\n');
-    let start = 0; let text = ''; let fenced = false;
+    let start = 0; let text = ''; let textBytes = 0; let fenced = false;
     const occurrences = new Map<string, number>();
     const emit = (end: number) => {
       if (!text.trim()) return;
@@ -23,12 +23,14 @@ export function passages(resources: readonly Resource[], structuralBoundaries = 
     for (let n = 0; n < lines.length; n++) {
       const line = lines[n]!;
       const boundary = structuralBoundaries && !fenced && (/^#{1,6} /.test(line) || /^(?:export\s+)?(?:async\s+)?(?:function |class |interface |def |fn |pub fn )/.test(line));
-      if (text && (boundary || Buffer.byteLength(text + line) > 2400)) { emit(n - 1); text = ''; start = n; }
+      if (text && (boundary || textBytes + Buffer.byteLength(line) > 2400)) { emit(n - 1); text = ''; textBytes = 0; start = n; }
       if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
       // Even minified code and long prose lines remain bounded, without splitting UTF-8.
       for (const character of line + (n < lines.length - 1 ? '\n' : '')) {
-        if (Buffer.byteLength(text + character) > 2400) { emit(n); text = ''; start = n; }
+        const characterBytes = Buffer.byteLength(character);
+        if (textBytes + characterBytes > 2400) { emit(n); text = ''; textBytes = 0; start = n; }
         text += character;
+        textBytes += characterBytes;
       }
     }
     emit(lines.length - 1);

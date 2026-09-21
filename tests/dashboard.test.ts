@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 import { openContinuity } from '../packages/sdk/src/index.js';
 import { createDashboardServer } from '../packages/server/src/dashboard.js';
 import type { InspectionPage, Resource } from '../packages/core/src/contracts.js';
-import { request } from 'node:http';
+import { request, createServer } from 'node:http';
 import { execFileSync } from 'node:child_process';
+import { SqliteStorage } from '../packages/storage-sqlite/src/index.js';
 
 let root: string, project: string, other: string, host: ReturnType<typeof openContinuity>, server: ReturnType<typeof createDashboardServer>, base: string, token: string, id: string;
 const handoff = { from: { agent: 'test', session: 's' }, task: { goal: 'Continue safely', status: 'blocked' }, completed: [], remaining: [], decisions: [], files_changed: [], risks: [], recommended_next_action: 'Run tests' };
@@ -46,9 +47,23 @@ it('paginates without source bodies and denies wrong project/workspace record se
 });
 it('revalidates source previews and fails closed for removed sources', async () => {
   const page = await (await get(`records?project=${id}&kind=sources`)).json() as InspectionPage; const source = page.items[0]!.record as Resource;
+  const before = host.project(project).status().sync;
   writeFileSync(join(project, 'README.md'), '# Changed\nNEW_CURRENT');
   const fresh = await (await get(`records?project=${id}&kind=sources&id=${source.id}`)).text(); expect(fresh).toContain('NEW_CURRENT'); expect(fresh).not.toContain('Current implementation');
+  expect(fresh).toContain('"changed_since_sync":true');
+  await get(`retrieval?project=${id}`);
+  expect(host.project(project).status().sync).toEqual(before);
+  const stored = host.inspection.page(id, '', 'sources', 1, 0, source.id).items[0]!.record as Resource;
+  expect(stored.hash).toBe(source.hash); expect(stored.content).toContain('Current implementation');
   rmSync(join(project, 'README.md')); expect((await get(`records?project=${id}&kind=sources&id=${source.id}`)).status).toBe(404);
+});
+
+it('returns JSON null for historical contexts without a selection audit', async () => {
+  const bundle = await host.project(project).context({ task: 'Current' });
+  const storage = new SqliteStorage(join(root, 'state', 'continuity.db'));
+  const historical = { ...bundle, context_id: 'ctx_before_selection_audit' }; storage.saveContext(historical); storage.close();
+  const response = await get(`selection?project=${id}&id=${historical.context_id}`);
+  expect(response.status).toBe(200); expect(await response.json()).toBeNull();
 });
 it('uses trusted review policy with explicit JSON writes and preserves revisions', async () => {
   const memory = host.project(project).propose({ key: 'review', kind: 'memory', text: 'A proposal requiring human review.' });
@@ -84,4 +99,21 @@ it('rejects real sibling and foreign workspace identities, not only invented IDs
   expect((await get(`records?project=${id}&workspace=${foreignWorkspace}&kind=sources`)).status).toBe(409);
   const primarySource = (await (await get(`records?project=${id}&kind=sources`)).json() as InspectionPage).items[0]!.record as Resource;
   expect((await get(`records?project=${id}&workspace=${workspace}&kind=sources&id=${primarySource.id}`)).status).toBe(404);
+});
+
+it('inspects a current semantic cache without replacing resource IDs or sync state', async () => {
+  const backend = createServer(async (req, res) => {
+    if (req.url === '/api/tags') { res.end(JSON.stringify({ models: [{ name: 'nomic-embed-text:latest', digest: 'fixture-only' }] })); return; }
+    let body = ''; for await (const chunk of req) body += String(chunk);
+    const input = JSON.parse(body) as { input: string[] }; res.end(JSON.stringify({ embeddings: input.input.map(() => [1, 0]) }));
+  });
+  await new Promise<void>(resolve => backend.listen(0, '127.0.0.1', resolve)); const address = backend.address(); if (!address || typeof address === 'string') throw new Error('Missing fixture address');
+  writeFileSync(join(root, 'state', 'retrieval.json'), JSON.stringify({ semantic: { enabled: true, endpoint: `http://127.0.0.1:${address.port}` } }));
+  const semanticHost = openContinuity(join(root, 'state'));
+  try {
+    const client = semanticHost.project(project); expect(await client.sync()).toMatchObject({ semantic: { status: 'ready' } }); const before = client.status().sync;
+    expect(await semanticHost.inspectionRetrievalHealth(id, '')).toMatchObject({ status: 'ready' }); expect(client.status().sync).toEqual(before);
+    writeFileSync(join(project, 'README.md'), '# Changed\nNew current implementation.');
+    expect(await semanticHost.inspectionRetrievalHealth(id, '')).toMatchObject({ status: 'incomplete' }); expect(client.status().sync).toEqual(before);
+  } finally { semanticHost.close(); backend.closeAllConnections(); await new Promise<void>(resolve => backend.close(() => resolve())); }
 });

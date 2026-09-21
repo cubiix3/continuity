@@ -28,7 +28,9 @@ export function createDashboardServer(host: Host, assetsRoot = new URL('../../da
     const origin = new URL(`http://127.0.0.1:${address.port}`).origin;
     const authority = new URL(origin).host;
     if (req.headers.host !== authority || (req.headers.origin !== undefined && req.headers.origin !== origin) || ['cross-site', 'same-site'].includes(String(req.headers['sec-fetch-site']))) return send(403, { error: 'Local same-origin request required.' });
-    const url = new URL(req.url ?? '/', origin);
+    let url: URL;
+    try { url = new URL(req.url ?? '/', origin); }
+    catch { return send(400, { error: 'Invalid request URL.' }); }
     if (req.method === 'GET' && assets.has(url.pathname) && !url.search) {
       const asset = assets.get(url.pathname)!; res.writeHead(200, { 'Content-Type': asset.type }); res.end(asset.body); return;
     }
@@ -52,18 +54,16 @@ export function createDashboardServer(host: Host, assetsRoot = new URL('../../da
         }
         if (url.pathname === '/dashboard-api/status') return send(200, client().status());
         if (url.pathname === '/dashboard-api/stats') return send(200, host.inspection.stats(q.project, q.workspace));
-        if (url.pathname === '/dashboard-api/retrieval') return send(200, await client().retrievalHealth());
+        if (url.pathname === '/dashboard-api/retrieval') return send(200, await host.inspectionRetrievalHealth(q.project, q.workspace));
         if (url.pathname === '/dashboard-api/records') {
           if (q.kind === 'sources' && q.id) {
-            const registered = host.inspection.page(q.project, q.workspace, 'sources', 1, 0, q.id).items[0]?.record;
-            const path = registered && 'path' in registered ? registered.path : undefined;
-            const resource = path ? client().sourceSnapshot().find(r => r.path === path && r.state === 'fresh') : undefined;
-            if (!resource) return send(404, { error: 'Source is no longer available in this workspace. Sync and refresh the list.' });
-            return send(200, { resource, passages: passages([resource]).map(p => ({ id: p.id, start_line: p.start_line, end_line: p.end_line })) });
+            const preview = host.previewSource(q.project, q.workspace, q.id);
+            if (!preview) return send(404, { error: 'Source is no longer available in this workspace. Sync and refresh the list.' });
+            return send(200, { ...preview, passages: passages([preview.resource]).map(p => ({ id: p.id, start_line: p.start_line, end_line: p.end_line })) });
           }
           return send(200, host.inspection.page(q.project, q.workspace, q.kind, q.limit, q.after, q.id, q.status, q.source_filter));
         }
-        if (url.pathname === '/dashboard-api/selection' && q.id) return send(200, host.inspection.selection(q.project, q.workspace, q.id));
+        if (url.pathname === '/dashboard-api/selection' && q.id) return send(200, host.inspection.selection(q.project, q.workspace, q.id) ?? null);
       }
       if (req.method === 'POST' && ['/dashboard-api/review', '/dashboard-api/sync'].includes(url.pathname) && !url.search) {
         if (req.headers.origin !== origin || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON write required.' });

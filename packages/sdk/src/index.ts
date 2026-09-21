@@ -12,6 +12,7 @@ import { OpenVikingRetrieval } from '../../retrieval-semantic/src/openviking.js'
 import { randomUUID } from 'node:crypto';
 import { verifyWorkspace } from './workspaces.js';
 import { Inspection } from '../../core/src/inspection.js';
+import { passages } from '../../core/src/context/passages.js';
 
 export const CONTINUITY_HOST_API_VERSION = 1;
 export interface HostOptions { sources?: { include?: readonly string[]; exclude?: readonly string[] } }
@@ -32,6 +33,32 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
     return [...registered, ...mapped];
   }, options.sources);
   const workspaceStores = new Map<string, SqliteStorage>();
+  const inspection = new Inspection(storage);
+  const boundStore = (workspaceId: string) => {
+    if (!workspaceId) return storage;
+    let bound = workspaceStores.get(workspaceId);
+    if (!bound) { bound = new SqliteStorage(join(home, 'continuity.db'), workspaceId); workspaceStores.set(workspaceId, bound); }
+    return bound;
+  };
+  const inspectionScope = (projectId: string, workspaceId: string) => {
+    const scope = inspection.scope(projectId, workspaceId);
+    if (resolver.resolve(scope.project.root).project_id !== projectId) throw new Error('Project binding changed.');
+    if (scope.workspace) verifyWorkspace(scope.project.root, scope.workspace.root);
+    return scope;
+  };
+  const scanForInspection = (projectId: string, workspaceId: string) => {
+    const { project, workspace } = inspectionScope(projectId, workspaceId);
+    const root = workspace?.root ?? project.root;
+    const resources = sourceFor(project, root).scan({ ...project, root });
+    const indexed = new Map(boundStore(workspaceId).resources(projectId).filter(r => r.state === 'fresh').map(r => [r.path, r]));
+    for (const resource of resources) {
+      if (resource.project_id !== projectId || resource.provenance.project_id !== projectId) throw new Error('Source boundary denied.');
+      if (workspace) resource.provenance.workspace_id = workspace.workspace_id;
+      const previous = indexed.get(resource.path);
+      if (previous?.hash === resource.hash) resource.id = previous.id;
+    }
+    return resources;
+  };
   const semanticFor = (bound: SqliteStorage, projectId: string) => {
     const s = config.semantic;
     return !s?.enabled ? undefined : s.provider === 'openviking'
@@ -39,7 +66,28 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       : new OllamaRetrieval(bound.embeddingCache(projectId), s.endpoint, s.model, s.document_prefix, s.query_prefix);
   };
   return {
-    inspection: new Inspection(storage),
+    inspection,
+    /** Human host inspection only. Never handed to an agent adapter; never changes the index. */
+    previewSource: (projectId: string, workspaceId: string, id: string) => {
+      const registered = inspection.page(projectId, workspaceId, 'sources', 1, 0, id).items[0]?.record;
+      if (!registered || !('path' in registered) || !('hash' in registered)) return undefined;
+      const resource = scanForInspection(projectId, workspaceId).find(r => r.path === registered.path);
+      if (!resource) return undefined;
+      if (resource.hash === registered.hash) resource.id = registered.id;
+      return { resource, indexed_hash: registered.hash, changed_since_sync: resource.hash !== registered.hash };
+    },
+    /** Uses the existing backend health port against a fresh read-only authorized snapshot. */
+    inspectionRetrievalHealth: async (projectId: string, workspaceId: string) => {
+      inspectionScope(projectId, workspaceId);
+      const semantic = semanticFor(boundStore(workspaceId), projectId);
+      if (!semantic) return { status: 'disabled', reason: 'FTS5 active; semantic retrieval is disabled.' };
+      try {
+        const snapshot = { project_id: projectId, passages: passages(scanForInspection(projectId, workspaceId)) };
+        const health = await semantic.health(snapshot, AbortSignal.timeout(3000));
+        inspectionScope(projectId, workspaceId);
+        return health;
+      } catch { return { status: 'unavailable', reason: 'Semantic health could not be verified. FTS remains available; run doctor for local diagnostics.' }; }
+    },
     init: (path: string, name?: string) => resolver.init(path, name),
     rebind: (id: string, from: string, to: string) => resolver.rebind(id, from, to),
     review: (path: string, id: string, decision: 'accepted' | 'rejected', by: string) => reviewMemory(storage, resolver.resolve(path).project_id, id, decision, by),
@@ -50,8 +98,7 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       const root = verifyWorkspace(project.root, workspacePath);
       if (root === project.root) throw new Error('Use project() for the primary workspace.');
       const workspace = storage.registerWorkspace({ workspace_id: `ws_${randomUUID()}`, project_id: project.project_id, root });
-      let bound = workspaceStores.get(workspace.workspace_id);
-      if (!bound) { bound = new SqliteStorage(join(home, 'continuity.db'), workspace.workspace_id); workspaceStores.set(workspace.workspace_id, bound); }
+      const bound = boundStore(workspace.workspace_id);
       const semantic = semanticFor(bound, project.project_id);
       const source = sourceFor(project, root);
       const workspaceSource = { scan: () => { verifyWorkspace(project.root, root); return source.scan({ ...project, root }); } };

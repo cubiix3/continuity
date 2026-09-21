@@ -56,7 +56,9 @@ required as `X-Continuity-Token` for data routes: `projects`, `workspaces`, `sta
 registered project/workspace, a fixed collection kind, `limit` (1–50), and `after`
 cursor. Memory status filtering happens before pagination. IDs are never authorization.
 Only `/review` and `/sync` support POST; no GET mutates memory or initiates sync.
-Source preview and retrieval-health checks refresh through existing freshness logic.
+Source preview and retrieval-health checks scan through existing freshness boundaries
+without updating the stored index or last-sync timestamp. A changed source is visibly
+marked as different from its indexed version; explicit Sync performs indexing.
 
 ## Development and visual checks
 

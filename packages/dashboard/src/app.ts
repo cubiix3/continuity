@@ -135,8 +135,15 @@ async function detail(kind: string, id: string, stamp: number) {
 }
 function review(memory: Memory, decision: 'accepted' | 'rejected') {
   const dialog = el('dialog'), title = el('h2', decision === 'accepted' ? 'Approve this memory?' : 'Reject this memory?'), label = el('label', 'Reviewer name'), input = el('input'); input.id = 'reviewer'; input.maxLength = 100; label.htmlFor = input.id;
+  title.id = 'review-title'; dialog.setAttribute('aria-labelledby', title.id);
   dialog.append(title, el('p', 'This records an explicit human review. Source authority and conflict checks remain unchanged.'), label, input);
-  const bar = el('div', undefined, 'toolbar'); bar.append(button('Cancel', () => dialog.close()), button(decision === 'accepted' ? 'Approve memory' : 'Reject memory', async () => { if (!input.value.trim()) { input.setCustomValidity('Enter a reviewer name.'); input.reportValidity(); return; } await api('review', undefined, { project: projectId, workspace: workspaceId, id: memory.id, decision, by: input.value.trim() }); dialog.close(); await render(); }, decision === 'accepted' ? 'primary' : 'danger'));
+  const failure = el('p'); failure.role = 'alert'; dialog.append(failure);
+  const bar = el('div', undefined, 'toolbar'); bar.append(button('Cancel', () => dialog.close()), button(decision === 'accepted' ? 'Approve memory' : 'Reject memory', async () => {
+    if (!input.value.trim()) { input.setCustomValidity('Enter a reviewer name.'); input.reportValidity(); return; }
+    try { await api('review', undefined, { project: projectId, workspace: workspaceId, id: memory.id, decision, by: input.value.trim() }); }
+    catch (error) { failure.textContent = error instanceof Error ? error.message : 'Review failed. Refresh and inspect the memory history.'; return; }
+    dialog.close(); await render();
+  }, decision === 'accepted' ? 'primary' : 'danger'));
   input.oninput = () => input.setCustomValidity(''); dialog.append(bar); document.body.append(dialog); dialog.onclose = () => dialog.remove(); dialog.showModal(); input.focus();
 }
 async function render() {

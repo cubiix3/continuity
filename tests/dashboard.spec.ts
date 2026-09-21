@@ -109,3 +109,14 @@ test('long handoffs and memory stay readable; inaccessible roots show an actiona
   renameSync(primary, join(root, 'moved-project'));
   await page.getByRole('link', { name: 'Workspaces', exact: true }).click(); await expect(page.getByRole('alert')).toContainText('unavailable'); await expect(page.getByRole('link', { name: 'Run diagnostics', exact: true })).toBeVisible(); await page.screenshot({ path: test.info().outputPath('error-dark.png'), fullPage: true });
 });
+
+test('conflicting approval remains blocked and reports the error inside the review dialog', async ({ page }) => {
+  const client = host.project(primary);
+  const original = client.propose({ key: 'conflicting-claim', kind: 'memory', text: 'Keep the original reviewed claim active.' }); host.review(primary, original.id, 'accepted', 'First reviewer');
+  const proposal = client.propose({ key: 'conflicting-claim', kind: 'memory', text: 'A different claim requiring conflict resolution.' });
+  await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' }); await page.getByRole('link', { name: 'Memories', exact: true }).click();
+  await page.locator(`a[href*="${proposal.id}"]`).click(); await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Approve this memory?' }); await expect(dialog).toBeVisible(); await expect(page.getByLabel('Reviewer name')).toBeFocused();
+  await page.getByLabel('Reviewer name').fill('Second reviewer'); await page.getByRole('button', { name: 'Approve memory', exact: true }).click(); await expect(dialog.getByRole('alert')).toContainText('conflict');
+  expect(client.memory(proposal.id).status).not.toBe('accepted'); await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0);
+});

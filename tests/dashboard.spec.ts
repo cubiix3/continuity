@@ -117,6 +117,26 @@ test('conflicting approval remains blocked and reports the error inside the revi
   await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' }); await page.getByRole('link', { name: 'Memories', exact: true }).click();
   await page.locator(`a[href*="${proposal.id}"]`).click(); await page.getByRole('button', { name: 'Approve', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Approve this memory?' }); await expect(dialog).toBeVisible(); await expect(page.getByLabel('Reviewer name')).toBeFocused();
+  await expect(dialog).toHaveAccessibleDescription(/explicit human review/);
   await page.getByLabel('Reviewer name').fill('Second reviewer'); await page.getByRole('button', { name: 'Approve memory', exact: true }).click(); await expect(dialog.getByRole('alert')).toContainText('conflict');
   expect(client.memory(proposal.id).status).not.toBe('accepted'); await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0);
+});
+
+test('source, handoff and context lists remain bounded beyond the first page', async ({ page }) => {
+  const client = host.project(primary);
+  for (let i = 0; i < 55; i++) writeFileSync(join(primary, `fixture-${i}.ts`), `export const retry${i} = ${i};`);
+  await client.sync();
+  for (let i = 0; i < 25; i++) {
+    client.createHandoff({ from: { agent: 'Demo', session: `bulk-${i}` }, task: { goal: `Review batch ${i}`, status: 'done' }, completed: [], remaining: [], decisions: [], files_changed: [], risks: [malicious], recommended_next_action: 'Inspect source.' });
+    await client.context({ task: 'retry', budget: 3000 });
+  }
+  await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' });
+  for (const screen of ['Sources', 'Context Audit']) {
+    await page.getByRole('link', { name: screen, exact: true }).click(); await expect(page.locator('tbody tr')).toHaveCount(20);
+    await page.getByRole('button', { name: 'Next page', exact: true }).click(); await expect(page.locator('tbody tr').first()).toBeVisible(); expect(await page.locator('tbody tr').count()).toBeLessThanOrEqual(20);
+  }
+  await page.getByRole('link', { name: 'Handoffs', exact: true }).click();
+  await page.getByRole('link', { name: 'Review batch 24', exact: true }).click(); await expect(page.getByText(malicious, { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => Object.hasOwn(window, 'DASHBOARD_XSS'))).toBe(false);
+  await page.getByRole('link', { name: 'Handoffs', exact: true }).click(); await page.getByRole('button', { name: 'Next page', exact: true }).click(); await expect(page.getByRole('link', { name: 'Review batch 0', exact: true })).toBeVisible();
 });

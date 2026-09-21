@@ -9,10 +9,13 @@ if (!process.env.npm_execpath) throw new Error('Run pnpm test:pack.');
 const root = mkdtempSync(join(tmpdir(), 'continuity-pack-'));
 const run = (args, cwd = process.cwd()) => execFileSync(process.execPath, [process.env.npm_execpath, ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 try {
+  mkdirSync('dist/packages/obsolete-release-fixture', { recursive: true });
+  writeFileSync('dist/packages/obsolete-release-fixture/stale.js', 'obsolete output must never ship');
   run(['pack', '--pack-destination', root]);
   const tarball = readdirSync(root).find(p => p.endsWith('.tgz')); assert.ok(tarball);
   const files = execFileSync('tar', ['-tf', join(root, tarball)], { encoding: 'utf8' }).trim().split(/\r?\n/);
-  assert.ok(files.every(p => /^package\/(?:dist\/packages\/|docs\/|package.json$|README.md$|LICENSE$)/.test(p)), 'Unexpected package entry');
+  assert.ok(files.every(p => /^package\/(?:dist\/packages\/|docs\/|package.json$|README.md$|LICENSE$|SECURITY.md$|CHANGELOG.md$)/.test(p)), 'Unexpected package entry');
+  assert.ok(!files.some(p => /obsolete-release-fixture|\.map$/.test(p)), 'Stale build output included');
   assert.ok(!files.some(p => /(?:\.continuity|\.db|tests\/|scripts\/|node_modules\/)/.test(p)), 'Private files included');
   const install = join(root, 'install'); mkdirSync(install); writeFileSync(join(install, 'package.json'), '{"private":true}');
   run(['add', '--ignore-scripts', join(root, tarball)], install);

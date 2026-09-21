@@ -2,7 +2,7 @@
   "name": "continuity-local",
   "version": "0.1.0",
   "private": true,
-  "description": "Persistent context for interchangeable agents",
+  "description": "Local continuity, memory and structured handoffs for AI agents",
   "type": "module",
   "license": "Apache-2.0",
   "repository": {
@@ -11,11 +11,14 @@
   },
   "homepage": "https://github.com/cubiix3/continuity#readme",
   "bugs": "https://github.com/cubiix3/continuity/issues",
+  "keywords": ["ai-agents", "developer-tools", "mcp", "local-first", "memory"],
   "files": [
     "dist/packages",
     "README.md",
     "LICENSE",
-    "docs"
+    "docs",
+    "SECURITY.md",
+    "CHANGELOG.md"
   ],
   "exports": {
     ".": "./dist/packages/sdk/src/index.js",
@@ -30,7 +33,7 @@
     "continuity": "dist/packages/cli/src/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node scripts/copy-dashboard.mjs",
+    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && node scripts/copy-dashboard.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run tests --exclude '**/*.spec.ts'",
     "lint": "eslint .",

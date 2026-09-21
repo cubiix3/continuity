@@ -150,7 +150,8 @@ Global flags: `--project <directory>`, `--home <directory>`, `--json`.
 
 ## Security and local-first operation
 
-- No network requests in the default operation. Explicitly enabled semantic adapters
+- No external network requests in the default operation. The Dashboard uses loopback
+  HTTP; explicitly enabled semantic adapters
   contact local services; memory and handoff operations remain local.
 - Identity, canonical paths, the database, and context history stay outside Git.
 - Retrieval refreshes source hashes before selecting context. Deleted or changed

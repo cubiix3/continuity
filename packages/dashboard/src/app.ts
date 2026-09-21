@@ -136,7 +136,8 @@ async function detail(kind: string, id: string, stamp: number) {
 function review(memory: Memory, decision: 'accepted' | 'rejected') {
   const dialog = el('dialog'), title = el('h2', decision === 'accepted' ? 'Approve this memory?' : 'Reject this memory?'), label = el('label', 'Reviewer name'), input = el('input'); input.id = 'reviewer'; input.maxLength = 100; label.htmlFor = input.id;
   title.id = 'review-title'; dialog.setAttribute('aria-labelledby', title.id);
-  dialog.append(title, el('p', 'This records an explicit human review. Source authority and conflict checks remain unchanged.'), label, input);
+  const description = el('p', 'This records an explicit human review. Source authority and conflict checks remain unchanged.'); description.id = 'review-description'; dialog.setAttribute('aria-describedby', description.id);
+  dialog.append(title, description, label, input);
   const failure = el('p'); failure.role = 'alert'; dialog.append(failure);
   const bar = el('div', undefined, 'toolbar'); bar.append(button('Cancel', () => dialog.close()), button(decision === 'accepted' ? 'Approve memory' : 'Reject memory', async () => {
     if (!input.value.trim()) { input.setCustomValidity('Enter a reviewer name.'); input.reportValidity(); return; }

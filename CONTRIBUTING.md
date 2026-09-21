@@ -7,6 +7,10 @@ Use Node 24 LTS and pnpm 10.30.1. Run `pnpm install --frozen-lockfile`, then
 `pnpm check`. The build precedes tests because integration tests execute the actual
 compiled CLI. Test fixtures create isolated temporary directories and databases.
 
+For the Dashboard, run `pnpm build`, `pnpm exec playwright install chromium`, and
+`pnpm test:ui`. `pnpm continuity dashboard` serves the built UI; no dev server is
+required. Run `pnpm test:pack` to verify a standalone tarball installation.
+
 Keep PRs focused. Explain the behavior before and after, the relevant test evidence,
 and any migration implications. New storage versions require a numbered migration;
 never edit an already-released migration. Security changes need negative tests.

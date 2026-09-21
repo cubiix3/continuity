@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,5 +23,27 @@ try {
   command('init'); assert.equal(command('sync').files, 1); assert.equal(command('context', 'reconnect').items.length, 1); assert.equal(command('doctor').integrity, 'ok');
   // Also exercise the installed package-manager bin shim, not just its target.
   const help = run(['exec', 'continuity', '--help'], install); assert.match(help, /Persistent context/);
-  console.log(JSON.stringify({ packed: true, installed_in_fresh_project: true, bin: true, context: true, file_count: files.length }));
+  assert.ok(files.includes('package/dist/packages/dashboard/public/index.html'));
+  assert.ok(files.includes('package/dist/packages/dashboard/src/app.js'));
+  const started = Date.now(); let startupMs;
+  const dashboard = spawn(process.execPath, [cli, '--home', join(root, 'state'), 'dashboard', '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    const url = await new Promise((resolve, reject) => {
+      let output = '';
+      const timeout = setTimeout(() => reject(new Error('Dashboard startup timed out')), 10000);
+      dashboard.on('error', error => { clearTimeout(timeout); reject(error); });
+      dashboard.on('exit', () => { clearTimeout(timeout); reject(new Error('Dashboard exited before ready')); });
+      dashboard.stderr.on('data', chunk => { output += chunk; const found = output.match(/http:\/\/127\.0\.0\.1:\d+/); if (found) { clearTimeout(timeout); resolve(found[0]); } });
+    });
+    startupMs = Date.now() - started;
+    const page = await fetch(url); assert.equal(page.status, 200); assert.match(await page.text(), /Local project continuity/);
+    assert.equal((await fetch(`${url}/app.js`)).status, 200); assert.equal((await fetch(`${url}/app.css`)).status, 200);
+    const session = await (await fetch(`${url}/dashboard-api/session`, { headers: { 'X-Continuity-Dashboard': '1' } })).json();
+    const registrations = await (await fetch(`${url}/dashboard-api/projects`, { headers: { 'X-Continuity-Token': session.capability } })).json(); assert.equal(registrations.projects.length, 1);
+  } finally {
+    if (dashboard.exitCode === null && dashboard.signalCode === null) {
+      const closed = new Promise(resolve => dashboard.once('close', resolve)); dashboard.kill(); await closed;
+    }
+  }
+  console.log(JSON.stringify({ packed: true, installed_in_fresh_project: true, bin: true, context: true, dashboard: true, dashboard_startup_ms: startupMs, file_count: files.length }));
 } finally { rmSync(root, { recursive: true, force: true }); }

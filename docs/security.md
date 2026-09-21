@@ -88,12 +88,29 @@ relocation. Sync detects size/mtime/canonical-path changes during individual rea
 Freshness is a checked filesystem snapshot, not a lock preventing another process
 from editing files after that snapshot. Retry failed syncs; stale fallback is not used.
 
-Human review is exposed only by the local host/CLI. It does not create a security
+Human review is exposed only by the trusted local host/CLI and human Dashboard. It does not create a security
 boundary against an agent that can execute arbitrary CLI commands as that same user.
 Reviewer labels are audit metadata, not authentication. Approved free-form claims
 remain below current sources and do not gain source-authoritative trust.
 
-## Local API
+## Local human Dashboard
+
+The Dashboard is an installation-wide trusted human client, separate from agent
+capabilities. It can navigate registered projects and workspaces, but object
+lookups still validate their ownership. It cannot select an arbitrary filesystem
+root or namespace. Source previews use the existing scanner and fail closed when
+the source is removed or unavailable; context audit is explicitly historical.
+
+`continuity dashboard` binds only to 127.0.0.1. Assets and API share an origin.
+Exact Host/Origin checks, Fetch-Site rejection and a custom-header bootstrap
+protect a per-process capability kept only in browser memory. Data reads require
+that capability; writes additionally require the exact Origin and JSON POST.
+No CORS grant, URL token, localStorage credential or cookie is used. CSP prevents
+remote scripts, framing and inline script execution; project content is rendered
+through text nodes. Browser extensions and arbitrary same-user processes are not
+isolated by this boundary. See [the Dashboard contract](dashboard.md).
+
+## Local agent API (`serve`)
 
 The CLI has no remote binding option. Every request needs a bearer token, including
 health checks. `CONTINUITY_API_TOKEN` supplies a host-managed token; otherwise a

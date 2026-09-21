@@ -12,4 +12,4 @@ The local Dashboard makes registrations, handoffs, memory review and context sel
 
 Agent orchestration, a code editor, Git management, cloud hosting, accounts, teams, telemetry, automatic repair, source editing, model downloads and retrieval research are outside scope. RIVET remains an experimental Draft/Shadow integration with legacy authority. There is no cutover commitment.
 
-Compact delivery remains independently reviewable in PR #7. Source diversity in PR #6 has not demonstrated a robust general default and is not part of this product scope. Neither is a Dashboard dependency.
+Compact delivery remains independently reviewable in PR #7. Source diversity in PR #6 did not demonstrate a robust general default; the experimental PR was closed without merging after this scope review. Its evidence remains in Git and the original PR. Neither is a Dashboard dependency.

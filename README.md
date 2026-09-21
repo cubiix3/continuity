@@ -1,12 +1,16 @@
 # Continuity
 
-**Persistent context for interchangeable agents.**
+**Persistent continuity for interchangeable agents.**
 
-Different agents forget each other's work. Continuity gives projects a local,
-provider-neutral context layer: current sources, bounded retrieval, source-backed
-memory proposals, and structured handoffs.
+Continuity is a local continuity layer for projects and AI agents. Keep project
+identity, isolated workspaces, reviewed durable memory and structured handoffs
+between sessions. Inspect where context came from and whether local state is healthy.
 
 Agents are replaceable. Project continuity is not.
+
+![Continuity Dashboard showing structured handoffs and pending memory review](docs/screenshots/dashboard.png)
+
+*Actual local Dashboard, with an explicitly labeled demo project. No hosted service or model account.*
 
 ## Why
 
@@ -25,8 +29,16 @@ After building and linking the CLI, run these commands inside a project:
 ```sh
 continuity init
 continuity sync
-continuity search "reconnect"
-continuity context "fix reconnect" --role implementation --budget 6000
+continuity dashboard
+```
+
+Open `http://127.0.0.1:4783`. Inspect projects, workspaces, handoffs, pending memory
+review, source freshness and historical context selection. The browser does not
+open automatically. See [Dashboard operation and security](docs/dashboard.md).
+
+Agents can record structured state and continue it in another session:
+
+```sh
 continuity handoff create --file handoff.json
 
 # In another agent's session, in the same project:
@@ -52,7 +64,7 @@ See the [runnable example](examples/README.md) for memory and handoff inputs.
 ## Architecture
 
 ```text
-CLI / generic adapter / MCP / localhost HTTP
+CLI / Dashboard / generic adapter / MCP / localhost HTTP
                      │
           project-bound Core client
                      │
@@ -68,10 +80,11 @@ Policy lives in the Core. Adapters receive a scoped capability, never database
 access. SQLite is the default storage adapter; FTS5 works entirely offline.
 See [architecture](docs/architecture.md) and [decisions](docs/adr/README.md).
 
-## Retrieval
+## Optional retrieval
 
-Continuity works offline with SQLite FTS5 by default. Optional semantic adapters
-can improve natural-language retrieval. Project isolation and policy enforcement
+Native Read/Grep/Git tools remain the default for coding-agent investigation.
+Continuity search is optional and works offline with SQLite FTS5. Optional semantic
+adapters help some queries but are not consistently superior. Project isolation and policy enforcement
 remain inside Continuity. See [setup and limits](docs/retrieval.md) and the
 [measured comparison](docs/retrieval-evaluation.md), including extra false positives.
 
@@ -98,7 +111,7 @@ Then, in your project:
 ```sh
 continuity init
 continuity sync
-continuity context "understand project rules"
+continuity dashboard
 continuity doctor
 ```
 
@@ -129,6 +142,7 @@ handoff create --file <path> Save structured JSON (use - for stdin)
 handoff latest | show <id>   Retrieve a handoff
 mcp                          Serve project-bound tools over stdio
 serve                        Start a local authenticated HTTP API
+dashboard                    Start the local human Dashboard on 127.0.0.1:4783
 ```
 
 Global flags: `--project <directory>`, `--home <directory>`, `--json`.
@@ -145,8 +159,9 @@ Global flags: `--project <directory>`, `--home <directory>`, `--json`.
   repositories are excluded. Secret filenames, generated directories, and
   recognizable credentials are excluded independently of `.gitignore`.
 - MCP and HTTP cannot select another project. The host fixes the project at startup.
-- HTTP binds to `127.0.0.1`; a local session token and browser-origin rejection
-  protect against casual exposure and cross-site requests.
+- `serve` binds to `127.0.0.1`; a bearer token and browser-origin rejection protect
+  the agent API. The separate Dashboard uses same-origin assets, an in-memory
+  browser capability, explicit protected writes and a restrictive CSP.
 
 Repository text remains untrusted input for an agent. An `authoritative` label
 means authoritative **within the project**, never permission to change Continuity
@@ -162,7 +177,8 @@ policy. Secret detection is heuristic; local data is not encrypted. Read the
 | Local HTTP v1 | Implemented; token, origin, and scope boundaries tested |
 | Claude Code | Verified on Windows 2.1.278; [setup](docs/integrations/claude-code.md) |
 | Codex | Verified on Windows CLI 0.155.1; [setup and sandbox findings](docs/integrations/codex.md) |
-| Command Code, Grok, RIVET | Unverified; future runtime validation |
+| RIVET | Experimental Draft/Shadow integration; legacy remains authoritative |
+| Command Code, Grok | Unverified; Grok structured-result compatibility remains unresolved |
 | Ollama / OpenViking | Optional local retrieval; [tested versions and limits](docs/retrieval.md) |
 
 See [adapter contracts and configuration](docs/adapters.md).
@@ -173,15 +189,12 @@ and failures before any semantic retrieval dependency is introduced.
 
 ## Roadmap
 
-The initial vertical slice is implemented. Next work is intentionally narrow:
+The [v0.1 product scope](docs/product-scope.md) centers on local continuity and
+inspection. The [RIVET dogfood conclusion](docs/research/rivet-dogfood.md) records
+what was and was not proven. Further retrieval research is paused.
 
-- Extend live-runtime verification beyond the tested Windows installations.
-- Source-specific rules and better handling of contradictory documents.
-- Reviewed retention execution, secure deletion, and incremental indexing for larger projects.
-- Retrieval quality on larger real-world corpora beyond the measured fixtures.
-
-Cross-project sharing, autonomous agents, a hosted service, and a UI are outside
-this release.
+Agent orchestration, cloud accounts, team sync, automatic repair, source editing
+and a RIVET cutover are outside this release. Release publication still requires review.
 
 ## Development
 
@@ -192,13 +205,16 @@ pnpm test
 pnpm lint
 # Or all four, in order:
 pnpm check
+pnpm exec playwright install chromium
+pnpm test:ui
 ```
 
 Build before running the compiled CLI integration tests. CI runs the same checks
 on Linux and Windows. See [contributing](CONTRIBUTING.md), [agent guidance](AGENTS.md),
 and the [security reporting policy](SECURITY.md).
 `pnpm test:pack` builds a whitelisted tarball, installs it into a fresh temporary
-project and exercises its real bin. `pnpm baseline` reruns the eight lexical cases.
+project and exercises its real bin and packaged Dashboard without a semantic backend.
+`pnpm baseline` reruns the eight lexical cases.
 See [local operations](docs/operations.md) for rebind, review and retention previews.
 
 Licensed under [Apache-2.0](LICENSE).

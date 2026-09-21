@@ -1,0 +1,9 @@
+# Local Dashboard boundary
+
+The Dashboard is a trusted local human client, not an agent adapter. A separate `dashboard` command serves bundled assets and `/dashboard-api` on 127.0.0.1. Existing `serve` continues rejecting browser Origin headers.
+
+The browser API validates its exact loopback Host and rejects foreign Origin/Fetch-Site headers. A per-process random capability is obtained only through a same-origin bootstrap request requiring a custom header. It stays in browser memory and is required on every data request, including reads. Writes additionally require the exact Origin and JSON content type. There is no CORS grant, URL token, cookie or localStorage secret. A hostile website cannot read the capability or issue the required cross-origin custom-header request without a rejected preflight. Local processes are trusted, as with other local developer tools.
+
+The API uses registered opaque project/workspace identities. Core inspection checks ownership before exposing historical records. Current source previews revalidate via the existing source scanner; unavailable roots fail closed. Historical bundles remain labeled historical. Lists use bounded SQL pages. No new database schema or second store is introduced.
+
+Assets have a restrictive CSP, no remote dependencies, and dynamic values use DOM text nodes. The UI uses the existing TypeScript build plus copying static assets, avoiding a second bundler or frontend runtime. Memory review calls the existing trusted host policy; no review capability is added to MCP or the agent HTTP API.

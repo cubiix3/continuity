@@ -11,6 +11,7 @@ import { OllamaRetrieval } from '../../retrieval-semantic/src/ollama.js';
 import { OpenVikingRetrieval } from '../../retrieval-semantic/src/openviking.js';
 import { randomUUID } from 'node:crypto';
 import { verifyWorkspace } from './workspaces.js';
+import { Inspection } from '../../core/src/inspection.js';
 
 export const CONTINUITY_HOST_API_VERSION = 1;
 export interface HostOptions { sources?: { include?: readonly string[]; exclude?: readonly string[] } }
@@ -38,6 +39,7 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       : new OllamaRetrieval(bound.embeddingCache(projectId), s.endpoint, s.model, s.document_prefix, s.query_prefix);
   };
   return {
+    inspection: new Inspection(storage),
     init: (path: string, name?: string) => resolver.init(path, name),
     rebind: (id: string, from: string, to: string) => resolver.rebind(id, from, to),
     review: (path: string, id: string, decision: 'accepted' | 'rejected', by: string) => reviewMemory(storage, resolver.resolve(path).project_id, id, decision, by),

@@ -1,6 +1,6 @@
 import type { Memory, StoragePort } from '../contracts.js';
 
-/** Trusted host operation. Never exported as an agent tool or HTTP operation. */
+/** Trusted host operation. Never exported as an agent tool or agent HTTP operation. */
 export function reviewMemory(storage: StoragePort, projectId: string, id: string, decision: 'accepted' | 'rejected', by: string): Memory {
   if (!by.trim() || by.length > 100) throw new Error('A reviewer label (1–100 characters) is required.');
   return storage.atomic(() => {

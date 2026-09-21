@@ -176,5 +176,7 @@ export class ProjectClient {
     if (!handoff) throw new Error('Handoff not found in this project.');
     return handoff;
   }
+  /** Trusted read-only source preview; refreshes through the ordinary source boundary. */
+  sourceSnapshot() { this.refresh(); return this.scopedResources(); }
   doctor() { return this.storage.diagnose(); }
 }

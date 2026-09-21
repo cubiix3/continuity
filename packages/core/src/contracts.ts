@@ -121,6 +121,15 @@ export interface StoragePort {
   close(): void;
 }
 
+export type InspectionKind = 'handoffs' | 'memories' | 'contexts' | 'sources' | 'revisions';
+export type InspectionRecord = Handoff | Memory | ContextBundle | Resource;
+export interface InspectionPage { items: { record: InspectionRecord; cursor: number; created_at?: string }[]; next: number | null }
+/** Optional host inspection port; existing StoragePort implementers remain compatible. */
+export interface InspectionStoragePort extends Pick<StoragePort, 'projects' | 'workspaces' | 'selection'> {
+  browse(projectId: string, workspaceId: string, kind: InspectionKind, limit: number, after: number, id?: string, status?: string, sourceFilter?: string): InspectionPage;
+  inspectionStats(projectId: string, workspaceId: string): { sources: number; memories: number; pending: number; handoffs: number; contexts: number };
+}
+
 export interface SourcePort { scan(project: Project): Resource[] }
 export type RetrievalMode = 'lexical' | 'semantic' | 'hybrid';
 export interface Passage {

@@ -56,6 +56,23 @@ it('persists workspace identity and scopes latest handoffs while allowing explic
   expect(() => host.project(foreign).handoff(created.id)).toThrow('not found');
 });
 
+it('keeps compact delivery bound to the destination workspace and rejects foreign lifecycle control', async () => {
+  const main = host.project(primary), work = host.workspace(primary, feature);
+  const created = work.createHandoff(handoff);
+  const [destination, worker] = await Promise.all([
+    main.agentContext({ task: 'reconnect', delivery_budget: 4096 }),
+    work.agentContext({ task: 'reconnect', delivery_budget: 4096, control: { handoff_id: created.id } }),
+    work.sync(),
+  ]);
+  expect(JSON.stringify(destination.delivery)).toContain('PRIMARY_CURRENT');
+  expect(JSON.stringify(destination.delivery)).not.toMatch(/FEATURE_CURRENT|B_CANARY/);
+  expect(JSON.stringify(worker.delivery)).toContain('FEATURE_CURRENT');
+  expect(JSON.stringify(worker.delivery)).not.toMatch(/PRIMARY_CURRENT|B_CANARY/);
+  expect(worker.delivery.items.some(item => item.kind === 'handoff')).toBe(true);
+  expect(() => main.inspect(worker.delivery.context)).toThrow('workspace');
+  await expect(main.agentContext({ task: 'reconnect', delivery_budget: 4096, control: { handoff_id: created.id } })).rejects.toThrow('workspace');
+});
+
 it('rejects copies, other repositories, forged workspace input and removed worktree bindings', async () => {
   git(foreign, 'init');
   expect(() => host.workspace(primary, foreign)).toThrow('another Git repository');

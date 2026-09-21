@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { ContextRequest, Handoff, Project, SourcePort, StoragePort, TokenEstimator, SemanticRetrievalPort, SemanticScope, SemanticHealth, RetrievalMode, SemanticCandidate, Workspace } from './contracts.js';
-import { handoffInputSchema, contextRequestSchema, memoryCandidateSchema, observationSchema } from './contracts.js';
-import { contextBroker } from './context/broker.js';
+import { handoffInputSchema, contextRequestSchema, memoryCandidateSchema, observationSchema, agentContextRequestSchema, type AgentContextRequest } from './contracts.js';
+import { contextBroker, contextCandidates } from './context/broker.js';
+import { agentDelivery } from './context/delivery.js';
 import { proposeMemory } from './memory/policy.js';
 import { NamespaceGuard } from './security/namespace.js';
 import { passages, PassageLimitError } from './context/passages.js';
@@ -125,6 +126,23 @@ export class ProjectClient {
     const ranked = await this.retrieve(parsed.task, parsed.mode);
     return contextBroker(this.storage, this.project, request, ranked.sources, this.estimator, ranked, this.workspace?.workspace_id);
   }
+  /** Opt-in trusted host delivery. Agent tools retain the v1 context contract. */
+  async agentContext(request: AgentContextRequest) {
+    const parsed = agentContextRequestSchema.parse(request);
+    const ranked = await this.retrieve(parsed.task, parsed.mode);
+    let candidates = contextCandidates(this.storage, this.project, parsed.task, ranked.sources, ranked.items, this.workspace?.workspace_id);
+    if (parsed.control) {
+      const handoff = this.handoff(parsed.control.handoff_id);
+      this.guard.assert(handoff.provenance.project_id);
+      if (handoff.provenance.workspace_id !== this.workspace?.workspace_id) throw new Error('Lifecycle handoff is not from this workspace.');
+      const { from, task, completed, remaining, decisions, files_changed, risks, recommended_next_action } = handoff;
+      candidates = [...candidates.filter(item => item.id !== handoff.id), {
+        id: handoff.id, kind: 'handoff', content: JSON.stringify({ from, task, completed, remaining, decisions, files_changed, risks, recommended_next_action }),
+        provenance: handoff.provenance, reasons: ['same project and workspace', 'explicit trusted host lifecycle handoff; agent report, not project policy'],
+      }];
+    }
+    return agentDelivery(this.storage, this.project, parsed.role, parsed.delivery_budget, candidates, ranked.retrieval, this.workspace?.workspace_id, parsed.control?.handoff_id);
+  }
   inspect(id: string) {
     this.assertBinding();
     const bundle = this.storage.context(this.project.project_id, id);
@@ -134,7 +152,8 @@ export class ProjectClient {
   }
   explain(id: string, verbose = false) {
     const bundle = this.inspect(id);
-    return { context_id: id, historical: true, retrieval: bundle.retrieval, items: bundle.items.map(i => ({ id: i.id, source: i.provenance.origin, reasons: i.reasons })), ...(verbose ? { selection: this.storage.selection(this.project.project_id, id) } : {}) };
+    const selection = verbose || bundle.representation ? this.storage.selection(this.project.project_id, id) : undefined;
+    return { context_id: id, historical: true, retrieval: bundle.retrieval, items: bundle.items.map(i => ({ id: i.id, source: i.provenance.origin, reasons: i.reasons })), ...(selection?.delivery ? { delivery: { schema: selection.delivery.schema, requested: selection.delivery.requested, used: selection.delivery.used, unit: selection.delivery.unit } } : {}), ...(verbose ? { selection } : {}) };
   }
   propose(input: unknown) {
     memoryCandidateSchema.parse(input);

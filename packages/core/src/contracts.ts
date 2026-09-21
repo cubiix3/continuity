@@ -69,6 +69,21 @@ export const contextRequestSchema = z.object({
   mode: z.enum(['lexical', 'semantic', 'hybrid']).optional(),
 }).strict();
 export type ContextRequest = z.input<typeof contextRequestSchema>;
+/** Trusted host only; deliberately not part of the MCP/HTTP context request. */
+export const agentContextRequestSchema = contextRequestSchema.omit({ budget: true, provider_model_hint: true }).extend({
+  delivery_budget: z.number().int().min(512).max(32768),
+  control: z.object({ handoff_id: z.string().min(1).max(100) }).strict().optional(),
+}).strict();
+export type AgentContextRequest = z.input<typeof agentContextRequestSchema>;
+export interface AgentContext {
+  schema: 'continuity.agent-context/1';
+  context: string;
+  project: string;
+  workspace?: string;
+  role: string;
+  semantics: string;
+  items: { ref: string; kind: ContextKind; path: string; lines: [number, number] | null; trust: Trust; text: string }[];
+}
 export interface ContextItem {
   id: string;
   kind: ContextKind;
@@ -83,6 +98,8 @@ export interface ContextBundle {
   project_id: string;
   workspace_id?: string;
   role: string;
+  /** Only records created by agentContext(): budget below is the local audit size. */
+  representation?: 'agent-delivery-audit/1';
   retrieval?: { requested: RetrievalMode; effective: RetrievalMode; status: string };
   items: ContextItem[];
   budget: { requested: number; used: number; unit: 'utf8_bytes'; estimated_tokens?: number; provider_model_hint?: string };
@@ -94,6 +111,11 @@ export interface RetentionClass { name: string; records: number; eligible: numbe
 export interface SelectionAudit {
   candidates: number;
   entries: { id: string; source: string; outcome: 'included' | 'duplicate' | 'budget'; reasons: string[] }[];
+  delivery?: {
+    schema: 'continuity.agent-context/1'; requested: number; used: number; unit: 'utf8_bytes';
+    entries: { ref: string; id: string; rank: number; provenance: Provenance; mandatory: boolean;
+      delivery_bytes: number; audit_bytes: number; outcome: 'included' | 'duplicate' | 'budget' }[];
+  };
 }
 
 /** Trusted host port; never exposed to an agent adapter. Every operation is scoped. */

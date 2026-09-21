@@ -53,6 +53,9 @@ it('preserves the v1 contract and does not expose host delivery or control to ag
   expect(Buffer.byteLength(JSON.stringify(v1))).toBe(v1.budget.used);
   expect(v1.budget.used).toBeLessThanOrEqual(1600);
   expect('agentContext' in adapter).toBe(false);
+  const fallback = await client.agentContext({ ...request, mode: 'hybrid' });
+  expect(fallback.retrieval.effective).toBe('lexical');
+  expect(fallback.delivery.items.some(item => item.text.includes('Reconnect'))).toBe(true);
   await expect(adapter.context({ task: 'reconnect', control: { handoff_id: 'forged' } } as never)).rejects.toThrow();
   await expect(client.agentContext({ ...request, project_id: 'foreign' } as never)).rejects.toThrow();
   await expect(client.agentContext({ ...request, workspace_id: 'foreign' } as never)).rejects.toThrow();

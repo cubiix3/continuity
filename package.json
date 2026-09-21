@@ -5,21 +5,38 @@
   "description": "Persistent context for interchangeable agents",
   "type": "module",
   "license": "Apache-2.0",
-  "repository": { "type": "git", "url": "https://github.com/cubiix3/continuity.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cubiix3/continuity.git"
+  },
   "homepage": "https://github.com/cubiix3/continuity#readme",
   "bugs": "https://github.com/cubiix3/continuity/issues",
-  "files": ["dist/packages", "README.md", "LICENSE", "docs"],
-  "exports": { ".": "./dist/packages/sdk/src/index.js", "./core": "./dist/packages/core/src/index.js", "./generic": "./dist/packages/adapter-generic/src/index.js" },
-  "engines": { "node": ">=24.13.0" },
+  "files": [
+    "dist/packages",
+    "README.md",
+    "LICENSE",
+    "docs"
+  ],
+  "exports": {
+    ".": "./dist/packages/sdk/src/index.js",
+    "./core": "./dist/packages/core/src/index.js",
+    "./generic": "./dist/packages/adapter-generic/src/index.js"
+  },
+  "engines": {
+    "node": ">=24.13.0"
+  },
   "packageManager": "pnpm@10.30.1",
-  "bin": { "continuity": "dist/packages/cli/src/index.js" },
+  "bin": {
+    "continuity": "dist/packages/cli/src/index.js"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-dashboard.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run tests --exclude '**/*.spec.ts'",
     "lint": "eslint .",
     "prepack": "pnpm build",
     "test:pack": "node scripts/pack-smoke.mjs",
+    "test:ui": "playwright test",
     "baseline": "node scripts/retrieval-baseline.mjs",
     "test:agents": "node scripts/real-agents.mjs",
     "continuity": "node dist/packages/cli/src/index.js",
@@ -33,6 +50,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^24.0.0",
     "eslint": "^10.11.0",
     "typescript": "^6.0.0",

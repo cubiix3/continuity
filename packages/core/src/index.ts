@@ -6,6 +6,7 @@ import { proposeMemory } from './memory/policy.js';
 import { NamespaceGuard } from './security/namespace.js';
 import { passages, PassageLimitError } from './context/passages.js';
 import { rankPassages } from './context/ranking.js';
+import type { CompositionPolicy } from './context/composition.js';
 
 export * from './contracts.js';
 export * from './projects/resolver.js';
@@ -14,7 +15,7 @@ export * from './security/namespace.js';
 /** A host-created, project-bound capability. Adapters receive this, never storage. */
 export class ProjectClient {
   private readonly guard: NamespaceGuard;
-  constructor(private readonly storage: StoragePort, private readonly source: SourcePort, private readonly project: Project, private readonly estimator?: TokenEstimator, private readonly semantic?: SemanticRetrievalPort, private readonly defaultMode: RetrievalMode = semantic ? 'hybrid' : 'lexical', private readonly workspace?: Workspace) {
+  constructor(private readonly storage: StoragePort, private readonly source: SourcePort, private readonly project: Project, private readonly estimator?: TokenEstimator, private readonly semantic?: SemanticRetrievalPort, private readonly defaultMode: RetrievalMode = semantic ? 'hybrid' : 'lexical', private readonly workspace?: Workspace, private readonly composition: CompositionPolicy = 'flat') {
     this.guard = new NamespaceGuard(project);
   }
   private assertBinding() {
@@ -123,7 +124,7 @@ export class ProjectClient {
   async context(request: ContextRequest) {
     const parsed = contextRequestSchema.parse(request);
     const ranked = await this.retrieve(parsed.task, parsed.mode);
-    return contextBroker(this.storage, this.project, request, ranked.sources, this.estimator, ranked, this.workspace?.workspace_id);
+    return contextBroker(this.storage, this.project, request, ranked.sources, this.estimator, ranked, this.workspace?.workspace_id, this.composition);
   }
   inspect(id: string) {
     this.assertBinding();

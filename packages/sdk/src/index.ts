@@ -11,12 +11,14 @@ import { OllamaRetrieval } from '../../retrieval-semantic/src/ollama.js';
 import { OpenVikingRetrieval } from '../../retrieval-semantic/src/openviking.js';
 import { randomUUID } from 'node:crypto';
 import { verifyWorkspace } from './workspaces.js';
+import type { CompositionPolicy } from '../../core/src/context/composition.js';
 
 export const CONTINUITY_HOST_API_VERSION = 1;
-export interface HostOptions { sources?: { include?: readonly string[]; exclude?: readonly string[] } }
+export interface HostOptions { sources?: { include?: readonly string[]; exclude?: readonly string[] }; composition?: CompositionPolicy }
 
 /** Trusted composition root for local hosts. Do not pass this host into agent tools. */
 export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedir(), '.continuity'), options: HostOptions = {}) {
+  if (options.composition !== undefined && !['flat', 'source-diversity'].includes(options.composition)) throw new Error('Unknown host composition policy.');
   const config = retrievalConfig(home);
   const storage = new SqliteStorage(join(home, 'continuity.db'));
   const resolver = new ProjectResolver(storage);
@@ -53,12 +55,12 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       const semantic = semanticFor(bound, project.project_id);
       const source = sourceFor(project, root);
       const workspaceSource = { scan: () => { verifyWorkspace(project.root, root); return source.scan({ ...project, root }); } };
-      return new ProjectClient(bound, workspaceSource, project, undefined, semantic, semantic ? config.mode : 'lexical', workspace);
+      return new ProjectClient(bound, workspaceSource, project, undefined, semantic, semantic ? config.mode : 'lexical', workspace, options.composition);
     },
     project: (path: string) => {
       const project = resolver.resolve(path);
       const semantic = semanticFor(storage, project.project_id);
-      return new ProjectClient(storage, sourceFor(project), project, undefined, semantic, semantic ? config.mode : 'lexical');
+      return new ProjectClient(storage, sourceFor(project), project, undefined, semantic, semantic ? config.mode : 'lexical', undefined, options.composition);
     },
     doctor: () => {
       const health = storage.diagnose();

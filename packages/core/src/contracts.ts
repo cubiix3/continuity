@@ -93,7 +93,7 @@ export interface Diagnostics { integrity: string; schema_version: number; fts5: 
 export interface RetentionClass { name: string; records: number; eligible: number; policy: string }
 export interface SelectionAudit {
   candidates: number;
-  entries: { id: string; source: string; outcome: 'included' | 'duplicate' | 'budget'; reasons: string[] }[];
+  entries: { id: string; source: string; outcome: 'included' | 'duplicate' | 'budget'; reasons: string[]; composition?: { lane: 'control' | 'evidence'; pass: 'primary' | 'additional' } }[];
 }
 
 /** Trusted host port; never exposed to an agent adapter. Every operation is scoped. */

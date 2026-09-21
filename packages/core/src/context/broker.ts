@@ -4,8 +4,10 @@ import type { ContextBundle, ContextItem, ContextRequest, Project, Resource, Sto
 import { passages } from './passages.js';
 import { rankPassages } from './ranking.js';
 import { NamespaceGuard } from '../security/namespace.js';
+import { compositionOrder } from './composition.js';
+import type { CompositionPolicy } from './composition.js';
 
-export function contextBroker(storage: StoragePort, project: Project, request: ContextRequest, sources: Resource[], estimator?: TokenEstimator, ranked?: { items: ContextItem[]; retrieval: NonNullable<ContextBundle['retrieval']> }, workspaceId?: string): ContextBundle {
+export function contextBroker(storage: StoragePort, project: Project, request: ContextRequest, sources: Resource[], estimator?: TokenEstimator, ranked?: { items: ContextItem[]; retrieval: NonNullable<ContextBundle['retrieval']> }, workspaceId?: string, composition: CompositionPolicy = 'flat'): ContextBundle {
   const { task, role, budget, provider_model_hint } = contextRequestSchema.parse(request);
   const guard = new NamespaceGuard(project);
   const candidates: ContextItem[] = ranked?.items ?? rankPassages(sources, passages(sources), storage.search(project.project_id, task, 100), [], task, 'lexical');
@@ -39,15 +41,24 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
   const record = (item: ContextItem, outcome: SelectionAudit['entries'][number]['outcome']) => {
     if (selection.entries.length < 500) selection.entries.push({ id: item.id, source: item.provenance.origin, outcome, reasons: item.reasons });
   };
-  for (const item of candidates) {
+  for (const item of candidates) guard.assert(item.provenance.project_id);
+  for (const { item, lane, pass } of compositionOrder(candidates, composition)) {
     guard.assert(item.provenance.project_id);
     if (seen.has(item.content)) { record(item, 'duplicate'); continue; }
     seen.add(item.content);
     bundle.items.push(item);
     estimate();
     bundle.budget.used = budget; // Reserve maximum digit width while measuring.
-    if (size() > budget) { bundle.items.pop(); estimate(); record(item, 'budget'); }
+    if (size() > budget) {
+      bundle.items.pop(); estimate();
+      if (composition !== 'flat' && lane === 'control') throw new Error('Mandatory project rules exceed context byte budget. Increase the host budget.');
+      record(item, 'budget');
+    }
     else record(item, 'included');
+    if (composition !== 'flat') {
+      const entry = selection.entries.at(-1);
+      if (entry?.id === item.id) entry.composition = { lane, pass };
+    }
   }
   bundle.budget.used = budget;
   for (let n = 0; n < 4; n++) bundle.budget.used = size();

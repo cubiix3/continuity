@@ -10,3 +10,4 @@ These decisions describe implemented boundaries. Revisit them with evidence, not
 - [006 — Host-bound Git workspaces](006-host-workspaces.md)
 - [007 — Local Dashboard browser boundary](007-local-dashboard.md)
 - [009 — Automatic activation with agent-observation trust](009-automatic-memory.md)
+- [010: Local per-project source scope](010-local-source-scope.md)

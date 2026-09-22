@@ -54,6 +54,20 @@ project.command('rebind <id>').requiredOption('--from <path>', 'previous canonic
 program.command('retention').command('status').action(() => output(runtime().retention(program.opts<{ project: string }>().project)));
 program.command('prune').requiredOption('--dry-run', 'preview only; deletion is not implemented').action(() => output(runtime().retention(program.opts<{ project: string }>().project)));
 program.command('sync').description('Refresh source hashes and optional semantic index').action(async () => output(await client().sync()));
+const sources = program.command('sources').description('Manage local project source scope without changing project identity');
+sources.command('show').action(() => output(runtime().sourceScope(client().status().project_id)));
+for (const action of ['preview', 'set'] as const) {
+  sources.command(action).description(action === 'preview' ? 'Read-only source selection and limit check' : 'Atomically replace this project filter')
+    .option('--include <patterns...>', 'project-relative allowlist patterns')
+    .option('--exclude <patterns...>', 'project-relative denylist patterns')
+    .action((options: { include?: string[]; exclude?: string[] }) => {
+      const path = program.opts<{ project: string }>().project;
+      const candidate = options.include || options.exclude ? options : undefined;
+      if (action === 'set') output(runtime().setSourceScope(path, candidate));
+      else { const result = runtime().previewSourceScope(path, candidate); output(result); if (result.limit_exceeded) process.exitCode = 1; }
+    });
+}
+sources.command('clear').action(() => output(runtime().clearSourceScope(program.opts<{ project: string }>().project)));
 program.command('search <query>').description('Search current project sources').option('--mode <mode>', 'lexical, semantic, hybrid').action(async (query: string, options: { mode?: RetrievalMode }) => output(await client().search(query, options.mode)));
 program.command('context <task>').description('Build a bounded context bundle').option('--mode <mode>', 'lexical, semantic, hybrid').option('--role <role>', 'implementation, reviewer, planning', 'implementation').option('--budget <bytes>', 'maximum serialized UTF-8 bytes', '6000').action(async (task: string, options: { role: string; budget: string; mode?: RetrievalMode }) => contextOutput(await client().context({ task, role: options.role as ContextRequest['role'], budget: Number(options.budget), ...(options.mode ? { mode: options.mode } : {}) })));
 program.command('inspect <id>').description('Read a saved historical context bundle').action((id: string) => output(client().inspect(id)));

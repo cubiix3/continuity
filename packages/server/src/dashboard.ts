@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import type { openContinuity } from '../../sdk/src/index.js';
 import { passages } from '../../core/src/context/passages.js';
+import { SourceScopeError } from '../../sdk/src/source-scope.js';
 
 type Host = ReturnType<typeof openContinuity>;
 const querySchema = z.object({ project: z.string().max(100).optional(), workspace: z.string().max(100).default(''), kind: z.enum(['handoffs', 'memories', 'contexts', 'sources', 'revisions']).default('handoffs'), limit: z.coerce.number().int().min(1).max(50).default(20), after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0), id: z.string().min(1).max(150).optional(), status: z.enum(['active', 'source_backed', 'agent_learned', 'conflicts', 'accepted', 'proposed', 'needs_attention', 'rejected', 'superseded', 'forgotten']).optional(), source_filter: z.enum(['fresh', 'stale', 'rules', 'docs', 'code']).optional() }).strict();
@@ -53,6 +54,7 @@ export function createDashboardServer(host: Host, assetsRoot = new URL('../../da
           return send(200, { project: scope.project, selected: scope.workspace, workspaces: all.slice(q.after, q.after + q.limit), next: all.length > q.after + q.limit ? q.after + q.limit : null });
         }
         if (url.pathname === '/dashboard-api/status') return send(200, client().status());
+        if (url.pathname === '/dashboard-api/source-scope') return send(200, host.sourceScope(q.project));
         if (url.pathname === '/dashboard-api/stats') return send(200, host.inspection.stats(q.project, q.workspace));
         if (url.pathname === '/dashboard-api/retrieval') return send(200, await host.inspectionRetrievalHealth(q.project, q.workspace));
         if (url.pathname === '/dashboard-api/records') {
@@ -84,6 +86,7 @@ export function createDashboardServer(host: Host, assetsRoot = new URL('../../da
       }
       send(404, { error: 'Dashboard route not found.' });
     } catch (error) {
+      if (error instanceof SourceScopeError) return send(409, { error: error.message });
       send(error instanceof z.ZodError || error instanceof SyntaxError ? 400 : 409, { error: error instanceof z.ZodError || error instanceof SyntaxError ? 'Invalid dashboard request.' : 'Registration, workspace or record is unavailable. Run diagnostics; source previews require a current accessible workspace.' });
     }
   });

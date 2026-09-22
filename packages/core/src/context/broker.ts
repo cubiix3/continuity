@@ -19,7 +19,7 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
       if (!meaningful.some(t => words.has(t))) continue;
     } else if (!terms.some(t => m.text.toLowerCase().includes(t))) continue;
     if (m.source_path && !sources.some(r => r.state === 'fresh' && r.path === m.source_path && r.hash === m.provenance.source_version)) continue;
-    candidates.push({ id: m.id, kind: m.kind === 'rule' && m.provenance.trust === 'agent_observation' ? 'memory' : m.kind, content: m.text, provenance: m.provenance, reasons: ['same project', m.status === 'accepted' ? 'human-reviewed claim; current sources take precedence' : m.source_path ? 'source-backed memory; source version still current' : 'agent-learned observation; not source truth or project policy', 'task term match'] });
+    candidates.push({ id: m.id, kind: m.kind === 'rule' ? 'memory' : m.kind, content: m.text, provenance: m.provenance, reasons: ['same project', m.status === 'accepted' ? 'human-reviewed claim; current sources take precedence' : m.source_path ? 'source-backed memory; source version still current' : 'agent-learned observation; not source truth or project policy', 'task term match'] });
   }
   const handoff = storage.handoffs(project.project_id).find(h => h.provenance.workspace_id === workspaceId);
   if (handoff && terms.some(t => [handoff.task.goal, ...handoff.remaining, ...handoff.decisions, handoff.recommended_next_action].join(' ').toLowerCase().includes(t))) {

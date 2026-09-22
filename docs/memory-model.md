@@ -50,6 +50,8 @@ The stable key defines a claim. Different texts under the same key conflict:
 - Two contradictory excerpts that both remain in current sources are quarantined,
   not resolved by timestamp. A human-reviewed conflicting claim is never silently
   replaced. Correct the sources or use the optional trusted override workflow.
+- One workspace cannot declare another workspace's source stale. Its conflicting
+  candidate is quarantined without replacing or deactivating the other source claim.
 
 All changes and their revisions occur in one existing storage transaction. Duplicate
 active/agent-quarantined facts return the existing ID without another revision.
@@ -65,8 +67,9 @@ agent candidate waits for a human approval inbox.
 Current rules and source passages retain their existing order. Relevant memory
 follows: human-reviewed, fresh source-backed, then agent-learned. Agent lessons
 require meaningful task-token overlap and are explicitly described as observations,
-not source truth or project policy. Choosing `kind: rule` does not make an agent
-lesson a mandatory project rule. No semantic/ranking policy is changed.
+not source truth or project policy. Memory records categorized as `rule` are delivered
+as memories; only actual source rules occupy the project-rule context kind. The stored
+category remains intact. No source retrieval/ranking policy is changed.
 
 Only `persist` and `accepted` are eligible. Quarantined, rejected, forgotten and
 superseded rows are excluded. A source-bound memory must still match the current

@@ -47,10 +47,23 @@ it('keeps concurrent worktree sources separate while sharing reviewed project me
 it('shares learned project conventions without promoting them to workspace source rules', async () => {
   const a = host.project(primary), b = host.workspace(primary, feature);
   const memory = a.propose({ key: 'reconnect-convention', kind: 'rule', text: 'Reconnect replacement retains registry identity across provider sessions.', from: { agent: 'generic', session: 'session-a' } });
+  const text = 'Reconnect policy preserves the shared source convention.';
+  for (const directory of [primary, feature]) writeFileSync(join(directory, 'convention.md'), `# Source convention\n${text}\nAdditional current project context.`);
+  const sourceMemory = a.propose({ key: 'source-convention', kind: 'rule', text, source_path: 'convention.md' });
   const context = await b.context({ task: 'Reconnect registry' });
   expect(context.items.find(item => item.id === memory.id)).toMatchObject({ kind: 'memory', provenance: { trust: 'agent_observation' } });
+  expect(context.items.find(item => item.id === sourceMemory.id)).toMatchObject({ kind: 'memory', provenance: { trust: 'derived' } });
   expect(host.inspection.page(context.project_id, context.workspace_id!, 'contexts', 1, 0, context.context_id).items).toHaveLength(1);
   expect((await host.project(foreign).context({ task: 'Reconnect registry' })).items.some(item => item.id === memory.id)).toBe(false);
+});
+
+it('does not declare another workspace source stale to supersede its memory', () => {
+  const mainText = 'Reconnect policy retains the primary registry until shutdown.';
+  const featureText = 'Reconnect policy clears the worker registry immediately.';
+  writeFileSync(join(primary, 'policy.md'), mainText); writeFileSync(join(feature, 'policy.md'), featureText);
+  const original = host.project(primary).propose({ key: 'workspace-policy', kind: 'decision', text: mainText, source_path: 'policy.md' });
+  const other = host.workspace(primary, feature).propose({ key: 'workspace-policy', kind: 'decision', text: featureText, source_path: 'policy.md' });
+  expect(other.status).toBe('needs_attention'); expect(host.project(primary).memory(original.id).status).toBe('persist');
 });
 
 it('persists workspace identity and scopes latest handoffs while allowing explicit project transitions', async () => {

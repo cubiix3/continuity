@@ -10,12 +10,13 @@ const routine = /(tests? (passed|succeeded)|build (passed|succeeded)|i (modified
 export function proposeMemory(storage: StoragePort, project: Project, input: unknown, sources: Resource[]): MemoryProposal {
   const candidate = memoryCandidateSchema.parse(input);
   const previous = storage.memories(project.project_id);
-  const current = (m: Memory) => sources.some(r => r.project_id === project.project_id && r.provenance.project_id === project.project_id && r.state === 'fresh' && r.path === m.source_path && r.hash === m.provenance.source_version && r.content.includes(m.text));
+  const current = (m: Memory) => sources.some(r => r.project_id === project.project_id && r.provenance.project_id === project.project_id && r.provenance.workspace_id === m.provenance.workspace_id && r.state === 'fresh' && r.path === m.source_path && r.hash === m.provenance.source_version && r.content.includes(m.text));
   const source = sources.find(r => r.project_id === project.project_id && r.provenance.project_id === project.project_id && r.path === candidate.source_path && r.state === 'fresh');
   const backed = !!source && source.content.includes(candidate.text);
   const matches = previous.filter(m => m.key === candidate.key && (active(m) || m.status === 'needs_attention'));
   const conflicts = matches.filter(m => m.text !== candidate.text);
-  const replaceable = (m: Memory) => learned(m) || (m.status !== 'accepted' && !!m.source_path && !current(m));
+  const sameEvidenceScope = (m: Memory) => m.provenance.workspace_id === source?.provenance.workspace_id;
+  const replaceable = (m: Memory) => learned(m) || (m.status !== 'accepted' && !!m.source_path && sameEvidenceScope(m) && !current(m));
   const duplicate = matches.find(m => m.text === candidate.text && m.kind === candidate.kind && m.source_path === candidate.source_path && (candidate.source_path ? current(m) : learned(m) || m.status === 'accepted'));
   const resolvesDuplicate = backed && duplicate?.status === 'persist' && conflicts.length > 0 && conflicts.every(replaceable);
   if (duplicate && (active(duplicate) || !backed) && !resolvesDuplicate) return { ...duplicate, outcome: 'duplicate' };
@@ -41,7 +42,7 @@ export function proposeMemory(storage: StoragePort, project: Project, input: unk
     } else {
       status = 'needs_attention'; outcome = 'quarantined'; reason = 'Conflicting key. No latest-wins decision; inspect current source or use an explicit human override.';
       // Stronger source/human claims remain active against a lower-trust observation.
-      for (const old of conflicts.filter(m => active(m) && (learned(m) || (backed && m.status !== 'accepted')))) {
+      for (const old of conflicts.filter(m => active(m) && (learned(m) || (backed && m.status !== 'accepted' && sameEvidenceScope(m))))) {
         storage.saveMemory({ ...old, status: 'needs_attention', reason: 'Conflicting same-key claims quarantined; current source or explicit correction is required.' });
       }
     }

@@ -9,6 +9,9 @@
   --text:#202624;
   --muted:#616a66;
   --accent:#2e6951;
+  --mark-from:#5f9c80;
+  --mark-to:#2b7555;
+  --mark-dot:#1f6448;
   --accent-surface:#e9f0ec;
   --positive:#327453;
   --warning:#926020;
@@ -35,6 +38,9 @@
     --text:#e3e7e5;
     --muted:#a5aeaa;
     --accent:#93bea6;
+    --mark-from:#6aa98a;
+    --mark-to:#a8ecc9;
+    --mark-dot:#bdf0d4;
     --accent-surface:#293830;
     --positive:#8ebc9e;
     --warning:#d4ad73;
@@ -59,7 +65,10 @@ button.danger { color:var(--danger) }
 .sidebar { position:fixed; inset:0 auto 0 0; width:var(--sidebar-width); background:var(--sidebar); border-right:1px solid var(--border); padding:var(--space-6) var(--space-3); display:flex; flex-direction:column; overflow-y:auto }
 .brand { display:flex; align-items:center; gap:10px; padding:0 var(--space-2); color:var(--text); font-size:17px; font-weight:650; letter-spacing:-.4px }
 .brand:hover { text-decoration:none }
-.brand-mark { display:grid; place-items:center; width:24px; height:24px; border:1px solid var(--accent); border-radius:7px; font:600 20px/1 var(--mono); color:var(--accent) }
+.brand-mark { width:24px; height:24px; flex-shrink:0 }
+.mark-from { stop-color:var(--mark-from) }
+.mark-to { stop-color:var(--mark-to) }
+.mark-dot { fill:var(--mark-dot) }
 nav { margin-top:var(--space-8) }
 .nav-group { display:grid; gap:var(--space-1); margin-bottom:var(--space-6) }
 .nav-label { font-size:11px; font-weight:600; color:var(--muted); padding:0 var(--space-3) var(--space-1) }

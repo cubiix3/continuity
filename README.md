@@ -159,8 +159,9 @@ to explicit memory actions and workspace sync. See [Dashboard operation and secu
 
 - **Local by default.** State lives in a local SQLite database outside your
   repository. No cloud service, account, model key or telemetry.
-- **Loopback only.** The Dashboard and HTTP API bind to `127.0.0.1`, with
-  same-origin checks, a restrictive CSP and token-protected writes.
+- **Loopback only.** The Dashboard and HTTP API bind to `127.0.0.1`. Every HTTP API
+  request needs a bearer token; the Dashboard adds same-origin checks, a restrictive
+  CSP and a per-session capability for writes.
 - **Project isolation.** MCP and HTTP clients cannot select another project;
   cross-project retrieval is denied.
 - **Untrusted source text.** Repository content is data, never permission to
@@ -204,16 +205,16 @@ access. FTS5 retrieval works fully offline; semantic retrieval is optional and
 init                          Register the current directory
 status | doctor               Identity and last sync | storage and registration health
 sync                          Refresh the source index
-sources show | preview        Current source scope | read-only selection and limit check
-sources set | clear           Replace or remove this project's local source filter
+sources show | preview        Current source scope | read-only selection and limit check (main)
+sources set | clear           Replace or remove this project's local source filter (main)
 search <query>                Current source excerpts
 context <task>                Build a byte-budgeted context bundle
 inspect | explain <id>        Read a historical bundle | explain its selection
 memory list | show <id>       Inspect memories
-memory remember <text>        Record with --key and --source or --agent/--session
-memory forget <id>            Deactivate; revision history is kept
-memory pending                Legacy/incomplete candidates and unresolved conflicts
-memory approve | reject <id>  Optional human review with --by <reviewer>
+memory remember <text>        Record with --key and --source (--agent/--session on main)
+memory forget <id>            Deactivate; revision history is kept (main)
+memory pending                Candidates awaiting review and unresolved conflicts
+memory approve | reject <id>  Human review with --by <reviewer>
 handoff create --file <path>  Save structured JSON (use - for stdin)
 handoff latest | show <id>    Retrieve a handoff
 project list | status         Inspect local registrations
@@ -225,7 +226,7 @@ serve                         Local authenticated HTTP API on 127.0.0.1
 dashboard                     Local Dashboard on 127.0.0.1:4783
 ```
 
-Global flags: `--project <directory>`, `--home <directory>`, `--json`.
+Commands marked (main) are not in v0.1.0. Global flags: `--project <directory>`, `--home <directory>`, `--json`.
 `CONTINUITY_HOME` overrides the default `~/.continuity` state directory.
 
 ## Documentation

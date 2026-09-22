@@ -1,8 +1,8 @@
 # Continuity brand assets
 
 The Continuity mark is a continuous loop: an outer arc and a return arc, joined by
-an inner stroke, with two nodes where work is handed on. It is a geometric SVG
-reproduction of the master concept; the wordmark is taken from the same concept.
+an inner stroke, with two nodes where work is handed on. The mark is geometric
+SVG; the wordmark lettering is a raster taken from the original logo artwork.
 
 ## Files
 
@@ -24,7 +24,9 @@ external assets.
 | Role | Value |
 | --- | --- |
 | Primary accent (light UI, Dashboard `--accent`) | `#2e6951` |
-| Mint highlight (mark on dark, node dots) | `#a3e9c5` / `#b8eed1` |
+| Mark on dark: stroke gradient, node dots | `#3f6153` → `#a3e9c5`, dots `#b8eed1` |
+| Mark on light: stroke gradient, node dots | `#9cc6b0` → `#2b7555`, dots `#1f6448` |
+| Small sizes (favicon, Dashboard sidebar) | shorter ramps: dark `#6aa98a` → `#a8ecc9`, light `#5f9c80` → `#2b7555` |
 | Dark background (graphite) | `#14171a` |
 | Light foreground (wordmark on dark) | `#ecefed` |
 | Light-mode ink (wordmark on light) | `#1c1e1d` |

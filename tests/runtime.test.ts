@@ -21,7 +21,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(predicate: () => boolean | Promise<boolean>) { for (let i = 0; i < 150; i++) { if (await predicate()) return; await delay(50); } throw new Error('Condition did not settle'); }
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'continuity runtime ü ')); project = join(root, 'project'); mkdirSync(project); writeFileSync(join(project, 'source.ts'), 'export const value = 1;'); home = continuityHome(join(root, 'home')); host = openContinuity(home); host.init(project); });
 afterEach(async () => { await auto?.stop(); auto = undefined; host.close(); rmSync(root, { recursive: true, force: true }); });
-function start() { auto = new AutoSync(host, () => {}, { ...AUTO_SYNC, debounce: 100, discovery: 150, reconcile: 1000 }); auto.start(); return auto; }
+function start() { auto = new AutoSync(host, () => {}, { ...AUTO_SYNC, debounce: 100, discovery: 150 }); auto.start(); return auto; }
 const resources = () => host.inspection.page(host.projects()[0]!.project_id, '', 'sources', 50).items.map(i => i.record as { path: string; hash: string; state: string });
 
 test('real changes debounce, update hashes, add/rename/delete, and keep integrity', async () => {

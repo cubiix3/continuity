@@ -26,8 +26,8 @@ external assets.
 | Primary accent (light UI, Dashboard `--accent`) | `#2d6a50` |
 | Mark on dark: stroke gradient, node dots | `#3f6153` → `#a3e9c5`, dots `#b8eed1` |
 | Mark on light: stroke gradient, node dots | `#9cc6b0` → `#2b7555`, dots `#1f6448` |
-| Small sizes (favicon, Dashboard sidebar) | shorter ramps: dark `#6aa98a` → `#a8ecc9`, light `#5f9c80` → `#2b7555` |
-| Dark background (graphite) | `#14171a` |
+| Small sizes (favicon, Dashboard sidebar) | shorter ramps: dark `#6aa98a` → `#a8ecc9`, dots `#bdf0d4`; light `#5f9c80` → `#2b7555`, dots `#1f6448` |
+| Dark background (graphite; favicon tile `#15181a`) | `#14171a` |
 | Light foreground (wordmark on dark) | `#ecefed` |
 | Light-mode ink (wordmark on light) | `#1c1e1d` |
 

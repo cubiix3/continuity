@@ -221,12 +221,14 @@ test('overview workspace total comes from the server, not the paginated workspac
   expect(registered).toHaveLength(56);
   expect(host.inspection.stats(project.project_id, '').workspaces).toBe(total);
   const workspacesRow = page.locator('.state-list dt').filter({ hasText: /^Workspaces$/ }).locator('+ dd');
+  // Overview health runs doctor, which verifies every registered worktree with git; allow for slow Windows runners.
+  const settled = { timeout: 60_000 };
   await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' });
-  await expect(workspacesRow).toHaveText(String(total));
+  await expect(workspacesRow).toHaveText(String(total), settled);
   expect(await page.getByLabel('Workspace', { exact: true }).locator('option').count()).toBeLessThan(total);
   // A workspace beyond the selector's first page must not change the project total.
   const outside = registered.at(-1)!; expect(host.inspection.stats(project.project_id, outside).workspaces).toBe(total);
   await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${outside}`);
   await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(outside);
-  await expect(workspacesRow).toHaveText(String(total));
+  await expect(workspacesRow).toHaveText(String(total), settled);
 });

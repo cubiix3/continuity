@@ -212,7 +212,7 @@ context <task>                Build a byte-budgeted context bundle
 inspect | explain <id>        Read a historical bundle | explain its selection
 memory list | show <id>       Inspect memories
 memory remember <text>        Record with --key and --source (--agent/--session on main)
-memory forget <id>            Deactivate; revision history is kept (main)
+memory forget <id>            Deactivate; revision history is kept
 memory pending                Candidates awaiting review and unresolved conflicts
 memory approve | reject <id>  Human review with --by <reviewer>
 handoff create --file <path>  Save structured JSON (use - for stdin)

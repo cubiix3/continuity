@@ -20,7 +20,7 @@ function includePrefixes(patterns: readonly string[]): string[] | undefined {
   const prefixes: string[] = [];
   for (const raw of patterns) {
     if (!raw || raw.startsWith('#') || raw.startsWith('!')) continue;
-    if (!/^[A-Za-z0-9_./*?-]+$/.test(raw)) return undefined;
+    if (!/^[\p{L}\p{M}\p{N}_./*? ()@+-]+$/u.test(raw)) return undefined;
     const pattern = raw.replace(/^\//, '');
     const components = pattern.replace(/\/$/, '').split('/');
     if (components.length === 1 && !raw.startsWith('/')) return undefined;
@@ -34,20 +34,38 @@ function includePrefixes(patterns: readonly string[]): string[] | undefined {
 }
 
 interface IgnoreLayer { base: string; rules: Ignore }
+export interface SourceSelection { include?: readonly string[]; exclude?: readonly string[] }
+class SourceLimitError extends Error {
+  constructor(message: string, readonly files: number, readonly bytes: number, readonly oversized: number) { super(message); }
+}
 
 export class FileSources implements SourcePort {
-  constructor(private readonly registeredRoots: () => readonly string[] = () => [], private readonly selection: { include?: readonly string[]; exclude?: readonly string[] } = {}) {}
-  scan(project: Project): Resource[] {
+  constructor(private readonly registeredRoots: () => readonly string[] = () => [], private readonly selection: SourceSelection | (() => readonly SourceSelection[]) = {}) {}
+  scan(project: Project): Resource[] { return this.collect(project).resources; }
+  preview(project: Project) {
+    try {
+      const result = this.collect(project);
+      return { files: result.resources.length, bytes: result.bytes, skipped_oversized: result.oversized, limit_exceeded: false, complete: true };
+    } catch (error) {
+      if (!(error instanceof SourceLimitError)) throw error;
+      return { files: error.files, bytes: error.bytes, skipped_oversized: error.oversized, limit_exceeded: true, complete: false, reason: error.message };
+    }
+  }
+  private collect(project: Project) {
+    const selections = typeof this.selection === 'function' ? this.selection() : [this.selection];
     const root = realpathSync.native(project.root);
     const identityRoot = process.platform === 'win32' ? root.toLowerCase() : root;
     if (identityRoot !== project.root) throw new Error('Project root changed its canonical location. Re-register the intended directory.');
     const output: Resource[] = [];
     let bytes = 0;
     let visited = 0;
+    let oversized = 0;
     const nestedRoots = this.registeredRoots().filter(p => p !== project.root);
-    const excluded = ignore().add([...(this.selection.exclude ?? [])]);
-    const included = this.selection.include ? ignore().add([...this.selection.include]) : undefined;
-    const prefixes = this.selection.include ? includePrefixes(this.selection.include) : undefined;
+    const filters = selections.map(selection => ({
+      excluded: ignore().add([...(selection.exclude ?? [])]),
+      included: selection.include ? ignore().add([...selection.include]) : undefined,
+      prefixes: selection.include ? includePrefixes(selection.include) : undefined,
+    }));
     const walk = (directory: string, inherited: IgnoreLayer[]) => {
       const layers = [...inherited];
       const ignorePath = join(directory, '.gitignore');
@@ -56,31 +74,32 @@ export class FileSources implements SourcePort {
         layers.push({ base: directory, rules: ignore().add(readFileSync(ignorePath, 'utf8')) });
       }
       for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-        if (++visited > 20000) throw new Error('Source traversal exceeds 20,000 entries; narrow the project root.');
+        if (++visited > 20000) throw new SourceLimitError('Source traversal exceeds 20,000 entries; narrow the source scope.', output.length, bytes, oversized);
         if (deniedName.test(entry.name) || entry.isSymbolicLink()) continue;
         const path = join(directory, entry.name);
         const relativePath = relative(root, path).split(sep).join('/');
-        if (excluded.ignores(relativePath + (entry.isDirectory() ? '/' : ''))) continue;
+        if (filters.some(f => f.excluded.ignores(relativePath + (entry.isDirectory() ? '/' : '')))) continue;
         if (layers.some(layer => layer.rules.ignores(relative(layer.base, path).split(sep).join('/') + (entry.isDirectory() ? '/' : '')))) continue;
         const canonical = realpathSync.native(path);
         if (!isWithin(root, canonical) || canonical !== path) continue;
         if (entry.isDirectory()) {
           const selectedPath = relativePath.toLowerCase();
-          if (prefixes && !prefixes.some(prefix => selectedPath === prefix || selectedPath.startsWith(prefix + '/') || prefix.startsWith(selectedPath + '/'))) continue;
+          if (filters.some(({ prefixes }) => prefixes && !prefixes.some(prefix => selectedPath === prefix || selectedPath.startsWith(prefix + '/') || prefix.startsWith(selectedPath + '/')))) continue;
           const normalized = process.platform === 'win32' ? canonical.toLowerCase() : canonical;
           if (nestedRoots.includes(normalized) || existsSync(join(path, '.git'))) continue;
           walk(path, layers); continue;
         }
         if (!entry.isFile() || (!allowedExtensions.has(extname(entry.name).toLowerCase()) && !/^(README|AGENTS|LICENSE)$/i.test(entry.name))) continue;
-        if (included && !included.ignores(relativePath)) continue;
+        if (filters.some(f => f.included && !f.included.ignores(relativePath))) continue;
         const info = statSync(path);
-        if (info.nlink > 1 || info.size > 65536) continue;
+        if (info.nlink > 1) continue;
+        if (info.size > 65536) { oversized++; continue; }
         const content = readFileSync(path, 'utf8');
         const afterRead = statSync(path);
         if (afterRead.size !== info.size || afterRead.mtimeMs !== info.mtimeMs || realpathSync.native(path) !== canonical) throw new Error('Source changed while being read; retry sync.');
         if (content.includes('\0') || looksSensitive(content)) continue;
         bytes += Buffer.byteLength(content);
-        if (bytes > 8 * 1024 * 1024 || output.length >= 2000) throw new Error('Index limit exceeded (2,000 files / 8 MiB). Narrow the project or add ignore rules.');
+        if (bytes > 8 * 1024 * 1024 || output.length >= 2000) throw new SourceLimitError('Index limit exceeded (2,000 files / 8 MiB). Narrow the source scope.', output.length + 1, bytes, oversized);
         const hash = createHash('sha256').update(content).digest('hex');
         const localPath = relative(root, path).split(sep).join('/');
         output.push({ id: `src_${randomUUID()}`, project_id: project.project_id, path: localPath, hash, content,
@@ -89,6 +108,6 @@ export class FileSources implements SourcePort {
       }
     };
     walk(root, []);
-    return output;
+    return { resources: output, bytes, oversized };
   }
 }

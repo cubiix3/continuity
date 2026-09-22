@@ -218,6 +218,9 @@ async function render() {
       const status = await api<Record<string, unknown>>('status', {}); if (stamp !== generation) return;
       const sync = status.sync as { at: string; files: number; bytes: number } | undefined;
       main.append(el('h2', 'Selected workspace'), fields([['Canonical root', workspaces.find(w => w.workspace_id === workspaceId)?.root ?? project.root], ['Last sync', timestamp(sync?.at)], ['Sources at last sync', sync?.files], ['Source bytes', bytes(sync?.bytes)]]), button('Sync workspace', async () => { await api('sync', undefined, { project: projectId, workspace: workspaceId }); await render(); }), el('p', 'Sync uses the configured source exclusions and optional semantic backend. It does not edit project files.', 'muted'));
+      const selection = await api<{ filtered: boolean; include: string[]; exclude: string[]; host_include: string[]; host_exclude: string[] }>('source-scope', {}); if (stamp !== generation) return;
+      main.append(el('h2', 'Source index scope'), fields([['Filtered source scope', selection.filtered ? 'Yes' : 'No'], ['Include', selection.include.length ? selection.include.join(', ') : 'Default'], ['Exclude', selection.exclude.length ? selection.exclude.join(', ') : 'None']]));
+      if (selection.host_include.length || selection.host_exclude.length) main.append(fields([['Additional host include', selection.host_include], ['Additional host exclude', selection.host_exclude]]));
     } else if (name === 'diagnostics') {
       heading('Diagnostics', 'The same local health checks as continuity doctor. Optional semantic services are not required.');
       const health = await api<Record<string, unknown>>('diagnostics'); if (stamp !== generation) return;

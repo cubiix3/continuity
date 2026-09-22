@@ -13,6 +13,8 @@ import { randomUUID } from 'node:crypto';
 import { verifyWorkspace } from './workspaces.js';
 import { Inspection } from '../../core/src/inspection.js';
 import { passages } from '../../core/src/context/passages.js';
+import { anchoredScope, readSourceScopes, sourceScopeSchema, writeSourceScope, SourceScopeError } from './source-scope.js';
+import type { SourceScope } from './source-scope.js';
 
 export const CONTINUITY_HOST_API_VERSION = 1;
 export interface HostOptions { sources?: { include?: readonly string[]; exclude?: readonly string[] } }
@@ -22,7 +24,7 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
   const config = retrievalConfig(home);
   const storage = new SqliteStorage(join(home, 'continuity.db'));
   const resolver = new ProjectResolver(storage);
-  const sourceFor = (project: Project, root = project.root) => new FileSources(() => {
+  const sourceFor = (project: Project, root = project.root, preview?: SourceScope) => new FileSources(() => {
     const registered = storage.projects().flatMap(p => [p.root, ...storage.workspaces(p.project_id).map(w => w.root)]);
     const checkouts = [project.root, ...storage.workspaces(project.project_id).map(w => w.root)];
     // A nested project remains private in every checkout of its enclosing project.
@@ -31,7 +33,15 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       .filter(candidate => candidate !== checkout && isWithin(checkout, candidate))
       .map(candidate => join(root, relative(checkout, candidate))));
     return [...registered, ...mapped];
-  }, options.sources);
+  }, () => {
+    const local = readSourceScopes(home).projects[project.project_id];
+    return [options.sources ?? {}, anchoredScope(preview ?? local)];
+  });
+  const sourceScope = (id: string) => {
+    inspection.scope(id, '');
+    const scope = readSourceScopes(home).projects[id];
+    return { project_id: id, filtered: Boolean(scope || options.sources?.include || options.sources?.exclude), include: scope?.include ?? [], exclude: scope?.exclude ?? [], host_include: options.sources?.include ?? [], host_exclude: options.sources?.exclude ?? [] };
+  };
   const workspaceStores = new Map<string, SqliteStorage>();
   const inspection = new Inspection(storage);
   const boundStore = (workspaceId: string) => {
@@ -67,6 +77,22 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
   };
   return {
     inspection,
+    sourceScope,
+    setSourceScope: (path: string, input: unknown) => {
+      const project = resolver.resolve(path);
+      writeSourceScope(home, project.project_id, sourceScopeSchema.parse(input));
+      return sourceScope(project.project_id);
+    },
+    clearSourceScope: (path: string) => {
+      const project = resolver.resolve(path);
+      writeSourceScope(home, project.project_id, undefined);
+      return sourceScope(project.project_id);
+    },
+    previewSourceScope: (path: string, input?: unknown) => {
+      const project = resolver.resolve(path);
+      const proposed = input === undefined ? undefined : sourceScopeSchema.parse(input);
+      return { project_id: project.project_id, ...sourceFor(project, project.root, proposed).preview(project) };
+    },
     /** Human host inspection only. Never handed to an agent adapter; never changes the index. */
     previewSource: (projectId: string, workspaceId: string, id: string) => {
       const registered = inspection.page(projectId, workspaceId, 'sources', 1, 0, id).items[0]?.record;
@@ -79,6 +105,7 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
     /** Uses the existing backend health port against a fresh read-only authorized snapshot. */
     inspectionRetrievalHealth: async (projectId: string, workspaceId: string) => {
       inspectionScope(projectId, workspaceId);
+      sourceScope(projectId);
       const semantic = semanticFor(boundStore(workspaceId), projectId);
       if (!semantic) return { status: 'disabled', reason: 'FTS5 active; semantic retrieval is disabled.' };
       try {
@@ -111,6 +138,8 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
     },
     doctor: () => {
       const health = storage.diagnose();
+      try { readSourceScopes(home); }
+      catch (error) { health.problems.push(error instanceof SourceScopeError ? error.message : 'Source-scope configuration unavailable.'); }
       const roots: { project_id: string; accessible: boolean }[] = [];
       const workspaces: { project_id: string; workspace_id: string; accessible: boolean }[] = [];
       if (!health.problems.includes('corrupted project identity')) {

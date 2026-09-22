@@ -28,6 +28,20 @@ test.beforeEach(async () => {
 });
 test.afterEach(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); host.close(); rmSync(root, { recursive: true, force: true }); });
 
+test('workspace shows source scope and diagnostics explain invalid local configuration', async ({ page }) => {
+  host.setSourceScope(primary, { include: ['README.md'] }); await host.project(primary).sync();
+  await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' });
+  await page.getByRole('link', { name: 'Workspaces', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Source index scope' })).toBeVisible();
+  await expect(page.getByText('Filtered source scope', { exact: true })).toBeVisible();
+  await expect(page.locator('dd').filter({ hasText: /^Yes$/ })).toBeVisible();
+  await expect(page.locator('dd').filter({ hasText: /^README.md$/ })).toBeVisible();
+  const count = page.locator('dt').filter({ hasText: /^Sources at last sync$/ }); await expect(count.locator('+ dd')).toHaveText('1');
+  writeFileSync(join(root, 'state', 'sources.json'), '{invalid');
+  await page.getByRole('link', { name: 'Diagnostics', exact: true }).click();
+  await expect(page.getByText(/Invalid sources.json/)).toBeVisible();
+});
+
 test('agent-learned memories are active without approval and can be explicitly forgotten', async ({ page }) => {
   const client = host.project(primary), m = client.propose({ key: 'automatic-reconnect', kind: 'experience', text: 'Reconnect cancellation releases the registry lease before replacement.', from: { agent: 'generic', session: 'automatic-session' } });
   await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' }); await expect(page.getByText('Active memories', { exact: true })).toBeVisible(); await expect(page.getByText('Pending review', { exact: true })).toHaveCount(0);
@@ -188,7 +202,7 @@ test('long scope paths and memory text stay accessible with keyboard-safe confir
   await expect(page.locator('.scope-path')).toHaveAttribute('title', registration.root);
   await page.getByRole('link', { name: 'Workspaces', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Primary', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('.details')).toContainText(registration.root);
+  await expect(page.locator('.details').filter({ hasText: 'Canonical root' })).toContainText(registration.root);
   await page.getByRole('link', { name: 'Memories', exact: true }).click(); await page.getByRole('link', { name: memory.key, exact: true }).click();
   await expect(page.locator('.memory-content')).toHaveText(memory.text); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const forget = page.getByRole('button', { name: 'Forget', exact: true }); await forget.focus(); await page.keyboard.press('Enter');

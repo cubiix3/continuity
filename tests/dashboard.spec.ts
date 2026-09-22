@@ -213,6 +213,8 @@ test('long scope paths and memory text stay accessible with keyboard-safe confir
 });
 
 test('overview workspace total comes from the server, not the paginated workspace selector', async ({ page }) => {
+  // 55 real Git worktrees are slow to create on Windows CI runners.
+  test.setTimeout(180_000);
   const git = (...args: string[]) => execFileSync('git', args, { cwd: primary, stdio: 'pipe' });
   for (let i = 0; i < 55; i++) { const worktree = join(root, `ws-${String(i).padStart(2, '0')}`); git('worktree', 'add', '-q', '-b', `ws-${i}`, worktree); host.workspace(primary, worktree); }
   const project = host.projects().find(p => p.name === 'Demo · Relay')!, total = 1 + 1 + 55, registered = host.inspection.workspaces(project.project_id).map(w => w.workspace_id);

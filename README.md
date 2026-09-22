@@ -244,7 +244,8 @@ Project identity, workspaces, handoffs, reviewed memory, provenance, context
 audit, MCP, local HTTP and the Dashboard.
 
 **Current `main` (unreleased):** automatic-first durable memory, local per-project
-source scope and a refreshed Dashboard design. See the [changelog](CHANGELOG.md).
+source scope, a refreshed and denser Dashboard, and the new brand mark. See the
+[changelog](CHANGELOG.md).
 
 **Next:** a background runtime with Windows sign-in startup and automatic sync is
 under validation in a draft pull request. Provider-neutral agent bootstrap and

@@ -52,7 +52,7 @@ test('new registration, nested boundary, unavailable scope and rebind are reconc
   await until(() => worker.status().projects.find(p => p.id === registered.project_id)?.root === host.projects().find(p => p.project_id === registered.project_id)?.root);
   await until(() => worker.status().projects.find(p => p.id === registered.project_id)?.status === 'healthy');
   renameSync(moved, join(root, 'missing')); const fresh = new AutoSync(host, () => {}, { ...AUTO_SYNC, reconcile: 100, discovery: 100 });
-  try { fresh.start(); await until(() => fresh.status().projects.some(p => ['degraded', 'unavailable'].includes(p.status))); expect(fresh.status().projects.some(p => p.status === 'healthy')).toBe(true); } finally { await fresh.stop(); }
+  try { fresh.start(); await until(() => fresh.status().projects.some(p => ['degraded', 'unavailable'].includes(p.status)) && fresh.status().projects.some(p => p.status === 'healthy')); expect(fresh.status().projects.some(p => p.status === 'healthy')).toBe(true); } finally { await fresh.stop(); }
 });
 
 test('dirty during a slow sync coalesces and never runs project syncs in parallel', async () => {

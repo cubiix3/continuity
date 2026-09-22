@@ -15,10 +15,10 @@ Stop with Ctrl+C. There is no automatic browser launch, login, telemetry or clou
 
 ## Inspect and review
 
-- **Overview:** actual indexed-source, project-memory, pending-review and workspace-handoff counts.
+- **Overview:** indexed-source, active-memory, quarantined-conflict and workspace-handoff counts. Active is a stored policy state; context still revalidates source-backed evidence.
 - **Projects / Workspaces:** registered identities and canonical roots. Memory is project-wide; sources, handoffs and context audit are workspace-scoped. Sync uses the existing source and optional semantic pipeline.
 - **Handoffs:** newest-first structured state, agent/session, completed work, remaining work, decisions, risks and next action. No transcripts.
-- **Memories:** bounded status-filtered pages, policy reason, provenance and revision history. Approve/reject requires an explicit reviewer name and confirmation. Conflicts remain blocked by the existing policy. Forget/rebind/prune stay in the CLI.
+- **Memories:** bounded origin/status filters, agent/session, source evidence, policy reason and revision history. Normal attributed lessons activate automatically at lower trust. Optional approve/reject requires a reviewer name and confirmation. Forget requires confirmation and retains history. Rebind/prune stay in the CLI.
 - **Sources:** last-indexed metadata; opening a preview revalidates current source through the existing scanner. Removed, excluded or inaccessible files are not served as current. Source content is text, never Dashboard instructions.
 - **Context Audit:** historical full bundles and bounded selection audits. The current contract does not retain the original task, so the UI says so rather than inventing it. PR #7 compact delivery is not required.
 - **Diagnostics:** the same storage, runtime and registration checks as `doctor`. Disabled semantic retrieval is a healthy FTS-only configuration.
@@ -55,7 +55,7 @@ required as `X-Continuity-Token` for data routes: `projects`, `workspaces`, `sta
 `stats`, `records`, `selection`, `diagnostics`, `retrieval`. Record lists accept a
 registered project/workspace, a fixed collection kind, `limit` (1–50), and `after`
 cursor. Memory status filtering happens before pagination. IDs are never authorization.
-Only `/review` and `/sync` support POST; no GET mutates memory or initiates sync.
+Only `/review`, `/forget` and `/sync` support POST; no GET mutates memory or initiates sync.
 Source preview and retrieval-health checks scan through existing freshness boundaries
 without updating the stored index or last-sync timestamp. A changed source is visibly
 marked as different from its indexed version; explicit Sync performs indexing.

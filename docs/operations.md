@@ -23,7 +23,17 @@ the old root, new root and timestamp in `project_rebindings`. Existing bound
 clients fail after relocation and must reconnect. The operator is responsible
 for selecting the intended destination; matching names/remotes do not grant identity.
 
-## Human memory review
+## Automatic memory and optional human review
+
+Normal agent lessons include provenance and do not wait for review:
+
+```sh
+continuity memory remember "Preserve request identifiers across reconnect attempts." --key retry-id --kind experience --agent generic --session session-123
+```
+
+See [the automatic policy and conflict rules](memory-model.md). The following
+commands remain available for legacy candidates, incomplete provenance and explicit
+human correction:
 
 ```sh
 continuity memory remember "Preserve request identifiers across reconnect attempts." --key retry-id --kind experience
@@ -32,8 +42,9 @@ continuity memory approve mem_<id> --by operator
 continuity memory reject mem_<id> --by operator
 ```
 
-Free-form candidates are `proposed`. Source-backed exact excerpts retain the
-existing `persist` policy path. Unsupported claimed evidence is `needs_attention`;
+Free-form candidates without agent/session provenance remain `proposed`; complete
+attributed lessons activate automatically as `agent_observation`. Exact source excerpts
+use `persist`/`derived`. Unsupported claimed evidence is `needs_attention`;
 routine output remains `reject`. Human review changes a pending record to
 `accepted` or `rejected`, records reviewer/time/decision, and appends a revision.
 Approval never invents source evidence or silently overwrites an active claim key.

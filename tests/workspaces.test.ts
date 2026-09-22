@@ -44,6 +44,46 @@ it('keeps concurrent worktree sources separate while sharing reviewed project me
   expect(host.doctor().problems).toEqual([]);
 });
 
+it('shares learned project conventions without promoting them to workspace source rules', async () => {
+  const a = host.project(primary), b = host.workspace(primary, feature);
+  const memory = a.propose({ key: 'reconnect-convention', kind: 'rule', text: 'Reconnect replacement retains registry identity across provider sessions.', from: { agent: 'generic', session: 'session-a' } });
+  const text = 'Reconnect policy preserves the shared source convention.';
+  for (const directory of [primary, feature]) writeFileSync(join(directory, 'convention.md'), `# Source convention\n${text}\nAdditional current project context.`);
+  const sourceMemory = a.propose({ key: 'source-convention', kind: 'rule', text, source_path: 'convention.md' });
+  const context = await b.context({ task: 'Reconnect registry' });
+  expect(context.items.find(item => item.id === memory.id)).toMatchObject({ kind: 'memory', provenance: { trust: 'agent_observation' } });
+  expect(context.items.find(item => item.id === sourceMemory.id)).toMatchObject({ kind: 'memory', provenance: { trust: 'derived' } });
+  expect(host.inspection.page(context.project_id, context.workspace_id!, 'contexts', 1, 0, context.context_id).items).toHaveLength(1);
+  expect((await host.project(foreign).context({ task: 'Reconnect registry' })).items.some(item => item.id === memory.id)).toBe(false);
+});
+
+it('does not declare another workspace source stale to supersede its memory', () => {
+  const mainText = 'Reconnect policy retains the primary registry until shutdown.';
+  const featureText = 'Reconnect policy clears the worker registry immediately.';
+  writeFileSync(join(primary, 'policy.md'), mainText); writeFileSync(join(feature, 'policy.md'), featureText);
+  const original = host.project(primary).propose({ key: 'workspace-policy', kind: 'decision', text: mainText, source_path: 'policy.md' });
+  const unproven = host.workspace(primary, feature).propose({ key: 'workspace-policy', kind: 'decision', text: featureText, source_path: 'missing.md' });
+  expect(unproven).toMatchObject({ status: 'needs_attention', provenance: { trust: 'untrusted', workspace_id: host.workspace(primary, feature).status().workspace!.workspace_id } });
+  expect(host.project(primary).memory(original.id).status).toBe('persist');
+  const other = host.workspace(primary, feature).propose({ key: 'workspace-policy', kind: 'decision', text: featureText, source_path: 'policy.md' });
+  expect(other.status).toBe('needs_attention'); expect(host.project(primary).memory(original.id).status).toBe('persist');
+});
+
+it('retains bound workspace provenance for missing evidence and resolves it with current local evidence', () => {
+  for (const [client, directory] of [[host.project(primary), primary], [host.workspace(primary, feature), feature]] as const) {
+    const workspaceId = client.status().workspace?.workspace_id;
+    const key = `missing-evidence-${workspaceId ?? 'primary'}`;
+    const old = client.propose({ key, kind: 'decision', text: 'Reconnect policy retains all registry leases.', source_path: 'missing.md' });
+    expect(old.status).toBe('needs_attention'); expect(old.provenance.trust).toBe('untrusted'); expect(old.provenance.workspace_id).toBe(workspaceId);
+    const text = 'Reconnect policy releases all registry leases.';
+    writeFileSync(join(directory, 'actual.md'), text);
+    const resolved = client.propose({ key, kind: 'decision', text, source_path: 'actual.md' });
+    expect(resolved).toMatchObject({ status: 'persist', outcome: 'superseded', provenance: { trust: 'derived' }, superseded_ids: [old.id] });
+    expect(resolved.provenance.workspace_id).toBe(workspaceId);
+    expect(client.memory(old.id)).toMatchObject({ status: 'superseded', superseded_by: resolved.id });
+  }
+});
+
 it('persists workspace identity and scopes latest handoffs while allowing explicit project transitions', async () => {
   const b = host.workspace(primary, feature); const created = b.createHandoff(handoff); const id = b.status().workspace!.workspace_id;
   expect(host.project(primary).latestHandoff()).toBeNull();

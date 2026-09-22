@@ -1,6 +1,6 @@
 # Continuity v0.1 scope
 
-Continuity is a local continuity layer for projects and AI agents. It preserves project identity, isolated workspaces, structured handoffs, reviewed durable memory, provenance, context audit, source freshness and diagnostics.
+Continuity is a local continuity layer for projects and AI agents. It preserves project identity, isolated workspaces, structured handoffs, durable memory with explicit trust, provenance, context audit, source freshness and diagnostics. The unreleased automatic-memory policy activates attributed agent lessons without routine approval; human review remains optional.
 
 The CLI, host API and local Dashboard are first-class clients of the same Core. Coding agents remain responsible for investigation using their own Read, Grep, Git and test tools. Search is optional; offline FTS is the default experience. No semantic service is required.
 

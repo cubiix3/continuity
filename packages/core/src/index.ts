@@ -139,7 +139,7 @@ export class ProjectClient {
   propose(input: unknown) {
     memoryCandidateSchema.parse(input);
     this.refresh();
-    return this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id)));
+    return this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id), this.workspace?.workspace_id));
   }
   memories() { this.assertBinding(); return this.storage.memories(this.project.project_id); }
   memory(id: string) {

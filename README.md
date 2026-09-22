@@ -3,7 +3,7 @@
 **Persistent continuity for interchangeable agents.**
 
 Continuity is a local continuity layer for projects and AI agents. Keep project
-identity, isolated workspaces, reviewed durable memory and structured handoffs
+identity, isolated workspaces, durable memory with explicit provenance and structured handoffs
 between sessions. Inspect where context came from and whether local state is healthy.
 
 Agents are replaceable. Project continuity is not.
@@ -57,7 +57,7 @@ See the [runnable example](examples/README.md) for memory and handoff inputs.
 | Project identity | Local UUID bound to a canonical project directory, independent of its display name. |
 | Namespace | A project can read only its own data. Query text never grants access. |
 | Source | A bounded text index of current project files, with hashes and provenance. |
-| Memory | Source-backed knowledge or an explicitly reviewed free-form claim. Conflicts require attention. |
+| Memory | Source-backed knowledge and attributed agent lessons activate automatically; unresolved conflicts stay quarantined. Human review is optional. |
 | Handoff | Structured work state that another agent can retrieve. |
 | Context bundle | A budgeted selection with an inspectable explanation. |
 
@@ -132,9 +132,9 @@ context <task>               Build a bounded context bundle
 inspect <context-id>         Read a historical bundle
 explain <context-id>         Explain its selection
 memory list | show <id>      Inspect proposals and durable memories
-memory remember <text>       Propose with --key and --source
+memory remember <text>       Record with --key and --source or --agent/--session
 memory forget <id>           Deactivate a memory; preserve revision history
-memory pending               List proposals awaiting human review
+memory pending               Inspect legacy/incomplete candidates and unresolved conflicts
 memory approve | reject <id>  Local review with --by <reviewer>
 retention status             Show retention classes and eligibility
 prune --dry-run               Preview only; never deletes data

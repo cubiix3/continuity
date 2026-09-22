@@ -1,97 +1,103 @@
-# Continuity
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/branding/continuity-readme-banner-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/branding/continuity-readme-banner-light.png">
+    <img alt="Continuity logo: persistent continuity for interchangeable agents" src="docs/branding/continuity-readme-banner-light.png" width="100%">
+  </picture>
+</p>
 
-**Persistent continuity for interchangeable agents.**
+<p align="center">
+  <a href="https://github.com/cubiix3/continuity/actions/workflows/ci.yml"><img alt="CI on Linux and Windows" src="https://github.com/cubiix3/continuity/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/cubiix3/continuity/releases/tag/v0.1.0"><img alt="Latest release v0.1.0" src="https://img.shields.io/github/v/release/cubiix3/continuity?color=2d6a50"></a>
+  <a href="LICENSE"><img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2d6a50"></a>
+  <img alt="Node.js 24" src="https://img.shields.io/badge/node-24.13%2B-2d6a50">
+</p>
 
-Continuity is a local continuity layer for projects and AI agents. Keep project
-identity, isolated workspaces, durable memory with explicit provenance and structured handoffs
-between sessions. Inspect where context came from and whether local state is healthy.
+Continuity is a local continuity layer. It keeps project identity, memory,
+provenance and structured handoffs stable while agents and sessions change.
+Git and your project files stay the source of truth.
 
-Agents are replaceable. Project continuity is not.
+![Continuity Dashboard showing project health, recent handoffs and memory state](docs/screenshots/dashboard.png)
 
-![Continuity Dashboard showing structured handoffs and pending memory review](docs/screenshots/dashboard.png)
+<sub>The local Dashboard with a demo project. No hosted service, account or model key.</sub>
 
-*Actual local Dashboard, with an explicitly labeled demo project. No hosted service or model account.*
+## Why Continuity
 
-## Why
+You switch from Claude Code to Codex, start a fresh session, or hand work to
+another agent. The agent changes. The project does not.
 
-Switching agents should not mean explaining the repository again. Project rules
-belong to the project; decisions need evidence; unfinished work needs a usable
-handoff. Continuity keeps those connections locally, while Git and project files
-remain the source of truth.
-
-Continuity is developer infrastructure, not an agent, orchestrator, or replacement
-for `AGENTS.md`. No model account, embedding service, or API key is required.
-
-## A small, real workflow
-
-After building and linking the CLI, run these commands inside a project:
-
-```sh
-continuity init
-continuity sync
-continuity dashboard
-```
-
-Open `http://127.0.0.1:4783`. Inspect projects, workspaces, handoffs, pending memory
-review, source freshness and historical context selection. The browser does not
-open automatically. See [Dashboard operation and security](docs/dashboard.md).
-
-Agents can record structured state and continue it in another session:
-
-```sh
-continuity handoff create --file handoff.json
-
-# In another agent's session, in the same project:
-continuity handoff latest
-```
-
-Context includes source paths, SHA-256 versions, capture times, trust labels, and
-selection reasons. `continuity explain <context-id>` exposes those reasons.
-Budgets are **serialized UTF-8 bytes**, including metadata, not estimated tokens.
-See the [runnable example](examples/README.md) for memory and handoff inputs.
-
-## Core concepts
-
-| Concept | Meaning |
-| --- | --- |
-| Project identity | Local UUID bound to a canonical project directory, independent of its display name. |
-| Namespace | A project can read only its own data. Query text never grants access. |
-| Source | A bounded text index of current project files, with hashes and provenance. |
-| Memory | Source-backed knowledge and attributed agent lessons activate automatically; unresolved conflicts stay quarantined. Human review is optional. |
-| Handoff | Structured work state that another agent can retrieve. |
-| Context bundle | A budgeted selection with an inspectable explanation. |
-
-## Architecture
+Without a shared layer, every new session rediscovers the same rules, repeats the
+same decisions and loses what the last agent was halfway through. Continuity keeps
+that state with the project, not with a chat:
 
 ```text
-CLI / Dashboard / generic adapter / MCP / localhost HTTP
-                     │
-          project-bound Core client
-                     │
-   identity · namespace guard · retrieval · budget
-      memory policy · provenance · handoffs
-                     │
-               storage ports
-               /           \
-       SQLite + FTS5    filesystem sources
+   Claude Code ──┐                       ┌──▶ Codex
+                 ▼                       │
+            ┌────────────────────────────┴───┐
+            │           Continuity           │
+            │  identity · memory · handoffs  │
+            │   provenance · context audit   │
+            └────────────────────────────────┘
+                 ▲                       │
+   CLI / MCP ────┘                       └──▶ the next session
 ```
 
-Policy lives in the Core. Adapters receive a scoped capability, never database
-access. SQLite is the default storage adapter; FTS5 works entirely offline.
-See [architecture](docs/architecture.md) and [decisions](docs/adr/README.md).
+| Continuity is | Continuity is not |
+| --- | --- |
+| Local project continuity across agents and sessions | Another coding agent or an IDE |
+| Durable project memory with provenance and conflict quarantine | A chat archive or transcript store |
+| Structured handoffs between agents | A replacement for Git |
+| Project and workspace isolation | A cloud memory service |
+| A CLI, MCP server and loopback API | A replacement for native Read, Grep or Git tools |
 
-## Optional retrieval
+## What it keeps
 
-Native Read/Grep/Git tools remain the default for coding-agent investigation.
-Continuity search is optional and works offline with SQLite FTS5. Optional semantic
-adapters help some queries but are not consistently superior. Project isolation and policy enforcement
-remain inside Continuity. See [setup and limits](docs/retrieval.md) and the
-[measured comparison](docs/retrieval-evaluation.md), including extra false positives.
+| | |
+| --- | --- |
+| **Project identity** | A local ID bound to the canonical project directory, independent of display name, agent or session. |
+| **Workspaces** | Git worktrees share one project identity but keep separate current sources. |
+| **Memory** | Source-backed facts and attributed agent lessons, each with its origin and trust level. |
+| **Handoffs** | Goal, completed and remaining work, decisions, risks, changed files and the next action. |
+| **Provenance** | Source paths, SHA-256 versions and capture times behind every context item. |
+| **Context audit** | Which sources and memories were selected for a context bundle, and why others were excluded. |
+
+## How it works
+
+1. `continuity init` registers a project. `continuity sync` builds a bounded,
+   hashed index of its current text sources.
+2. Agents connect through MCP, the CLI or the local API. The host fixes the
+   project, so an agent can read and write only that project's state.
+3. Agents propose memories and leave handoffs. Core policy decides what becomes
+   durable, at which trust level, and what is quarantined.
+4. Context requests return a byte-budgeted bundle with provenance and an
+   explanation. Changed or deleted sources can no longer support old claims.
+
+### Memory model
+
+- **Source-backed facts** are checked against the current file and keep its path and hash.
+- **Attributed agent lessons** activate automatically at a lower `agent_observation` trust.
+- **Conflicts** are quarantined instead of resolved by whichever write came last.
+- **Current sources outrank agent observations.** Routine execution noise is rejected.
+- **Human review is optional**: an explicit override, not a queue you must work through.
+
+See the [memory model](docs/memory-model.md). Automatic memory is on `main` and
+not yet part of a release; v0.1.0 uses explicit review for free-form memory.
 
 ## Quickstart
 
-Requirements: **Node.js 24 LTS** (24.13 or newer), **pnpm 10.30.1**, and Git.
-Use the latest patched Node 24 release for normal operation.
+Requirements: **Node.js 24.13 or newer** on the Node 24 line, and Git.
+Continuity is not published to the npm registry. Do not install an unrelated
+package named `continuity`.
+
+**Latest release (v0.1.0).** Download `continuity-local-0.1.0.tgz` from the
+[release page](https://github.com/cubiix3/continuity/releases/tag/v0.1.0), then:
+
+```sh
+npm install --global ./continuity-local-0.1.0.tgz
+```
+
+**Current `main`** (includes the unreleased changes listed under
+[Status](#status)). Requires pnpm 10.30.1:
 
 ```sh
 git clone https://github.com/cubiix3/continuity.git
@@ -102,120 +108,164 @@ pnpm link --global
 ```
 
 If pnpm's global bin directory is not configured, run `pnpm setup` and open a new
-terminal before linking. No global installation is required: from this checkout,
-`pnpm continuity --project /path/to/project init` also works. On Windows use a
-quoted Windows directory instead of `/path/to/project`.
+terminal. Without linking, `pnpm continuity --project <path> init` works from the checkout.
 
-Then, in your project:
+Then, inside your project:
 
 ```sh
 continuity init
 continuity sync
 continuity dashboard
-continuity doctor
 ```
 
-This is a source checkout release; no npm package is published yet. Do not install
-an unrelated package named `continuity` from npm.
+Open <http://127.0.0.1:4783>. The browser does not open automatically.
 
-### Commands
+Leave a handoff and pick it up in another agent's session:
 
-```text
-init                         Register the current directory locally
-status                       Project identity and last sync
-doctor                       SQLite integrity, schema, and FTS5 checks
-project status | list        Inspect local registrations
-project rebind <id>           Explicit move with --from and --to
-sync                         Refresh source index and invalidate old versions
-search <query>               Up to 10 current source excerpts (16 KB total)
-context <task>               Build a bounded context bundle
-inspect <context-id>         Read a historical bundle
-explain <context-id>         Explain its selection
-memory list | show <id>      Inspect proposals and durable memories
-memory remember <text>       Record with --key and --source or --agent/--session
-memory forget <id>           Deactivate a memory; preserve revision history
-memory pending               Inspect legacy/incomplete candidates and unresolved conflicts
-memory approve | reject <id>  Local review with --by <reviewer>
-retention status             Show retention classes and eligibility
-prune --dry-run               Preview only; never deletes data
-handoff create --file <path> Save structured JSON (use - for stdin)
-handoff latest | show <id>   Retrieve a handoff
-mcp                          Serve project-bound tools over stdio
-serve                        Start a local authenticated HTTP API
-dashboard                    Start the local human Dashboard on 127.0.0.1:4783
+```sh
+continuity handoff create --file handoff.json
+# later, from another agent in the same project:
+continuity handoff latest
 ```
 
-Global flags: `--project <directory>`, `--home <directory>`, `--json`.
-`CONTINUITY_HOME` overrides the default `~/.continuity` state directory.
+The [runnable example](examples/README.md) covers memory and handoff inputs.
 
-## Security and local-first operation
-
-- No external network requests in the default operation. The Dashboard uses loopback
-  HTTP; explicitly enabled semantic adapters
-  contact local services; memory and handoff operations remain local.
-- Identity, canonical paths, the database, and context history stay outside Git.
-- Retrieval refreshes source hashes before selecting context. Deleted or changed
-  sources cannot silently support an old memory.
-- Symlinks, hard-linked files, nested registered projects, and nested Git
-  repositories are excluded. Secret filenames, generated directories, and
-  recognizable credentials are excluded independently of `.gitignore`.
-- MCP and HTTP cannot select another project. The host fixes the project at startup.
-- `serve` binds to `127.0.0.1`; a bearer token and browser-origin rejection protect
-  the agent API. The separate Dashboard uses same-origin assets, an in-memory
-  browser capability, explicit protected writes and a restrictive CSP.
-
-Repository text remains untrusted input for an agent. An `authoritative` label
-means authoritative **within the project**, never permission to change Continuity
-policy. Secret detection is heuristic; local data is not encrypted. Read the
-[security model and limits](docs/security.md) before indexing sensitive projects.
-
-## Integrations
+## Agent integrations
 
 | Integration | Status |
 | --- | --- |
-| CLI and generic TypeScript adapter | Implemented and integration-tested |
-| MCP stdio | Six tools; tested using the official SDK client and real agents |
-| Local HTTP v1 | Implemented; token, origin, and scope boundaries tested |
-| Claude Code | Verified on Windows 2.1.278; [setup](docs/integrations/claude-code.md) |
-| Codex | Verified on Windows CLI 0.155.1; [setup and sandbox findings](docs/integrations/codex.md) |
-| RIVET | Experimental Draft/Shadow integration; legacy remains authoritative |
-| Command Code, Grok | Unverified; Grok structured-result compatibility remains unresolved |
-| Ollama / OpenViking | Optional local retrieval; [tested versions and limits](docs/retrieval.md) |
+| Claude Code | Verified on Windows 2.1.278 · [setup](docs/integrations/claude-code.md) |
+| Codex | Verified on Windows CLI 0.155.1 · [setup and sandbox notes](docs/integrations/codex.md) |
+| MCP stdio | Six project-bound tools, tested with the official SDK client and real agents |
+| CLI and TypeScript host API | Implemented and integration-tested |
+| Local HTTP v1 | Loopback only; token, origin and scope boundaries tested |
+| RIVET | Experimental draft/shadow integration; RIVET's own state remains authoritative |
+| Command Code, Grok | Unverified; Grok structured results remain unresolved |
+| Ollama, OpenViking | Optional local semantic retrieval · [tested versions and limits](docs/retrieval.md) |
 
-See [adapter contracts and configuration](docs/adapters.md).
-The [real cross-agent fixture](docs/integrations/cross-agent.md) passes structured
-work between fresh Claude and Codex sessions, without sharing chat transcripts.
-The [lexical baseline](docs/retrieval-baseline.md) documents successful retrieval
-and failures before any semantic retrieval dependency is introduced.
+A [real cross-agent fixture](docs/integrations/cross-agent.md) passes structured
+work between fresh Claude Code and Codex sessions without sharing transcripts.
+See [adapter contracts](docs/adapters.md).
 
-## Roadmap
+## Dashboard
 
-The [v0.1 product scope](docs/product-scope.md) centers on local continuity and
-inspection. The [RIVET dogfood conclusion](docs/research/rivet-dogfood.md) records
-what was and was not proven. Further retrieval research is paused.
+`continuity dashboard` serves a local, read-mostly view on `127.0.0.1`:
+Overview, Projects, Workspaces, Handoffs, Memories, Context Audit, Sources and
+Diagnostics. It shows project health, recent handoffs, memory origins and
+conflicts, source freshness and historical context selection. Writes are limited
+to explicit memory actions and workspace sync. See [Dashboard operation and security](docs/dashboard.md).
 
-Agent orchestration, cloud accounts, team sync, automatic repair, source editing
-and a RIVET cutover are outside this release. Release publication still requires review.
+## Local-first and security
+
+- **Local by default.** State lives in a local SQLite database outside your
+  repository. No cloud service, account, model key or telemetry.
+- **Loopback only.** The Dashboard and HTTP API bind to `127.0.0.1`. Every HTTP API
+  request needs a bearer token; the Dashboard adds same-origin checks, a restrictive
+  CSP and a per-session capability for writes.
+- **Project isolation.** MCP and HTTP clients cannot select another project;
+  cross-project retrieval is denied.
+- **Untrusted source text.** Repository content is data, never permission to
+  change Continuity policy.
+- **Bounded sources.** Symlinks, hard links, nested repositories, secret files and
+  recognizable credentials are excluded; source text is hashed and re-checked.
+- **Not encrypted.** Local state is not encrypted at rest. Secret detection is heuristic.
+
+Read the [security model](docs/security.md) before indexing sensitive projects,
+and [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+## Large projects
+
+Large repositories can keep one stable project identity while narrowing
+Continuity's local source index with `continuity sources set --include ... --exclude ...`.
+The filter lives in local state, never in the repository. See [source scope](docs/source-scope.md).
+This is on `main` and not yet part of a release.
+
+## Architecture
+
+```text
+      CLI · Dashboard · MCP · local HTTP · TypeScript host API
+                              │
+                   project-bound Core client
+                              │
+       identity · namespace guard · memory policy · handoffs
+            retrieval · budgeting · provenance · audit
+                              │
+                         storage ports
+                     ┌────────┴─────────┐
+               SQLite + FTS5     filesystem sources
+```
+
+Policy lives in the Core. Adapters receive a scoped capability, never database
+access. FTS5 retrieval works fully offline; semantic retrieval is optional and
+[not consistently better](docs/retrieval-evaluation.md).
+
+## Commands
+
+```text
+init                          Register the current directory
+status | doctor               Identity and last sync | storage and registration health
+sync                          Refresh the source index
+sources show | preview        Current source scope | read-only selection and limit check (main)
+sources set | clear           Replace or remove this project's local source filter (main)
+search <query>                Current source excerpts
+context <task>                Build a byte-budgeted context bundle
+inspect | explain <id>        Read a historical bundle | explain its selection
+memory list | show <id>       Inspect memories
+memory remember <text>        Record with --key and --source (--agent/--session on main)
+memory forget <id>            Deactivate; revision history is kept
+memory pending                Candidates awaiting review and unresolved conflicts
+memory approve | reject <id>  Human review with --by <reviewer>
+handoff create --file <path>  Save structured JSON (use - for stdin)
+handoff latest | show <id>    Retrieve a handoff
+project list | status         Inspect local registrations
+project rebind <id>           Explicit move with --from and --to
+retention status              Retention classes and eligibility
+prune --dry-run               Preview only; never deletes
+mcp                           Serve project-bound tools over stdio
+serve                         Local authenticated HTTP API on 127.0.0.1
+dashboard                     Local Dashboard on 127.0.0.1:4783
+```
+
+Commands marked (main) are not in v0.1.0. Global flags: `--project <directory>`, `--home <directory>`, `--json`.
+`CONTINUITY_HOME` overrides the default `~/.continuity` state directory.
+
+## Documentation
+
+- [Architecture](docs/architecture.md) and [decision records](docs/adr/README.md)
+- [Memory model](docs/memory-model.md) · [Handoffs](docs/handoffs.md) · [Source scope](docs/source-scope.md)
+- [Dashboard](docs/dashboard.md) · [Adapters, MCP and HTTP](docs/adapters.md) · [Retrieval](docs/retrieval.md)
+- [Security model](docs/security.md) · [Operations](docs/operations.md) · [Product scope](docs/product-scope.md)
+- [Brand assets](docs/branding/README.md)
+
+## Status
+
+**Latest release:** [v0.1.0](https://github.com/cubiix3/continuity/releases/tag/v0.1.0).
+Project identity, workspaces, handoffs, reviewed memory, provenance, context
+audit, MCP, local HTTP and the Dashboard.
+
+**Current `main` (unreleased):** automatic-first durable memory, local per-project
+source scope, a refreshed and denser Dashboard, and the new brand mark. See the
+[changelog](CHANGELOG.md).
+
+**Next:** a background runtime with Windows sign-in startup and automatic sync is
+under validation in a draft pull request. Provider-neutral agent bootstrap and
+future release packaging follow. Agent orchestration, cloud sync and a RIVET
+cutover are out of scope; the [RIVET dogfood notes](docs/research/rivet-dogfood.md)
+record what was and was not proven.
 
 ## Development
 
 ```sh
-pnpm build
-pnpm typecheck
-pnpm test
-pnpm lint
-# Or all four, in order:
-pnpm check
+pnpm check          # build, strict typecheck, tests, lint
 pnpm exec playwright install chromium
-pnpm test:ui
+pnpm test:ui        # Dashboard browser tests
+pnpm test:pack      # install the packed tarball into a fresh project
 ```
 
-Build before running the compiled CLI integration tests. CI runs the same checks
-on Linux and Windows. See [contributing](CONTRIBUTING.md), [agent guidance](AGENTS.md),
-and the [security reporting policy](SECURITY.md).
-`pnpm test:pack` builds a whitelisted tarball, installs it into a fresh temporary
-project and exercises its real bin and packaged Dashboard without a semantic backend.
-`pnpm baseline` reruns the eight lexical cases.
-See [local operations](docs/operations.md) for rebind, review and retention previews.
+CI runs these on Linux and Windows. Read [CONTRIBUTING.md](CONTRIBUTING.md) and
+[AGENTS.md](AGENTS.md) before changing Core boundaries. See
+[operations](docs/operations.md) for rebind, review and retention previews.
 
-Licensed under [Apache-2.0](LICENSE).
+## License
+
+[Apache-2.0](LICENSE).

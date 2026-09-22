@@ -57,6 +57,7 @@ it('serves only local assets with CSP and rejects DNS rebinding, foreign origins
   expect((await fetch(`${base}/dashboard-api/session`)).status).toBe(403);
   expect((await fetch(`${base}/dashboard-api/session`, { method: 'OPTIONS', headers: { Origin: 'https://evil.example', 'Access-Control-Request-Headers': 'x-continuity-dashboard' } })).status).toBe(403);
   expect((await fetch(`${base}/app.js`)).headers.get('content-type')).toContain('javascript');
+  const favicon = await fetch(`${base}/favicon.svg`); expect(favicon.headers.get('content-type')).toBe('image/svg+xml'); expect(await favicon.text()).not.toMatch(/<script|href=["']?http/i);
 });
 it('paginates without source bodies and denies wrong project/workspace record selection', async () => {
   for (let i = 0; i < 4; i++) host.project(project).createHandoff({ ...handoff, task: { ...handoff.task, goal: `Task ${i}` } });

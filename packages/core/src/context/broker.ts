@@ -5,10 +5,9 @@ import { passages } from './passages.js';
 import { rankPassages } from './ranking.js';
 import { NamespaceGuard } from '../security/namespace.js';
 
-export function contextBroker(storage: StoragePort, project: Project, request: ContextRequest, sources: Resource[], estimator?: TokenEstimator, ranked?: { items: ContextItem[]; retrieval: NonNullable<ContextBundle['retrieval']> }, workspaceId?: string): ContextBundle {
-  const { task, role, budget, provider_model_hint } = contextRequestSchema.parse(request);
-  const guard = new NamespaceGuard(project);
-  const candidates: ContextItem[] = ranked?.items ?? rankPassages(sources, passages(sources), storage.search(project.project_id, task, 100), [], task, 'lexical');
+/** One candidate path for audited v1 context and opt-in host delivery. */
+export function contextCandidates(storage: StoragePort, project: Project, task: string, sources: Resource[], ranked?: ContextItem[], workspaceId?: string): ContextItem[] {
+  const candidates: ContextItem[] = ranked ? [...ranked] : rankPassages(sources, passages(sources), storage.search(project.project_id, task, 100), [], task, 'lexical');
   const terms = task.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
   for (const m of storage.memories(project.project_id)) {
     if (!['persist', 'accepted'].includes(m.status) || !terms.some(t => m.text.toLowerCase().includes(t))) continue;
@@ -19,6 +18,13 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
   if (handoff && terms.some(t => [handoff.task.goal, ...handoff.remaining, ...handoff.decisions, handoff.recommended_next_action].join(' ').toLowerCase().includes(t))) {
     candidates.push({ id: handoff.id, kind: 'handoff', content: JSON.stringify({ task: handoff.task, remaining: handoff.remaining, decisions: handoff.decisions, recommended_next_action: handoff.recommended_next_action }), provenance: handoff.provenance, reasons: ['same project', 'latest structured handoff', 'task term match; agent report, not project policy'] });
   }
+  return candidates;
+}
+
+export function contextBroker(storage: StoragePort, project: Project, request: ContextRequest, sources: Resource[], estimator?: TokenEstimator, ranked?: { items: ContextItem[]; retrieval: NonNullable<ContextBundle['retrieval']> }, workspaceId?: string): ContextBundle {
+  const { task, role, budget, provider_model_hint } = contextRequestSchema.parse(request);
+  const guard = new NamespaceGuard(project);
+  const candidates = contextCandidates(storage, project, task, sources, ranked?.items, workspaceId);
   const bundle: ContextBundle = { schema_version: 1, context_id: `ctx_${randomUUID()}`, project_id: project.project_id, role, items: [], budget: { requested: budget, used: 0, unit: 'utf8_bytes' } };
   if (workspaceId) bundle.workspace_id = workspaceId;
   if (ranked) bundle.retrieval = ranked.retrieval;

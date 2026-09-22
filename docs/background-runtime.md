@@ -62,8 +62,12 @@ Windows and Linux support runtime control; startup installation is Windows-only.
 - A 10-minute reconciliation catches missing filesystem events and retries errors.
 - More than 512 eligible directories in a scope uses periodic reconciliation
   instead of an unbounded watcher set. Failed watches also retain periodic retry.
+- Local source scope (`continuity sources set`, see [source-scope.md](source-scope.md))
+  narrows the watch plan and every scan identically. Discovery applies a changed or
+  cleared filter without restart. Invalid `sources.json` fails scans closed; scopes
+  report `degraded` and recover once the file is corrected.
 - Source limits remain 2,000 files / 8 MiB and 20,000 traversed entries. Large
-  projects may need existing include/exclude configuration or a narrower root.
+  projects need a local source scope or a narrower root.
   Automatic sync does not raise limits or silently claim those projects are fresh.
 
 The synchronous scanner runs in one worker thread so it does not block Dashboard

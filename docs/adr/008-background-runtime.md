@@ -37,6 +37,10 @@ The scanner exposes metadata-only traversal with the same boundaries, not a seco
 parser or exclusion list. Watches are hints: 1.5-second debounce, a serial dirty
 queue, 30-second registration discovery and 10-minute reconciliation provide bounded
 operation. Above 512 eligible directories per scope, reconciliation is the fallback.
+Local per-project source scope (ADR 010) is part of that one resolved selection:
+event acceptance reuses the scan's exclusion, include-prefix and include checks.
+Discovery rebuilds a scope's watch plan when its local filter changes or becomes
+invalid/valid again; invalid configuration removes watches and fails scans closed.
 
 ## Consequences
 

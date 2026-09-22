@@ -1,10 +1,11 @@
 import { watch, type FSWatcher } from 'node:fs';
 import type { openContinuity } from './index.js';
+import { SourceScopeError } from './source-scope.js';
 
 type Host = ReturnType<typeof openContinuity>;
 type Scope = { id: string; project: string; workspace: string; root: string; projectRoot: string };
 type DirectoryWatch = { path: string; accepts: (name: string) => boolean; watcher: FSWatcher };
-type Entry = Scope & { watchers: DirectoryWatch[]; timer?: ReturnType<typeof setTimeout>; dirty: boolean; runs: number; status: string; last_success?: string; last_error?: string; duration_ms?: number; watcher_status: string };
+type Entry = Scope & { selection: string; watchers: DirectoryWatch[]; timer?: ReturnType<typeof setTimeout>; dirty: boolean; runs: number; status: string; last_success?: string; last_error?: string; duration_ms?: number; watcher_status: string };
 export const AUTO_SYNC = { debounce: 1500, reconcile: 10 * 60 * 1000, discovery: 30000, maxWatchers: 512 };
 
 /** One bounded queue for all registered scopes. No independent source-selection policy. */
@@ -29,12 +30,15 @@ export class AutoSync {
       const scopes: Scope[] = this.host.projects().flatMap(p => [{ id: p.project_id, project: p.project_id, workspace: '', root: p.root, projectRoot: p.root }, ...this.host.inspection.workspaces(p.project_id).map(w => ({ id: w.workspace_id, project: p.project_id, workspace: w.workspace_id, root: w.root, projectRoot: p.root }))]);
       let changed = false;
       for (const [id, entry] of this.entries) if (!scopes.some(s => s.id === id && s.root === entry.root && s.projectRoot === entry.projectRoot)) { this.dispose(entry); this.entries.delete(id); changed = true; }
-      for (const scope of scopes) if (!this.entries.has(scope.id)) { const entry: Entry = { ...scope, watchers: [], dirty: false, runs: 0, status: 'pending', watcher_status: 'pending' }; this.entries.set(scope.id, entry); this.mark(entry, false); changed = true; }
+      for (const scope of scopes) if (!this.entries.has(scope.id)) { const entry: Entry = { ...scope, selection: this.selection(scope.project), watchers: [], dirty: false, runs: 0, status: 'pending', watcher_status: 'pending' }; this.entries.set(scope.id, entry); this.mark(entry, false); changed = true; }
       // Newly registered nested projects change the parent's authorized traversal boundaries.
-      if (changed) for (const entry of this.entries.values()) { this.plan(entry); this.mark(entry, false); }
-      if (changed) this.changed();
+      // A changed local source scope replaces that scope's watches and scan without a restart.
+      const refresh = [...this.entries.values()].filter(entry => { const selection = this.selection(entry.project); if (selection === entry.selection) return changed; entry.selection = selection; return true; });
+      for (const entry of refresh) { this.plan(entry); this.mark(entry, false); }
+      if (refresh.length) this.changed();
     } catch { this.log('registration inspection failed'); }
   }
+  private selection(project: string) { try { return JSON.stringify(this.host.sourceScope(project)); } catch { return 'unavailable'; } }
   private dispose(entry: Entry) { clearTimeout(entry.timer); for (const watch of entry.watchers) watch.watcher.close(); entry.watchers = []; }
   private plan(entry: Entry) {
     try {
@@ -78,11 +82,12 @@ export class AutoSync {
         const code = (error as NodeJS.ErrnoException).code;
         entry.status = code === 'ENOENT' || code === 'ENOTDIR' ? 'unavailable' : 'degraded';
         const message = error instanceof Error ? error.message : '';
-        entry.last_error = message.startsWith('Index limit exceeded') ? 'Source limit exceeded (2,000 files / 8 MiB). Narrow the project or configure source exclusions.'
-          : message.startsWith('Source traversal exceeds') ? 'Source traversal limit exceeded (20,000 entries). Narrow the project or configure source exclusions.'
+        entry.last_error = error instanceof SourceScopeError ? error.message
+          : message.startsWith('Index limit exceeded') ? 'Source limit exceeded (2,000 files / 8 MiB). Narrow the source scope with continuity sources set.'
+          : message.startsWith('Source traversal exceeds') ? 'Source traversal limit exceeded (20,000 entries). Narrow the source scope with continuity sources set.'
           : entry.status === 'unavailable' ? 'Registered directory is unavailable. Periodic retry remains active.'
           : 'Source sync failed or registration changed. Run doctor; periodic retry remains active.';
-        this.log(entry.status === 'unavailable' ? 'project unavailable' : 'project sync failed', entry.id);
+        this.log(entry.status === 'unavailable' ? 'project unavailable' : error instanceof SourceScopeError ? 'source scope configuration invalid' : 'project sync failed', entry.id);
       }
       finally { entry.duration_ms = Math.round(performance.now() - start); if (!this.stopped && this.entries.get(entry.id) === entry) this.plan(entry); }
     })().finally(() => { this.active = undefined; this.changed(); setImmediate(() => this.pump()); });

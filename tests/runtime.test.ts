@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, renameSync, rmSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { execFileSync, spawn } from 'node:child_process';
@@ -18,7 +18,7 @@ vi.mock('../packages/server/src/dashboard.js', async importOriginal => {
 
 let root: string, project: string, home: string, host: ReturnType<typeof openContinuity>, auto: AutoSync | undefined;
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-async function until(predicate: () => boolean | Promise<boolean>) { for (let i = 0; i < 150; i++) { if (await predicate()) return; await delay(50); } throw new Error('Condition did not settle'); }
+async function until(predicate: () => boolean | Promise<boolean>, attempts = 150) { for (let i = 0; i < attempts; i++) { if (await predicate()) return; await delay(50); } throw new Error('Condition did not settle'); }
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'continuity runtime ü ')); project = join(root, 'project'); mkdirSync(project); writeFileSync(join(project, 'source.ts'), 'export const value = 1;'); home = continuityHome(join(root, 'home')); host = openContinuity(home); host.init(project); });
 afterEach(async () => { await auto?.stop(); auto = undefined; host.close(); rmSync(root, { recursive: true, force: true }); });
 function start() { auto = new AutoSync(host, () => {}, { ...AUTO_SYNC, debounce: 100, discovery: 150 }); auto.start(); return auto; }
@@ -115,6 +115,89 @@ test('more than 512 eligible directories use bounded reconciliation without watc
   writeFileSync(join(project, 'source.ts'), 'export const reconciled = true;');
   await until(() => resources().some(r => r.state === 'fresh' && r.hash !== hash));
   expect(host.doctor().integrity).toBe('ok');
+});
+
+const write = (path: string, content: string) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); };
+const sourcesOf = (id: string) => host.inspection.page(id, '', 'sources', 50).items.map(i => i.record as { id: string; path: string; hash: string; state: string });
+const freshPaths = (id: string) => sourcesOf(id).filter(r => r.state === 'fresh').map(r => r.path).sort();
+
+test('runtime watch plan and scan use one resolved local source scope', async () => {
+  const files = ['README.md', 'notes.md', 'docs/guide.md', 'docs/nested/deep.md', 'docs/archive/old.md', 'docs/generated/out.md', 'docs/image.png', 'docs/.env', 'tests/unit.test.ts', 'src/app.ts', 'src/deep/lib.ts'];
+  for (const file of files) write(join(project, file), `# ${file}\n`);
+  write(join(project, '.gitignore'), 'docs/generated/\n');
+  const id = host.projects()[0]!.project_id;
+  host.setSourceScope(project, { include: ['docs/**', 'tests/**', 'README.md'], exclude: ['docs/archive/**'] });
+  const synced = await host.project(project).sync(); const scanned = new Set(freshPaths(id));
+  expect([...scanned].sort()).toEqual(['README.md', 'docs/guide.md', 'docs/nested/deep.md', 'tests/unit.test.ts']);
+  expect(host.previewSourceScope(project)).toMatchObject({ files: synced.files, complete: true });
+  const plan = host.watchPlan(id), base = plan[0]!.path, local = (path: string) => relative(base, path).split(sep).join('/');
+  // Exactly the scan traversal: the root (an include ancestor) and in-scope directories. docs/archive/** excludes
+  // contents, so the scan still visits that directory and its watch accepts no files.
+  expect(plan.map(d => local(d.path)).sort()).toEqual(['', 'docs', 'docs/archive', 'docs/nested', 'tests']);
+  // For every candidate, the runtime event filter accepts exactly what the scan indexes.
+  for (const file of [...files, 'source.ts']) {
+    const directory = plan.find(d => local(d.path) === (dirname(file) === '.' ? '' : dirname(file)));
+    expect(Boolean(directory?.accepts(basename(file))), file).toBe(scanned.has(file));
+  }
+  const at = (path: string) => plan.find(d => local(d.path) === path)!;
+  expect(at('').accepts('docs')).toBe(true); expect(at('').accepts('src')).toBe(false); expect(at('').accepts('unrelated')).toBe(false);
+  expect(at('docs/archive').accepts('new.md')).toBe(false); expect(at('docs').accepts('generated')).toBe(false); expect(at('docs').accepts('added.md')).toBe(true);
+});
+
+test('source scope changes while the runtime runs replace watches, and manual sync matches automatic sync', async () => {
+  write(join(project, 'docs', 'guide.md'), '# Guide\n'); write(join(project, 'src', 'app.ts'), 'export const app = 1;');
+  const id = host.projects()[0]!.project_id, worker = start(), entry = () => worker.status().projects[0]!;
+  await until(() => entry().status === 'healthy' && freshPaths(id).includes('src/app.ts'));
+  expect(entry().watcher_count).toBe(3);
+  host.setSourceScope(project, { include: ['docs/**'] });
+  await until(() => entry().status === 'healthy' && entry().watcher_count === 2 && !freshPaths(id).includes('src/app.ts'));
+  expect(freshPaths(id)).toEqual(['docs/guide.md']);
+  const outside = sourcesOf(id).find(r => r.path === 'src/app.ts')!;
+  expect(host.previewSource(id, '', outside.id)).toBeUndefined();
+  const automatic = freshPaths(id), manual = await host.project(project).sync();
+  expect(manual.files).toBe(automatic.length); expect(freshPaths(id)).toEqual(automatic);
+  await until(() => entry().status === 'healthy'); const runs = entry().runs;
+  writeFileSync(join(project, 'src', 'app.ts'), 'export const app = 2;'); await delay(350);
+  expect(entry().runs).toBe(runs); expect(freshPaths(id)).not.toContain('src/app.ts');
+  host.clearSourceScope(project);
+  await until(() => entry().status === 'healthy' && entry().watcher_count === 3 && freshPaths(id).includes('src/app.ts'));
+  expect(freshPaths(id)).toEqual(['docs/guide.md', 'source.ts', 'src/app.ts']);
+});
+
+test('invalid sources.json fails closed without stopping the runtime and recovers after repair', async () => {
+  const other = join(root, 'other'); mkdirSync(other); writeFileSync(join(other, 'other.ts'), 'export const other = 1;'); host.init(other);
+  write(join(project, 'docs', 'guide.md'), '# Guide\n');
+  host.setSourceScope(project, { include: ['docs/**'] });
+  const events: string[] = [], id = host.projects().find(p => p.root.endsWith('project'))!.project_id;
+  auto = new AutoSync(host, event => events.push(event), { ...AUTO_SYNC, debounce: 100, discovery: 150 }); auto.start();
+  const all = () => auto!.status().projects;
+  await until(() => all().length === 2 && all().every(p => p.status === 'healthy'));
+  const valid = readFileSync(join(home, 'sources.json'), 'utf8');
+  writeFileSync(join(home, 'sources.json'), JSON.stringify({ version: 1, projects: { [id]: { include: ['../escape'] } } }));
+  // sources.json is one trusted file; an invalid file blocks every scan instead of falling back unfiltered.
+  await until(() => all().every(p => p.status === 'degraded' && p.last_error?.includes('sources.json') && p.watcher_count === 0));
+  writeFileSync(join(project, 'source.ts'), 'export const value = 99;'); await delay(400);
+  expect(freshPaths(id)).toEqual(['docs/guide.md']);
+  expect(events).toContain('source scope configuration invalid'); expect(events.join('\n')).not.toContain('Guide');
+  expect(host.doctor().problems.some(p => p.includes('sources.json'))).toBe(true);
+  writeFileSync(join(home, 'sources.json'), valid);
+  await until(() => all().every(p => p.status === 'healthy' && p.watcher_count > 0));
+  expect(freshPaths(id)).toEqual(['docs/guide.md']);
+});
+
+test('a project over source limits degrades alone and a local source scope restores it', async () => {
+  const large = join(root, 'large'); mkdirSync(large); host.init(large);
+  for (let i = 0; i < 130; i++) write(join(large, 'bulk', `${i}.md`), `${'lorem ipsum '.repeat(5400)}\n`);
+  write(join(large, 'docs', 'readme.md'), '# Large project docs\n');
+  const worker = start(), status = (name: string) => worker.status().projects.find(p => p.root === host.projects().find(q => q.root.endsWith(name))!.root);
+  await until(() => status('large')?.status === 'degraded' && status('project')?.status === 'healthy', 400);
+  expect(status('large')!.last_error).toContain('Source limit exceeded');
+  const id = host.projects().find(p => p.root.endsWith('project'))!.project_id, hash = sourcesOf(id)[0]!.hash;
+  writeFileSync(join(project, 'source.ts'), 'export const isolated = true;');
+  await until(() => sourcesOf(id).some(r => r.state === 'fresh' && r.hash !== hash));
+  host.setSourceScope(large, { include: ['docs/**'] });
+  await until(() => status('large')?.status === 'healthy', 400);
+  expect(status('large')!.watcher_count).toBe(2);
 });
 
 test('Windows argv escapes spaces, unicode, quotes and trailing slashes', () => {

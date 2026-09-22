@@ -4,6 +4,13 @@ These are trusted local operator operations. They are not MCP or HTTP tools.
 The local CLI is not an authentication boundary against an agent with arbitrary
 OS execution privileges; restrict that agent's OS permissions if necessary.
 
+## Source index scope
+
+Use `continuity sources show`, `preview`, `set` and `clear` to narrow an existing
+project's source selection in local `sources.json`. Preview before setting a filter,
+then sync. Project IDs and roots stay unchanged. See [source scope](source-scope.md)
+for patterns, fail-closed behavior and unchanged safety limits.
+
 ## Move versus clone
 
 Clones and copies always receive a new identity when initialized. Copying a

@@ -26,6 +26,10 @@ Stop with Ctrl+C. There is no automatic browser launch, login, telemetry or clou
 Activity, Settings and interactive search are deferred; CLI/API search remains available.
 No source editor or filesystem browser is provided.
 
+Workspaces also shows the local source filter and the indexed count from the last
+successful sync. Configure it with [the source-scope CLI](source-scope.md).
+Invalid `sources.json` appears in Diagnostics and blocks source operations.
+
 ## Browser boundary
 
 The Dashboard is a trusted **human installation-wide** client. It can navigate registered

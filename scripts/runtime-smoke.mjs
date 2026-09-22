@@ -49,7 +49,7 @@ try {
   assert.equal(client.memory(memory.id).status, 'persist'); assert.equal(client.memory(memory.id).provenance.trust, 'agent_observation');
   browser = await chromium.launch(); const page = await browser.newPage(); const errors = [], external = [];
   page.on('pageerror', error => errors.push(error.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); }); page.on('request', r => { if (!r.url().startsWith(status.dashboard)) external.push(r.url()); });
-  await page.goto(status.dashboard); await page.getByRole('heading', { name: 'Project continuity, at a glance.' }).waitFor();
+  await page.goto(status.dashboard); await page.getByRole('heading', { name: 'Overview', exact: true }).waitFor();
   await page.getByRole('link', { name: 'Sources', exact: true }).click(); await page.getByRole('link', { name: 'source.ts', exact: true }).first().waitFor();
   await page.getByRole('link', { name: 'Diagnostics', exact: true }).click(); await page.getByText('Disabled · FTS5 active', { exact: true }).waitFor();
   assert.deepEqual(errors, []); assert.deepEqual(external, []);

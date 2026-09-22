@@ -9,3 +9,4 @@ These decisions describe implemented boundaries. Revisit them with evidence, not
 - [005 — Optional hybrid retrieval over authorized snapshots](005-hybrid-retrieval.md)
 - [006 — Host-bound Git workspaces](006-host-workspaces.md)
 - [007 — Local Dashboard browser boundary](007-local-dashboard.md)
+- [008 — User background runtime and bounded source reconciliation](008-background-runtime.md)

@@ -37,11 +37,14 @@ interface IgnoreLayer { base: string; rules: Ignore }
 
 export class FileSources implements SourcePort {
   constructor(private readonly registeredRoots: () => readonly string[] = () => [], private readonly selection: { include?: readonly string[]; exclude?: readonly string[] } = {}) {}
-  scan(project: Project): Resource[] {
+  scan(project: Project): Resource[] { return this.collect(project).resources; }
+  watchPlan(project: Project) { return this.collect(project, true).directories; }
+  private collect(project: Project, metadataOnly = false) {
     const root = realpathSync.native(project.root);
     const identityRoot = process.platform === 'win32' ? root.toLowerCase() : root;
     if (identityRoot !== project.root) throw new Error('Project root changed its canonical location. Re-register the intended directory.');
     const output: Resource[] = [];
+    const directories: { path: string; accepts: (name: string) => boolean }[] = [];
     let bytes = 0;
     let visited = 0;
     const nestedRoots = this.registeredRoots().filter(p => p !== project.root);
@@ -55,6 +58,17 @@ export class FileSources implements SourcePort {
         if (statSync(ignorePath).size > 65536) throw new Error('Oversized .gitignore; sync aborted.');
         layers.push({ base: directory, rules: ignore().add(readFileSync(ignorePath, 'utf8')) });
       }
+      if (metadataOnly) directories.push({ path: directory, accepts: name => {
+        if (name === '.gitignore') return true;
+        if (name.includes('/') || name.includes('\\') || deniedName.test(name)) return false;
+        const candidate = join(directory, name), local = relative(root, candidate).split(sep).join('/');
+        const info = existsSync(candidate) ? lstatSync(candidate) : undefined;
+        const suffix = info?.isDirectory() ? '/' : '';
+        if (excluded.ignores(local + suffix) || layers.some(layer => layer.rules.ignores(relative(layer.base, candidate).split(sep).join('/') + suffix))) return false;
+        if (info?.isSymbolicLink()) return false;
+        if (info?.isDirectory()) return true;
+        return (!included || included.ignores(local)) && (allowedExtensions.has(extname(name).toLowerCase()) || /^(README|AGENTS|LICENSE)$/i.test(name));
+      } });
       for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
         if (++visited > 20000) throw new Error('Source traversal exceeds 20,000 entries; narrow the project root.');
         if (deniedName.test(entry.name) || entry.isSymbolicLink()) continue;
@@ -73,6 +87,7 @@ export class FileSources implements SourcePort {
         }
         if (!entry.isFile() || (!allowedExtensions.has(extname(entry.name).toLowerCase()) && !/^(README|AGENTS|LICENSE)$/i.test(entry.name))) continue;
         if (included && !included.ignores(relativePath)) continue;
+        if (metadataOnly) continue;
         const info = statSync(path);
         if (info.nlink > 1 || info.size > 65536) continue;
         const content = readFileSync(path, 'utf8');
@@ -89,6 +104,6 @@ export class FileSources implements SourcePort {
       }
     };
     walk(root, []);
-    return output;
+    return { resources: output, directories };
   }
 }

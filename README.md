@@ -36,6 +36,11 @@ Open `http://127.0.0.1:4783`. Inspect projects, workspaces, handoffs, pending me
 review, source freshness and historical context selection. The browser does not
 open automatically. See [Dashboard operation and security](docs/dashboard.md).
 
+On the unreleased background-runtime branch, optional Windows login startup keeps
+the Dashboard available and synchronizes registered projects automatically:
+`continuity startup install`, then `continuity runtime start` to start now.
+See [background runtime setup, limits and removal](docs/background-runtime.md).
+
 Agents can record structured state and continue it in another session:
 
 ```sh
@@ -143,6 +148,8 @@ handoff latest | show <id>   Retrieve a handoff
 mcp                          Serve project-bound tools over stdio
 serve                        Start a local authenticated HTTP API
 dashboard                    Start the local human Dashboard on 127.0.0.1:4783
+runtime start|status|stop     Control the optional background Dashboard and auto-sync
+startup install|status|remove Windows current-user login startup (unreleased)
 ```
 
 Global flags: `--project <directory>`, `--home <directory>`, `--json`.

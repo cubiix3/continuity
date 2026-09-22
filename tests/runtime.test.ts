@@ -105,6 +105,18 @@ test('periodic fallback works when watcher directory bound is exceeded', async (
   expect(auto.status().projects[0]!.watcher_status).toContain('periodic only');
 });
 
+test('more than 512 eligible directories use bounded reconciliation without watchers', async () => {
+  for (let i = 0; i < 513; i++) mkdirSync(join(project, `directory-${i}`));
+  auto = new AutoSync(host, () => {}, { ...AUTO_SYNC, reconcile: 250 }); auto.start();
+  await until(() => auto!.status().projects[0]?.status === 'healthy');
+  expect(auto.status().projects[0]!.watcher_count).toBe(0);
+  expect(auto.status().projects[0]!.watcher_status).toBe('periodic only: directory limit');
+  const hash = resources()[0]!.hash;
+  writeFileSync(join(project, 'source.ts'), 'export const reconciled = true;');
+  await until(() => resources().some(r => r.state === 'fresh' && r.hash !== hash));
+  expect(host.doctor().integrity).toBe('ok');
+});
+
 test('Windows argv escapes spaces, unicode, quotes and trailing slashes', () => {
   expect(windowsArgument('C:\\space ü\\')).toBe('"C:\\space ü\\\\"'); expect(windowsArgument('a"b')).toBe('"a\\"b"');
 });

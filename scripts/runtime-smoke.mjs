@@ -39,10 +39,14 @@ try {
   const fresh = () => host.inspection.page(id, '', 'sources', 20).items.map(i => i.record).find(r => r.state === 'fresh' && r.path === 'source.ts');
   await until(() => fresh() && command('runtime', 'status').projects?.[0]?.status === 'healthy'); const before = fresh().hash;
   const runs = command('runtime', 'status').projects[0].runs;
+  const client = host.project(project);
+  const memory = client.propose({ key: 'runtime.retry-budget', kind: 'decision', text: 'Provider retry budget is preserved across reconnect attempts.', from: { agent: 'runtime-fixture', session: 'package-smoke' } });
+  assert.equal(memory.status, 'persist'); assert.equal(memory.provenance.trust, 'agent_observation'); assert(!memory.review);
   for (let i = 0; i < 10; i++) writeFileSync(join(project, 'source.ts'), `export const value = ${i + 2};`);
   await until(() => fresh().hash !== before && command('runtime', 'status').projects?.[0]?.status === 'healthy');
   assert.equal(command('runtime', 'status').projects[0].runs - runs, 1);
   command('sync'); assert.equal(command('doctor').integrity, 'ok');
+  assert.equal(client.memory(memory.id).status, 'persist'); assert.equal(client.memory(memory.id).provenance.trust, 'agent_observation');
   browser = await chromium.launch(); const page = await browser.newPage(); const errors = [], external = [];
   page.on('pageerror', error => errors.push(error.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); }); page.on('request', r => { if (!r.url().startsWith(status.dashboard)) external.push(r.url()); });
   await page.goto(status.dashboard); await page.getByRole('heading', { name: 'Project continuity, at a glance.' }).waitFor();

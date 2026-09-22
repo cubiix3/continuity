@@ -62,8 +62,26 @@ it('does not declare another workspace source stale to supersede its memory', ()
   const featureText = 'Reconnect policy clears the worker registry immediately.';
   writeFileSync(join(primary, 'policy.md'), mainText); writeFileSync(join(feature, 'policy.md'), featureText);
   const original = host.project(primary).propose({ key: 'workspace-policy', kind: 'decision', text: mainText, source_path: 'policy.md' });
+  const unproven = host.workspace(primary, feature).propose({ key: 'workspace-policy', kind: 'decision', text: featureText, source_path: 'missing.md' });
+  expect(unproven).toMatchObject({ status: 'needs_attention', provenance: { trust: 'untrusted', workspace_id: host.workspace(primary, feature).status().workspace!.workspace_id } });
+  expect(host.project(primary).memory(original.id).status).toBe('persist');
   const other = host.workspace(primary, feature).propose({ key: 'workspace-policy', kind: 'decision', text: featureText, source_path: 'policy.md' });
   expect(other.status).toBe('needs_attention'); expect(host.project(primary).memory(original.id).status).toBe('persist');
+});
+
+it('retains bound workspace provenance for missing evidence and resolves it with current local evidence', () => {
+  for (const [client, directory] of [[host.project(primary), primary], [host.workspace(primary, feature), feature]] as const) {
+    const workspaceId = client.status().workspace?.workspace_id;
+    const key = `missing-evidence-${workspaceId ?? 'primary'}`;
+    const old = client.propose({ key, kind: 'decision', text: 'Reconnect policy retains all registry leases.', source_path: 'missing.md' });
+    expect(old.status).toBe('needs_attention'); expect(old.provenance.trust).toBe('untrusted'); expect(old.provenance.workspace_id).toBe(workspaceId);
+    const text = 'Reconnect policy releases all registry leases.';
+    writeFileSync(join(directory, 'actual.md'), text);
+    const resolved = client.propose({ key, kind: 'decision', text, source_path: 'actual.md' });
+    expect(resolved).toMatchObject({ status: 'persist', outcome: 'superseded', provenance: { trust: 'derived' }, superseded_ids: [old.id] });
+    expect(resolved.provenance.workspace_id).toBe(workspaceId);
+    expect(client.memory(old.id)).toMatchObject({ status: 'superseded', superseded_by: resolved.id });
+  }
 });
 
 it('persists workspace identity and scopes latest handoffs while allowing explicit project transitions', async () => {

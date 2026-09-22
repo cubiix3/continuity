@@ -31,6 +31,41 @@ test('routine, temporary, generic and explicitly speculative candidates never ac
   }
 });
 
+test('agent relevance normalizes separators consistently for task, key and text, including Unicode', async () => {
+  for (const [key, text, queries] of [
+    ['retry_budget', 'Provider retry budget is persisted across reconnect.', ['retry_budget', 'retry budget', 'retry-budget']],
+    ['render_state', 'The graphics lifecycle survives provider replacement.', ['render_state', 'render state', 'render-state']],
+    ['speicher_größe', 'The registry preserves its bounded storage allocation.', ['speicher_größe', 'speicher größe', 'speicher-größe']],
+    ['lease', 'Provider retry_budget is persisted across reconnect.', ['retry_budget', 'retry budget', 'retry-budget']],
+  ] as const) {
+    const memory = client().propose({ ...lesson, key, text });
+    for (const task of queries) expect((await client().context({ task })).items.some(item => item.id === memory.id), task).toBe(true);
+    expect((await client().context({ task: 'Typography website stylesheet' })).items.some(item => item.id === memory.id)).toBe(false);
+  }
+});
+
+test('quarantined source duplicates keep rows and revisions stable but changed evidence is reevaluated', () => {
+  const other = 'Reconnect cancellation retains its provider retry budget.';
+  writeFileSync(join(path, 'a.md'), lesson.text); writeFileSync(join(path, 'b.md'), other);
+  client().propose({ ...lesson, source_path: 'a.md' });
+  const b = client().propose({ ...lesson, text: other, source_path: 'b.md' });
+  expect(b.status).toBe('needs_attention');
+  const before = client().memories().map(m => ({ id: m.id, revisions: revisions(m.id).length }));
+  const duplicate = client().propose({ ...lesson, text: other, source_path: 'b.md' });
+  expect(duplicate).toMatchObject({ id: b.id, status: 'needs_attention', outcome: 'duplicate' });
+  expect(client().memories().map(m => ({ id: m.id, revisions: revisions(m.id).length }))).toEqual(before);
+  // The same excerpt in a changed source is a new evidence version, not a duplicate.
+  writeFileSync(join(path, 'b.md'), `${other}\nAdditional current context.`);
+  const changed = client().propose({ ...lesson, text: other, source_path: 'b.md' });
+  expect(changed.id).not.toBe(b.id); expect(changed.outcome).not.toBe('duplicate'); expect(changed.status).toBe('needs_attention');
+  expect(changed.provenance.source_version).not.toBe(b.provenance.source_version);
+  // Removing the contradictory source must still allow the unchanged surviving evidence to resolve.
+  unlinkSync(join(path, 'a.md'));
+  const resolved = client().propose({ ...lesson, text: other, source_path: 'b.md' });
+  expect(resolved).toMatchObject({ id: changed.id, status: 'persist', outcome: 'superseded' });
+  expect(client().memories().filter(m => m.status === 'persist')).toHaveLength(1);
+});
+
 test('two agent claims quarantine both, preserve revisions and never use latest-wins', async () => {
   const first = client().propose(lesson);
   const other = client().propose({ ...lesson, text: 'Reconnect cancellation must retain the retry budget across every provider session.' });

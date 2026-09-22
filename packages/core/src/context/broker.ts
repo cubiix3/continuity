@@ -5,17 +5,19 @@ import { passages } from './passages.js';
 import { rankPassages } from './ranking.js';
 import { NamespaceGuard } from '../security/namespace.js';
 
+const memoryTokens = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+
 export function contextBroker(storage: StoragePort, project: Project, request: ContextRequest, sources: Resource[], estimator?: TokenEstimator, ranked?: { items: ContextItem[]; retrieval: NonNullable<ContextBundle['retrieval']> }, workspaceId?: string): ContextBundle {
   const { task, role, budget, provider_model_hint } = contextRequestSchema.parse(request);
   const guard = new NamespaceGuard(project);
   const candidates: ContextItem[] = ranked?.items ?? rankPassages(sources, passages(sources), storage.search(project.project_id, task, 100), [], task, 'lexical');
   const terms = task.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
+  const meaningful = memoryTokens(task).filter(t => t.length > 2 && !['the', 'and', 'for', 'with', 'this', 'that', 'from', 'are', 'was', 'into', 'how', 'can', 'should', 'project'].includes(t));
   const memoryPriority = (m: ReturnType<StoragePort['memories']>[number]) => m.status === 'accepted' ? 0 : m.source_path ? 1 : 2;
   for (const m of storage.memories(project.project_id).sort((a, b) => memoryPriority(a) - memoryPriority(b) || a.id.localeCompare(b.id))) {
     if (!['persist', 'accepted'].includes(m.status)) continue;
     if (m.provenance.trust === 'agent_observation' && m.status !== 'accepted') {
-      const meaningful = terms.filter(t => t.length > 2 && !['the', 'and', 'for', 'with', 'this', 'that', 'from', 'are', 'was', 'into', 'how', 'can', 'should', 'project'].includes(t));
-      const words = new Set(`${m.key} ${m.text}`.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+      const words = new Set(memoryTokens(`${m.key} ${m.text}`));
       if (!meaningful.some(t => words.has(t))) continue;
     } else if (!terms.some(t => m.text.toLowerCase().includes(t))) continue;
     if (m.source_path && !sources.some(r => r.state === 'fresh' && r.path === m.source_path && r.hash === m.provenance.source_version)) continue;

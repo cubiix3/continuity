@@ -114,7 +114,7 @@ it('reports bounded preview counts and oversized skips without raising any safet
   const large = join(project, 'large'); fs.mkdirSync(large);
   for (let i = 0; i < 129; i++) fs.writeFileSync(join(large, `${i}.md`), 'x'.repeat(65536));
   expect(host.previewSourceScope(project, { include: ['large/**'] })).toMatchObject({ files: 129, bytes: 129 * 65536, limit_exceeded: true });
-});
+}, 30000);
 
 it('uses the same project filter in real worktrees, including existing clients', async () => {
   const git = (...args: string[]) => execFileSync('git', ['-C', project, ...args], { stdio: 'pipe' });

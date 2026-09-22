@@ -25,7 +25,7 @@ trusted local user or host chooses a project before agent input is accepted.
 | Prompt-based scope widening | No project selector in agent schemas; strict unknown-field rejection | Core, HTTP, and real MCP injection tests |
 | Symlink/path traversal | Realpath validation; skip symlinks and junctions, hard-linked files, nested project roots | Alias, traversal, junction tests |
 | Secret indexing | Mandatory filename exclusions plus content scanning and gitignore | Secret names, token patterns, nested ignore tests |
-| Memory poisoning | Exact source excerpts only; free-form proposals need attention | Unsupported claims and routine-output rejection |
+| Memory poisoning | Exact excerpts use source hashes; attributed agent claims activate at lower trust; conflicts quarantine | Forged-trust rejection, routine filtering, same-key conflicts and source supersession tests |
 | Stale context | Refresh and hash before retrieval; require matching memory evidence version | Source change, deletion, and new exclusion tests |
 | Silent conflicts | Stable claim key; conflict becomes `needs_attention`; append revisions | Conflict, forget, and revision tests |
 | Deleted sources | Clear old searchable content; mark missing | Deleted-source test |
@@ -38,7 +38,8 @@ trusted local user or host chooses a project before agent input is accepted.
 `authoritative` means a current file in the host-selected project. It does not mean
 that the file is benign, reviewed, Git-tracked, or allowed to issue system
 instructions. `derived` means an exact excerpt whose current source hash was
-verified by policy. `agent_observation` labels handoff claims. `untrusted` labels
+verified by policy. `agent_observation` labels handoff claims and automatically active
+agent-learned memories; attribution is self-reported and does not prove truth. `untrusted` labels
 unverified proposals. `verified` is reserved for an explicit future verification
 workflow; no current operation assigns it.
 

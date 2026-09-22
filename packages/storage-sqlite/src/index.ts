@@ -36,6 +36,8 @@ export class SqliteStorage implements StoragePort {
       sources: count("SELECT count(*) n FROM resources WHERE project_id = ? AND workspace_id = ? AND state = 'fresh'", projectId, workspaceId),
       memories: count('SELECT count(*) n FROM memories WHERE project_id = ?', projectId),
       pending: count("SELECT count(*) n FROM memories WHERE project_id = ? AND json_extract(data, '$.status') IN ('proposed', 'needs_attention')", projectId),
+      active: count("SELECT count(*) n FROM memories WHERE project_id = ? AND json_extract(data, '$.status') IN ('persist', 'accepted')", projectId),
+      conflicts: count("SELECT count(*) n FROM memories WHERE project_id = ? AND json_extract(data, '$.status') = 'needs_attention'", projectId),
       handoffs: count("SELECT count(*) n FROM handoffs WHERE project_id = ? AND COALESCE(json_extract(data, '$.provenance.workspace_id'), '') = ?", projectId, workspaceId),
       contexts: count("SELECT count(*) n FROM contexts WHERE project_id = ? AND COALESCE(json_extract(data, '$.workspace_id'), '') = ?", projectId, workspaceId),
     };
@@ -47,8 +49,9 @@ export class SqliteStorage implements StoragePort {
     const workspace = kind === 'memories' || kind === 'revisions' ? '' : kind === 'sources' ? ' AND workspace_id = ?' : ` AND COALESCE(json_extract(data, '${kind === 'contexts' ? '$.workspace_id' : '$.provenance.workspace_id'}'), '') = ?`;
     const identity = id ? ` AND ${kind === 'revisions' ? 'memory_id' : 'id'} = ?` : '';
     if (status && kind !== 'memories') throw new Error('Status filtering is only available for memories.');
-    const statuses = status === 'accepted' ? ['accepted', 'persist'] : status === 'rejected' ? ['rejected', 'reject'] : status ? [status] : [];
-    const filter = statuses.length ? ` AND json_extract(data, '$.status') IN (${statuses.map(() => '?').join(',')})` : '';
+    const statuses = ['active', 'source_backed', 'agent_learned', 'accepted'].includes(status ?? '') ? ['accepted', 'persist'] : status === 'conflicts' ? ['needs_attention'] : status === 'rejected' ? ['rejected', 'reject'] : status ? [status] : [];
+    const origin = status === 'source_backed' ? " AND json_extract(data, '$.source_path') IS NOT NULL" : status === 'agent_learned' ? " AND json_extract(data, '$.provenance.trust') = 'agent_observation' AND json_extract(data, '$.status') = 'persist'" : '';
+    const filter = (statuses.length ? ` AND json_extract(data, '$.status') IN (${statuses.map(() => '?').join(',')})` : '') + origin;
     const sourceFilters: Record<string, string> = {
       fresh: "state = 'fresh'", stale: "state IN ('stale', 'superseded', 'missing')", rules: "json_extract(data, '$.kind') = 'rule'",
       docs: "(lower(path) GLOB '*.md' OR lower(path) GLOB '*.txt' OR lower(path) GLOB '*.rst')",

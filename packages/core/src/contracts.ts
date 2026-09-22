@@ -30,6 +30,7 @@ export const memoryCandidateSchema = z.object({
   text: z.string().trim().min(10).max(2000),
   kind: z.enum(['rule', 'decision', 'memory', 'experience']),
   source_path: z.string().min(1).max(500).optional(),
+  from: z.object({ agent: z.string().trim().min(1).max(100), session: z.string().trim().min(1).max(100) }).strict().optional(),
 }).strict();
 export type MemoryCandidate = z.infer<typeof memoryCandidateSchema>;
 export interface Memory extends MemoryCandidate {
@@ -39,7 +40,9 @@ export interface Memory extends MemoryCandidate {
   reason: string;
   provenance: Provenance;
   review?: { by: string; at: string; decision: 'accepted' | 'rejected' };
+  superseded_by?: string;
 }
+export type MemoryProposal = Memory & { outcome: 'persisted' | 'rejected' | 'quarantined' | 'duplicate' | 'superseded' | 'pending'; superseded_ids?: string[] };
 export const observationSchema = z.object({ text: z.string().min(1).max(4000), agent: z.string().min(1).max(100), session: z.string().min(1).max(100) }).strict();
 export interface Observation extends z.infer<typeof observationSchema> { id: string; project_id: string; provenance: Provenance }
 const shortText = z.string().max(2000);
@@ -127,7 +130,7 @@ export interface InspectionPage { items: { record: InspectionRecord; cursor: num
 /** Optional host inspection port; existing StoragePort implementers remain compatible. */
 export interface InspectionStoragePort extends Pick<StoragePort, 'projects' | 'workspaces' | 'selection'> {
   browse(projectId: string, workspaceId: string, kind: InspectionKind, limit: number, after: number, id?: string, status?: string, sourceFilter?: string): InspectionPage;
-  inspectionStats(projectId: string, workspaceId: string): { sources: number; memories: number; pending: number; handoffs: number; contexts: number };
+  inspectionStats(projectId: string, workspaceId: string): { sources: number; memories: number; pending: number; active: number; conflicts: number; handoffs: number; contexts: number };
 }
 
 export interface SourcePort { scan(project: Project): Resource[] }

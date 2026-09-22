@@ -44,7 +44,7 @@ Six tools are available:
 | --- | --- |
 | `continuity_context` | `task`, optional `role`, `mode`, `budget` in bytes |
 | `continuity_search` | `query`, optional `mode` |
-| `continuity_memory_propose` | `key`, `text`, `kind`, optional `source_path` |
+| `continuity_memory_propose` | `key`, `text`, `kind`, optional `source_path`; `from.agent` and `from.session` for automatic agent-learned memory |
 | `continuity_handoff_create` | [handoff fields](handoffs.md) |
 | `continuity_handoff_latest` | Empty object |
 | `continuity_observe` | `text`, `agent`, `session`; never auto-promoted to memory |

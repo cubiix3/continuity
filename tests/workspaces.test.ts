@@ -44,6 +44,15 @@ it('keeps concurrent worktree sources separate while sharing reviewed project me
   expect(host.doctor().problems).toEqual([]);
 });
 
+it('shares learned project conventions without promoting them to workspace source rules', async () => {
+  const a = host.project(primary), b = host.workspace(primary, feature);
+  const memory = a.propose({ key: 'reconnect-convention', kind: 'rule', text: 'Reconnect replacement retains registry identity across provider sessions.', from: { agent: 'generic', session: 'session-a' } });
+  const context = await b.context({ task: 'Reconnect registry' });
+  expect(context.items.find(item => item.id === memory.id)).toMatchObject({ kind: 'memory', provenance: { trust: 'agent_observation' } });
+  expect(host.inspection.page(context.project_id, context.workspace_id!, 'contexts', 1, 0, context.context_id).items).toHaveLength(1);
+  expect((await host.project(foreign).context({ task: 'Reconnect registry' })).items.some(item => item.id === memory.id)).toBe(false);
+});
+
 it('persists workspace identity and scopes latest handoffs while allowing explicit project transitions', async () => {
   const b = host.workspace(primary, feature); const created = b.createHandoff(handoff); const id = b.status().workspace!.workspace_id;
   expect(host.project(primary).latestHandoff()).toBeNull();

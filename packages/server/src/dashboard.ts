@@ -6,7 +6,7 @@ import type { openContinuity } from '../../sdk/src/index.js';
 import { passages } from '../../core/src/context/passages.js';
 
 type Host = ReturnType<typeof openContinuity>;
-const querySchema = z.object({ project: z.string().max(100).optional(), workspace: z.string().max(100).default(''), kind: z.enum(['handoffs', 'memories', 'contexts', 'sources', 'revisions']).default('handoffs'), limit: z.coerce.number().int().min(1).max(50).default(20), after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0), id: z.string().min(1).max(150).optional(), status: z.enum(['accepted', 'proposed', 'needs_attention', 'rejected', 'superseded', 'forgotten']).optional(), source_filter: z.enum(['fresh', 'stale', 'rules', 'docs', 'code']).optional() }).strict();
+const querySchema = z.object({ project: z.string().max(100).optional(), workspace: z.string().max(100).default(''), kind: z.enum(['handoffs', 'memories', 'contexts', 'sources', 'revisions']).default('handoffs'), limit: z.coerce.number().int().min(1).max(50).default(20), after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0), id: z.string().min(1).max(150).optional(), status: z.enum(['active', 'source_backed', 'agent_learned', 'conflicts', 'accepted', 'proposed', 'needs_attention', 'rejected', 'superseded', 'forgotten']).optional(), source_filter: z.enum(['fresh', 'stale', 'rules', 'docs', 'code']).optional() }).strict();
 const writeSchema = z.object({ project: z.string().max(100), workspace: z.string().max(100).default(''), id: z.string().max(150).optional(), decision: z.enum(['accepted', 'rejected']).optional(), by: z.string().trim().min(1).max(100).optional() }).strict();
 
 export function createDashboardServer(host: Host, assetsRoot = new URL('../../dashboard/', import.meta.url)) {
@@ -65,12 +65,16 @@ export function createDashboardServer(host: Host, assetsRoot = new URL('../../da
         }
         if (url.pathname === '/dashboard-api/selection' && q.id) return send(200, host.inspection.selection(q.project, q.workspace, q.id) ?? null);
       }
-      if (req.method === 'POST' && ['/dashboard-api/review', '/dashboard-api/sync'].includes(url.pathname) && !url.search) {
+      if (req.method === 'POST' && ['/dashboard-api/review', '/dashboard-api/forget', '/dashboard-api/sync'].includes(url.pathname) && !url.search) {
         if (req.headers.origin !== origin || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON write required.' });
         const chunks: Buffer[] = []; let bytes = 0;
         for await (const chunk of req) { const data = Buffer.from(chunk as Uint8Array); bytes += data.length; if (bytes > 4096) return send(413, { error: 'Request too large.' }); chunks.push(data); }
         const input = writeSchema.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
         const scope = host.inspection.scope(input.project, input.workspace);
+        if (url.pathname === '/dashboard-api/forget') {
+          if (!input.id || input.decision || input.by) return send(400, { error: 'A memory ID is required.' });
+          return send(200, host.project(scope.project.root).forget(input.id));
+        }
         if (url.pathname === '/dashboard-api/review') {
           if (!input.id || !input.decision || !input.by) return send(400, { error: 'Memory, decision and reviewer are required.' });
           try { return send(200, host.review(scope.project.root, input.id, input.decision, input.by)); }

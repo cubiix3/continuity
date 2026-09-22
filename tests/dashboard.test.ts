@@ -24,6 +24,18 @@ afterEach(async () => { await new Promise<void>(resolve => { server.closeAllConn
 const get = (path: string, headers: Record<string, string> = {}) => fetch(`${base}/dashboard-api/${path}`, { headers: { 'X-Continuity-Token': token, ...headers } });
 const write = (path: string, body: unknown, headers: Record<string, string> = {}) => fetch(`${base}/dashboard-api/${path}`, { method: 'POST', headers: { 'X-Continuity-Token': token, Origin: base, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
+it('shows automatic memory counts and protects explicit forget with ownership and browser write checks', async () => {
+  const memory = host.project(project).propose({ key: 'durable', kind: 'experience', text: 'Reconnect cancellation releases the shared provider registry lease.', from: { agent: 'test', session: 'automatic' } });
+  const stats = await (await get(`stats?project=${id}`)).json() as { active: number; conflicts: number }; expect(stats).toMatchObject({ active: 1, conflicts: 0 });
+  const filtered = await (await get(`records?project=${id}&kind=memories&status=agent_learned`)).json() as InspectionPage; expect(filtered.items[0]?.record).toMatchObject({ id: memory.id });
+  expect((await get(`forget?project=${id}&id=${memory.id}`)).status).toBe(404);
+  const input = { project: id, id: memory.id }; expect((await write('forget', input, { Origin: 'https://foreign.invalid' })).status).toBe(403);
+  expect((await write('forget', { ...input, project: host.init(other).project_id })).status).toBe(409);
+  expect(host.project(project).memory(memory.id).status).toBe('persist');
+  expect((await write('forget', input)).status).toBe(200); expect(host.project(project).memory(memory.id).status).toBe('forgotten');
+  expect(host.inspection.page(id, '', 'revisions', 20, 0, memory.id).items).toHaveLength(2);
+});
+
 it('serves only local assets with CSP and rejects DNS rebinding, foreign origins and unauthenticated reads', async () => {
   const page = await fetch(base); expect(page.status).toBe(200); expect(page.headers.get('content-security-policy')).toContain("frame-ancestors 'none'"); expect(page.headers.get('content-security-policy')).not.toContain('unsafe'); expect(page.headers.get('cache-control')).toBe('no-store');
   expect((await fetch(`${base}/dashboard-api/projects`)).status).toBe(403);

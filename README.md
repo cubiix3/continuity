@@ -8,9 +8,9 @@
 
 <p align="center">
   <a href="https://github.com/cubiix3/continuity/actions/workflows/ci.yml"><img alt="CI on Linux and Windows" src="https://github.com/cubiix3/continuity/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <a href="https://github.com/cubiix3/continuity/releases/tag/v0.1.0"><img alt="Latest release v0.1.0" src="https://img.shields.io/github/v/release/cubiix3/continuity?color=2e6951"></a>
-  <a href="LICENSE"><img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2e6951"></a>
-  <img alt="Node.js 24" src="https://img.shields.io/badge/node-24.13%2B-2e6951">
+  <a href="https://github.com/cubiix3/continuity/releases/tag/v0.1.0"><img alt="Latest release v0.1.0" src="https://img.shields.io/github/v/release/cubiix3/continuity?color=2d6a50"></a>
+  <a href="LICENSE"><img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2d6a50"></a>
+  <img alt="Node.js 24" src="https://img.shields.io/badge/node-24.13%2B-2d6a50">
 </p>
 
 Continuity is a local continuity layer. It keeps project identity, memory,

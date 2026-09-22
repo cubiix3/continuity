@@ -4,7 +4,7 @@
 
 - Automatic-first durable memory: source-backed facts and attributed agent lessons activate automatically with provenance and trust; conflicts are quarantined; human review is optional.
 - Local per-project source scope (`continuity sources`) to narrow the source index of large projects without changing project identity.
-- Refreshed Dashboard visual system and information hierarchy.
+- Refreshed Dashboard: visual system and information hierarchy, then a denser desktop shell, project-first Overview, automatic-memory filters, handoff-first detail views and a read-only source view.
 - New Continuity mark, favicon and brand assets.
 
 ## 0.1.0 — 2026-09-22

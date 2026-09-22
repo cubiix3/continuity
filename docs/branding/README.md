@@ -23,7 +23,7 @@ external assets.
 
 | Role | Value |
 | --- | --- |
-| Primary accent (light UI, Dashboard `--accent`) | `#2e6951` |
+| Primary accent (light UI, Dashboard `--accent`) | `#2d6a50` |
 | Mark on dark: stroke gradient, node dots | `#3f6153` → `#a3e9c5`, dots `#b8eed1` |
 | Mark on light: stroke gradient, node dots | `#9cc6b0` → `#2b7555`, dots `#1f6448` |
 | Small sizes (favicon, Dashboard sidebar) | shorter ramps: dark `#6aa98a` → `#a8ecc9`, light `#5f9c80` → `#2b7555` |

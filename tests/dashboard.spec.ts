@@ -211,3 +211,20 @@ test('long scope paths and memory text stay accessible with keyboard-safe confir
   await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0); await expect(forget).toBeFocused();
   expect(host.project(longRoot).memory(memory.id).status).toBe('persist');
 });
+
+test('overview workspace total comes from the server, not the paginated workspace selector', async ({ page }) => {
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: primary, stdio: 'pipe' });
+  for (let i = 0; i < 55; i++) { const worktree = join(root, `ws-${String(i).padStart(2, '0')}`); git('worktree', 'add', '-q', '-b', `ws-${i}`, worktree); host.workspace(primary, worktree); }
+  const project = host.projects().find(p => p.name === 'Demo · Relay')!, total = 1 + 1 + 55, registered = host.inspection.workspaces(project.project_id).map(w => w.workspace_id);
+  expect(registered).toHaveLength(56);
+  expect(host.inspection.stats(project.project_id, '').workspaces).toBe(total);
+  const workspacesRow = page.locator('.state-list dt').filter({ hasText: /^Workspaces$/ }).locator('+ dd');
+  await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' });
+  await expect(workspacesRow).toHaveText(String(total));
+  expect(await page.getByLabel('Workspace', { exact: true }).locator('option').count()).toBeLessThan(total);
+  // A workspace beyond the selector's first page must not change the project total.
+  const outside = registered.at(-1)!; expect(host.inspection.stats(project.project_id, outside).workspaces).toBe(total);
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${outside}`);
+  await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(outside);
+  await expect(workspacesRow).toHaveText(String(total));
+});

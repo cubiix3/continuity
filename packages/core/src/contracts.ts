@@ -130,7 +130,8 @@ export interface InspectionPage { items: { record: InspectionRecord; cursor: num
 /** Optional host inspection port; existing StoragePort implementers remain compatible. */
 export interface InspectionStoragePort extends Pick<StoragePort, 'projects' | 'workspaces' | 'selection'> {
   browse(projectId: string, workspaceId: string, kind: InspectionKind, limit: number, after: number, id?: string, status?: string, sourceFilter?: string): InspectionPage;
-  inspectionStats(projectId: string, workspaceId: string): { sources: number; memories: number; pending: number; active: number; conflicts: number; handoffs: number; contexts: number };
+  /** `workspaces` is the project total: the primary checkout plus registered workspaces. */
+  inspectionStats(projectId: string, workspaceId: string): { sources: number; memories: number; pending: number; active: number; conflicts: number; handoffs: number; contexts: number; workspaces: number };
 }
 
 export interface SourcePort { scan(project: Project): Resource[] }

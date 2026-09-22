@@ -90,7 +90,7 @@ async function selectors(after = 0) {
 }
 async function overview(stamp: number) {
   if (!projectId) { heading('Overview', 'Project knowledge and the work carried between sessions.'); empty('No projects registered.', 'Run continuity init inside a project, then continuity sync. Reload this page to see the registration.'); main.append(el('pre', 'continuity init\ncontinuity sync', 'first-run')); return; }
-  const [handoffs, counts, snapshot, health, retrieval] = await Promise.all([api<Page>('records', { kind: 'handoffs', limit: '5' }), api<{ active: number; conflicts: number; sources: number; memories: number; handoffs: number }>('stats', {}), api<Record<string, unknown>>('status', {}), api<{ integrity: string; fts5: boolean; problems: string[] }>('diagnostics'), api<{ status: string }>('retrieval', {}).catch(() => ({ status: 'unavailable' }))]);
+  const [handoffs, counts, snapshot, health, retrieval] = await Promise.all([api<Page>('records', { kind: 'handoffs', limit: '5' }), api<{ active: number; conflicts: number; sources: number; memories: number; handoffs: number; workspaces: number }>('stats', {}), api<Record<string, unknown>>('status', {}), api<{ integrity: string; fts5: boolean; problems: string[] }>('diagnostics'), api<{ status: string }>('retrieval', {}).catch(() => ({ status: 'unavailable' }))]);
   if (stamp !== generation) return;
   const healthy = health.integrity === 'ok' && health.fts5 && !health.problems.length, sync = snapshot.sync as { at?: string; files?: number } | undefined;
   const project = projects.find(p => p.project_id === projectId)!, header = el('header', undefined, 'page-header'), hero = el('div', undefined, 'project-hero');
@@ -106,7 +106,7 @@ async function overview(stamp: number) {
   if (handoffs.items.length) recent.append(link('All handoffs', '#/handoffs'));
   left.append(recent, timeline(handoffs.items));
   const state = el('dl', undefined, 'state-list'), row = (label: string, value: string | number, note?: string) => { const dd = el('dd', String(value)); if (note) dd.append(el('small', note)); state.append(el('dt', label), dd); };
-  row('Active memories', counts.active); row('Conflicts / unresolved', counts.conflicts); row('Sources at last sync', sync?.files ?? '—', `${counts.sources} indexed versions`); row('Handoffs', counts.handoffs); row('Workspaces', 1 + workspaces.length);
+  row('Active memories', counts.active); row('Conflicts / unresolved', counts.conflicts); row('Sources at last sync', sync?.files ?? '—', `${counts.sources} indexed versions`); row('Handoffs', counts.handoffs); row('Workspaces', counts.workspaces);
   row('Retrieval', retrieval.status === 'disabled' ? 'Lexical' : statusLabels[retrieval.status] ?? retrieval.status, retrieval.status === 'disabled' ? 'FTS5' : undefined);
   right.append(el('h2', 'Project state'), state, el('p', 'Durable lessons activate automatically. Agent observations remain distinct from source truth.', 'reason'));
   const links = el('div', undefined, 'inline-links'); links.append(link('Inspect memories', '#/memories'), link('Run diagnostics', '#/diagnostics')); right.append(links);

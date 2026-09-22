@@ -50,7 +50,7 @@ export class SqliteStorage implements StoragePort {
     const identity = id ? ` AND ${kind === 'revisions' ? 'memory_id' : 'id'} = ?` : '';
     if (status && kind !== 'memories') throw new Error('Status filtering is only available for memories.');
     const statuses = ['active', 'source_backed', 'agent_learned', 'accepted'].includes(status ?? '') ? ['accepted', 'persist'] : status === 'conflicts' ? ['needs_attention'] : status === 'rejected' ? ['rejected', 'reject'] : status ? [status] : [];
-    const origin = status === 'source_backed' ? " AND json_extract(data, '$.source_path') IS NOT NULL" : status === 'agent_learned' ? " AND json_extract(data, '$.provenance.trust') = 'agent_observation' AND json_extract(data, '$.status') = 'persist'" : '';
+    const origin = status === 'source_backed' ? " AND json_extract(data, '$.source_path') IS NOT NULL AND json_extract(data, '$.provenance.trust') = 'derived'" : status === 'agent_learned' ? " AND json_extract(data, '$.provenance.trust') = 'agent_observation' AND json_extract(data, '$.status') = 'persist'" : '';
     const filter = (statuses.length ? ` AND json_extract(data, '$.status') IN (${statuses.map(() => '?').join(',')})` : '') + origin;
     const sourceFilters: Record<string, string> = {
       fresh: "state = 'fresh'", stale: "state IN ('stale', 'superseded', 'missing')", rules: "json_extract(data, '$.kind') = 'rule'",

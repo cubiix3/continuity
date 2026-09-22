@@ -133,7 +133,7 @@ async function detail(kind: string, id: string, stamp: number) {
     else main.append(el('p', 'No selection audit recorded for this historical context.'));
   }
 }
-function memoryOrigin(m: Memory) { return m.status === 'needs_attention' ? 'CONFLICT / UNRESOLVED' : m.status === 'accepted' ? 'HUMAN' : m.source_path ? 'SOURCE' : 'AGENT'; }
+function memoryOrigin(m: Memory) { return m.status === 'needs_attention' ? 'CONFLICT / UNRESOLVED' : m.status === 'accepted' ? 'HUMAN' : m.source_path && m.provenance.trust === 'derived' ? 'SOURCE' : 'AGENT'; }
 function forget(memory: Memory) {
   const dialog = el('dialog'), title = el('h2', 'Forget this memory?'); title.id = 'forget-title'; dialog.setAttribute('aria-labelledby', title.id);
   const description = el('p', 'This removes the memory from active context. Its revision history is retained.'); description.id = 'forget-description'; dialog.setAttribute('aria-describedby', description.id);

@@ -101,8 +101,10 @@ test('inspection counts and origin filters distinguish active, quarantined and l
   expect(host.inspection.stats(id, '')).toMatchObject({ memories: 3, active: 2, pending: 1, conflicts: 0 });
   const list = (status: string) => host.inspection.page(id, '', 'memories', 20, 0, undefined, status).items.map(i => i.record as Memory);
   expect(list('agent_learned')).toHaveLength(1); expect(list('source_backed')).toHaveLength(1); expect(list('proposed')).toHaveLength(1);
-  client().propose({ ...lesson, text: 'Reconnect cancellation retains state until the next process.' }); expect(host.inspection.stats(id, '')).toMatchObject({ active: 1, conflicts: 2 });
-  expect(list('conflicts')).toHaveLength(2); expect(list('active')).toHaveLength(1);
+  const unproven = client().propose({ ...lesson, key: 'unproven', source_path: 'missing.md' }); host.review(path, unproven.id, 'accepted', 'Fixture reviewer');
+  expect(list('source_backed')).toHaveLength(1); // Human approval does not invent a source proof.
+  client().propose({ ...lesson, text: 'Reconnect cancellation retains state until the next process.' }); expect(host.inspection.stats(id, '')).toMatchObject({ active: 2, conflicts: 2 });
+  expect(list('conflicts')).toHaveLength(2); expect(list('active')).toHaveLength(2);
 });
 
 test('replacement failure rolls back prior claim changes and their revisions', () => {

@@ -24,6 +24,8 @@ try {
   const cli = join(install, 'node_modules', 'continuity-local', manifest.bin.continuity);
   const command = (...args) => JSON.parse(execFileSync(process.execPath, [cli, '--home', join(root, 'state'), '--project', project, '--json', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
   command('init'); assert.equal(command('sync').files, 1); assert.equal(command('context', 'reconnect').items.length, 1); assert.equal(command('doctor').integrity, 'ok');
+  const learned = command('memory', 'remember', 'Reconnect cancellation releases the registry lease before replacement.', '--key', 'reconnect-lesson', '--kind', 'experience', '--agent', 'package-fixture', '--session', 'pack-session');
+  assert.equal(learned.outcome, 'persisted'); assert.equal(learned.provenance.trust, 'agent_observation'); assert(command('context', 'Reconnect cancellation').items.some(item => item.id === learned.id));
   // Also exercise the installed package-manager bin shim, not just its target.
   const help = run(['exec', 'continuity', '--help'], install); assert.match(help, /Persistent context/);
   assert.ok(files.includes('package/dist/packages/dashboard/public/index.html'));

@@ -28,6 +28,17 @@ test.beforeEach(async () => {
 });
 test.afterEach(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); host.close(); rmSync(root, { recursive: true, force: true }); });
 
+test('agent-learned memories are active without approval and can be explicitly forgotten', async ({ page }) => {
+  const client = host.project(primary), m = client.propose({ key: 'automatic-reconnect', kind: 'experience', text: 'Reconnect cancellation releases the registry lease before replacement.', from: { agent: 'generic', session: 'automatic-session' } });
+  await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' }); await expect(page.getByText('Active memories', { exact: true })).toBeVisible(); await expect(page.getByText('Pending review', { exact: true })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Memories', exact: true }).click(); await page.getByLabel('Memory status').selectOption('agent_learned');
+  await page.getByRole('link', { name: m.key, exact: true }).click();
+  await expect(page.getByText('generic / automatic-session', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Forget', exact: true }).click(); const dialog = page.getByRole('dialog'); await expect(dialog).toHaveAccessibleName('Forget this memory?'); await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await dialog.getByRole('button', { name: 'Forget memory' }).click(); expect(client.memory(m.id).status).toBe('forgotten');
+  await expect(page.getByRole('heading', { name: 'Revision history' })).toBeVisible();
+});
+
 test('overview, navigation, project and workspace switch keep the correct scope', async ({ page }) => {
   await page.goto(base); await expect(page.getByRole('heading', { name: 'Project continuity, at a glance.' })).toBeVisible();
   // Registrations are sorted by root; choose the fixture explicitly.

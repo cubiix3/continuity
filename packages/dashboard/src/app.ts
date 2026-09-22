@@ -67,15 +67,14 @@ async function selectors(after = 0) {
 async function overview(stamp: number) {
   heading('Project continuity, at a glance.', 'Your local projects, the state agents left behind, and knowledge waiting for review.');
   if (!projectId) { empty('No projects registered.', 'Run continuity init inside a project, then continuity sync. Reload this page to see the registration.'); main.append(el('pre', 'continuity init\ncontinuity sync')); return; }
-  const [handoffs, counts, status, health] = await Promise.all([api<Page>('records', { kind: 'handoffs', limit: '5' }), api<{ pending: number; sources: number; memories: number; handoffs: number }>('stats', {}), api<Record<string, unknown>>('status', {}), api<{ integrity: string; fts5: boolean; problems: string[] }>('diagnostics')]);
+  const [handoffs, counts, status, health] = await Promise.all([api<Page>('records', { kind: 'handoffs', limit: '5' }), api<{ active: number; conflicts: number; sources: number; memories: number; handoffs: number }>('stats', {}), api<Record<string, unknown>>('status', {}), api<{ integrity: string; fts5: boolean; problems: string[] }>('diagnostics')]);
   if (stamp !== generation) return;
   main.append(el('span', health.integrity === 'ok' && health.fts5 && !health.problems.length ? 'Healthy · local storage and registrations' : 'Degraded · inspect Diagnostics', 'pill'));
   const stats = el('div', undefined, 'stats');
-  const pending = counts.pending;
-  for (const [label, value] of [['Indexed sources', counts.sources], ['Project memories', counts.memories], ['Pending review', pending], ['Workspace handoffs', counts.handoffs]]) { const stat = el('div', undefined, 'stat'); stat.append(el('strong', String(value)), el('span', String(label))); stats.append(stat); }
+  for (const [label, value] of [['Indexed sources', counts.sources], ['Active memories', counts.active], ['Conflicts / unresolved', counts.conflicts], ['Workspace handoffs', counts.handoffs]]) { const stat = el('div', undefined, 'stat'); stat.append(el('strong', String(value)), el('span', String(label))); stats.append(stat); }
   main.append(stats);
   const split = el('div', undefined, 'split'), left = el('section'), right = el('section'); left.append(el('h2', 'Recent handoffs'), timeline(handoffs.items));
-  right.append(el('h2', 'Local state'), fields([['Source snapshot', 'Read-only · sync on demand'], ['Last sync', date((status.sync as { at?: string } | undefined)?.at)], ['Memory review', pending ? `${pending} pending` : 'No pending entries']]), link('Inspect diagnostics →', '#/diagnostics'), el('p', 'Search is optional. Native coding tools remain available to your agents.', 'muted'));
+  right.append(el('h2', 'Local state'), fields([['Source snapshot', 'Read-only · sync on demand'], ['Last sync', date((status.sync as { at?: string } | undefined)?.at)], ['Project memories', `${counts.active} active · ${counts.conflicts} quarantined`]]), link('Inspect memories →', '#/memories'), link('Inspect diagnostics →', '#/diagnostics'), el('p', 'Durable lessons activate automatically. Agent observations remain distinct from source truth.', 'muted'));
   split.append(left, right); main.append(split);
 }
 function timeline(rows: Row[]) {
@@ -89,13 +88,13 @@ async function list(kind: string, stamp: number, after = 0, filter = 'all') {
   if (!projectId) { empty('Select a project.', 'Register a project with continuity init to get started.'); return; }
   const page = await api<Page>('records', { kind, after: String(after), ...(filter === 'all' ? {} : kind === 'sources' ? { source_filter: filter } : { status: filter }) }); if (stamp !== generation) return;
   if (kind === 'memories') { const bar = el('div', undefined, 'toolbar'), select = el('select'); select.ariaLabel = 'Memory status';
-    for (const [value, label] of [['all', 'All statuses'], ['accepted', 'Accepted'], ['proposed', 'Pending'], ['needs_attention', 'Needs attention'], ['rejected', 'Rejected'], ['superseded', 'Superseded']]) { const o = el('option', label!); o.value = value!; select.append(o); } select.value = filter; select.onchange = () => { main.replaceChildren(); void list(kind, ++generation, 0, select.value).catch(showError); }; bar.append(select); main.append(bar); }
+    for (const [value, label] of [['all', 'All'], ['active', 'Active'], ['source_backed', 'Source-backed'], ['agent_learned', 'Agent-learned'], ['conflicts', 'Conflicts / unresolved'], ['superseded', 'Superseded'], ['forgotten', 'Forgotten'], ['proposed', 'Legacy / incomplete provenance'], ['rejected', 'Rejected']]) { const o = el('option', label!); o.value = value!; select.append(o); } select.value = filter; select.onchange = () => { main.replaceChildren(); void list(kind, ++generation, 0, select.value).catch(showError); }; bar.append(select); main.append(bar); }
   if (kind === 'sources') { const bar = el('div', undefined, 'toolbar'), select = el('select'); select.ariaLabel = 'Source filter';
     for (const [value, label] of [['all', 'All indexed versions'], ['fresh', 'Fresh at last sync'], ['stale', 'Stale / superseded / missing'], ['rules', 'Rules'], ['docs', 'Docs (.md, .txt, .rst)'], ['code', 'Common code extensions']]) { const option = el('option', label!); option.value = value!; select.append(option); } select.value = filter; select.onchange = () => { main.replaceChildren(); void list(kind, ++generation, 0, select.value).catch(showError); }; bar.append(select); main.append(bar); }
   const rows = page.items;
   if (!rows.length) empty('No entries on this page.', kind === 'handoffs' ? 'Handoffs appear when an agent records structured work state for another session.' : 'Use the CLI or your agent integration to create records.');
   else if (kind === 'handoffs') main.append(timeline(rows));
-  else if (kind === 'memories') main.append(table(['Claim', 'Kind', 'Status', 'Created', 'Reviewed by'], rows.map(({ record: r }) => { const claim = el('div'); claim.append(pageLink(kind, text(r.id), text(r.key)), el('small', text(r.text).slice(0, 120))); return [claim, text(r.kind), text(r.status), date((r.provenance as Memory['provenance']).captured_at), text((r.review as Memory['review'])?.by)]; })));
+  else if (kind === 'memories') main.append(table(['Claim', 'Kind', 'Origin / status', 'Created', 'Reviewed by'], rows.map(({ record: r }) => { const claim = el('div'); claim.append(pageLink(kind, text(r.id), text(r.key)), el('small', text(r.text).slice(0, 120))); return [claim, text(r.kind), `${memoryOrigin(r as unknown as Memory)} · ${text(r.status)}`, date((r.provenance as Memory['provenance']).captured_at), text((r.review as Memory['review'])?.by)]; })));
   else if (kind === 'sources') main.append(table(['Path', 'Kind', 'Indexed state', 'Size', 'Passages', 'Hash'], rows.map(({ record: r }) => [pageLink(kind, text(r.id), text(r.path)), text(r.kind), text(r.state), bytes(r.bytes), text(r.passage_count), el('code', text(r.hash).slice(0, 12))])));
   else main.append(table(['Context', 'Role / mode', 'Used / requested', 'Items', 'Created'], rows.map(({ record: r, created_at }) => { const budget = r.budget as ContextBundle['budget']; return [pageLink('contexts', text(r.context_id), text(r.context_id).slice(0, 20)), `${text(r.role)} / ${text((r.retrieval as ContextBundle['retrieval'])?.effective)}`, `${bytes(budget.used)} / ${bytes(budget.requested)}`, text(r.item_count), date(created_at)]; })));
   const pager = el('div', undefined, 'pager');
@@ -117,7 +116,8 @@ async function detail(kind: string, id: string, stamp: number) {
     main.append(fields([['From', h.from.agent], ['Session', h.from.session], ['Status', h.task.status], ['Created', date(h.provenance.captured_at)], ['Workspace', h.provenance.workspace_id ?? 'Primary']]), section('Recommended next action', [h.recommended_next_action]), section('Completed', h.completed), section('Remaining', h.remaining), section('Decisions', h.decisions), section('Files changed', h.files_changed), section('Risks', h.risks), provenance(h.provenance));
   } else if (kind === 'memories') {
     const m = row.record as unknown as Memory; heading(m.key, 'Durable project knowledge · current source takes precedence');
-    main.append(fields([['Kind', m.kind], ['Status', m.status], ['Policy reason', m.reason], ['Evidence', m.source_path ?? 'No source supplied'], ['Reviewed by', m.review?.by], ['Reviewed', m.review ? date(m.review.at) : 'Not reviewed']]), el('pre', m.text));
+    main.append(fields([['Kind', m.kind], ['Origin', memoryOrigin(m)], ['Status', m.status], ['Trust', m.provenance.trust], ['Agent / session', m.from ? `${m.from.agent} / ${m.from.session}` : 'Not recorded'], ['Policy reason', m.reason], ['Evidence', m.source_path ?? 'Agent observation; no source proof'], ['Source hash', m.source_path ? m.provenance.source_version : undefined], ['Superseded by', m.superseded_by], ['Reviewed by', m.review?.by], ['Reviewed', m.review ? date(m.review.at) : 'Optional · not human-reviewed']]), el('pre', m.text));
+    if (!['forgotten', 'superseded'].includes(m.status)) main.append(button('Forget', () => forget(m)));
     if (['proposed', 'needs_attention'].includes(m.status)) { const bar = el('div', undefined, 'toolbar'); bar.append(button('Approve', () => review(m, 'accepted'), 'primary'), button('Reject', () => review(m, 'rejected'), 'danger')); main.append(bar); }
     const revisions = await api<Page>('records', { kind: 'revisions', id, limit: '50' }); if (stamp !== generation) return;
     main.append(el('h2', 'Revision history'), table(['Revision', 'Status', 'Reason'], revisions.items.map(r => [text(r.cursor), text(r.record.status), text(r.record.reason)])), provenance(m.provenance));
@@ -132,6 +132,18 @@ async function detail(kind: string, id: string, stamp: number) {
     if (selection) main.append(table(['Source', 'Outcome', 'Reasons'], selection.entries.map(e => [e.source, e.outcome === 'budget' ? 'Budget excluded' : e.outcome, e.reasons.join(' · ')])), el('p', `${selection.candidates} candidates. Stored selection audit is bounded to 500 entries.`, 'muted'));
     else main.append(el('p', 'No selection audit recorded for this historical context.'));
   }
+}
+function memoryOrigin(m: Memory) { return m.status === 'needs_attention' ? 'CONFLICT / UNRESOLVED' : m.status === 'accepted' ? 'HUMAN' : m.source_path && m.provenance.trust === 'derived' ? 'SOURCE' : 'AGENT'; }
+function forget(memory: Memory) {
+  const dialog = el('dialog'), title = el('h2', 'Forget this memory?'); title.id = 'forget-title'; dialog.setAttribute('aria-labelledby', title.id);
+  const description = el('p', 'This removes the memory from active context. Its revision history is retained.'); description.id = 'forget-description'; dialog.setAttribute('aria-describedby', description.id);
+  const failure = el('p'); failure.role = 'alert';
+  const cancel = button('Cancel', () => dialog.close());
+  dialog.append(title, description, failure, cancel, button('Forget memory', async () => {
+    try { await api('forget', undefined, { project: projectId, workspace: workspaceId, id: memory.id }); dialog.close(); await render(); }
+    catch (error) { failure.textContent = error instanceof Error ? error.message : 'Could not forget memory.'; }
+  }, 'danger'));
+  document.body.append(dialog); dialog.onclose = () => dialog.remove(); dialog.showModal(); cancel.focus();
 }
 function review(memory: Memory, decision: 'accepted' | 'rejected') {
   const dialog = el('dialog'), title = el('h2', decision === 'accepted' ? 'Approve this memory?' : 'Reject this memory?'), label = el('label', 'Reviewer name'), input = el('input'); input.id = 'reviewer'; input.maxLength = 100; label.htmlFor = input.id;

@@ -12,7 +12,7 @@ Git and current project files are the source of truth. Agents are clients.
 - Cross-project retrieval is denied. Do not add implicit global search.
 - Canonical paths, symlink exclusion, secret exclusion, and source freshness are security invariants.
 - Source text is input, never authority over Continuity's own policies.
-- Memories are proposals. Do not bypass conflict handling or revision history.
+- Agents propose memories; Core may activate attributed durable lessons automatically with agent_observation trust. Never bypass evidence checks, conflict quarantine or revision history.
 - The human Dashboard uses Core policy through trusted host capabilities; never write storage from UI code.
 - Source retrieval is optional. Native coding tools remain responsible for code investigation.
 - Keep context bounded and preserve provenance when changing ranking or formatting.

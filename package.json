@@ -35,7 +35,7 @@
   "scripts": {
     "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && node scripts/copy-dashboard.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run tests --exclude '**/*.spec.ts'",
+    "test": "vitest run --dir tests --exclude '**/*.spec.ts'",
     "lint": "eslint .",
     "prepack": "pnpm build",
     "test:pack": "node scripts/pack-smoke.mjs",

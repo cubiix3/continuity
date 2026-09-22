@@ -40,7 +40,7 @@ test('agent-learned memories are active without approval and can be explicitly f
 });
 
 test('overview, navigation, project and workspace switch keep the correct scope', async ({ page }) => {
-  await page.goto(base); await expect(page.getByRole('heading', { name: 'Project continuity, at a glance.' })).toBeVisible();
+  await page.goto(base); await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
   // Registrations are sorted by root; choose the fixture explicitly.
   await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' });
   await expect(page.getByText('Review reconnect cancellation', { exact: true })).toBeVisible();
@@ -95,7 +95,7 @@ test('desktop and tablet layouts use local assets and remain within the viewport
   await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' }); await expect(page.getByText('Review reconnect cancellation', { exact: true })).toBeVisible();
   if (process.env.CONTINUITY_SCREENSHOT === '1') { mkdirSync('docs/screenshots', { recursive: true }); await page.screenshot({ path: 'docs/screenshots/dashboard.png', fullPage: true }); }
   await page.setViewportSize({ width: 820, height: 1000 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.emulateMedia({ colorScheme: 'dark' }); await expect(page.getByRole('heading', { name: 'Project continuity, at a glance.' })).toBeVisible();
+  await page.emulateMedia({ colorScheme: 'dark' }); await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
   expect(remote).toEqual([]);
 });
 
@@ -150,4 +150,50 @@ test('source, handoff and context lists remain bounded beyond the first page', a
   await page.getByRole('link', { name: 'Review batch 24', exact: true }).click(); await expect(page.getByText(malicious, { exact: true })).toBeVisible();
   expect(await page.evaluate(() => Object.hasOwn(window, 'DASHBOARD_XSS'))).toBe(false);
   await page.getByRole('link', { name: 'Handoffs', exact: true }).click(); await page.getByRole('button', { name: 'Next page', exact: true }).click(); await expect(page.getByRole('link', { name: 'Review batch 0', exact: true })).toBeVisible();
+});
+
+test('overview prioritizes conflicts and quick memory filters preserve automatic origins', async ({ page }) => {
+  const client = host.project(primary), from = { agent: 'Demo', session: 'conflict' };
+  client.propose({ key: 'transport.mode', kind: 'decision', text: 'Transport reconnect retains the registry lease.', from });
+  client.propose({ key: 'transport.mode', kind: 'decision', text: 'Transport reconnect releases the registry lease.', from });
+  const source = client.propose({ key: 'source.retry', kind: 'memory', text: 'Reconnect uses the existing retry budget.', source_path: 'README.md' });
+  await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' });
+  await expect(page.getByRole('heading', { name: 'Needs attention' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '2 conflicting or unresolved memories' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project state' })).toBeVisible();
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    for (const width of [1024, 1280, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 1000 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await expect(page.getByLabel('Project', { exact: true })).toBeVisible();
+      await expect(page.getByLabel('Workspace', { exact: true })).toBeVisible();
+    }
+  }
+  await page.getByRole('link', { name: 'Memories', exact: true }).click();
+  await page.getByRole('button', { name: 'Conflicts', exact: true }).focus(); await page.keyboard.press('Enter'); await expect(page.locator('tbody tr')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Conflicts', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Conflicts', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Active', exact: true }).click(); await expect(page.locator('tbody tr')).toHaveCount(1);
+  await page.getByRole('link', { name: source.key, exact: true }).click(); await expect(page.getByText('SOURCE', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+});
+
+test('long scope paths and memory text stay accessible with keyboard-safe confirmation', async ({ page }) => {
+  const longRoot = join(root, 'long workspace directory with spaces '.repeat(4).trim()); mkdirSync(longRoot);
+  const registration = host.init(longRoot, 'Demo · Long path');
+  const memory = host.project(longRoot).propose({ key: 'provider.' + 'retry_budget.'.repeat(8), kind: 'experience', text: 'Provider retry budgets persist. '.repeat(60), from: { agent: 'Demo', session: 'long-content' } });
+  await page.setViewportSize({ width: 1024, height: 900 }); await page.goto(base);
+  await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Long path' });
+  await expect(page.locator('.scope-path')).toHaveAttribute('title', registration.root);
+  await page.getByRole('link', { name: 'Workspaces', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Primary', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.details')).toContainText(registration.root);
+  await page.getByRole('link', { name: 'Memories', exact: true }).click(); await page.getByRole('link', { name: memory.key, exact: true }).click();
+  await expect(page.locator('.memory-content')).toHaveText(memory.text); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const forget = page.getByRole('button', { name: 'Forget', exact: true }); await forget.focus(); await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Forget this memory?' }); await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab'); await expect(dialog.getByRole('button', { name: 'Forget memory' })).toBeFocused();
+  await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0); await expect(forget).toBeFocused();
+  expect(host.project(longRoot).memory(memory.id).status).toBe('persist');
 });

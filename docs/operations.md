@@ -69,6 +69,11 @@ These previews are not secure deletion and do not change backup/WAL retention.
 
 ## Diagnostics
 
+Before upgrading, stop processes using Continuity and back up the state directory,
+including any SQLite WAL files. Migrations run transactionally and failures do not
+reset the database. Migration reversal and downgrade compatibility are not promised;
+restore a consistent backup with its original version if rollback is required.
+
 `doctor` checks SQLite integrity, schema version, FTS availability/references,
 foreign-key and provenance orphans, embedded project IDs, source hashes/paths,
 root accessibility/canonical identity, MCP dependency availability, Continuity

@@ -7,6 +7,7 @@ import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/sr
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
+import { createDashboardServer } from '../../server/src/dashboard.js';
 
 const program = new Command().name('continuity').description('Persistent context for interchangeable agents.').version('0.1.0')
   .option('--project <directory>', 'project directory', process.cwd())
@@ -71,6 +72,15 @@ handoff.command('create').description('Read a structured handoff JSON file or st
 handoff.command('latest').action(() => output(client().latestHandoff()));
 handoff.command('show <id>').action((id: string) => output(client().handoff(id)));
 let persistent = false;
+program.command('dashboard').description('Open the local project continuity dashboard (no browser auto-open)').option('--port <port>', 'loopback port; 0 selects an available port', '4783').action(async (options: { port: string }) => {
+  const port = Number(options.port);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Port must be 0–65535.');
+  const server = createDashboardServer(runtime());
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+  persistent = true;
+  const address = server.address();
+  console.error(`Continuity dashboard listening on http://127.0.0.1:${typeof address === 'object' && address ? address.port : port}`);
+});
 program.command('mcp').description('Serve six project-bound MCP tools over stdio').action(async () => {
   await serveMcp(new GenericAdapter(client())); persistent = true;
 });

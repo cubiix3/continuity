@@ -1,7 +1,9 @@
 # Security policy
 
-The latest commit on `main` is the supported development version. Continuity is
-early software; no stable release or independent security audit is claimed.
+Before the first release, the latest commit on `main` is the supported development
+version. Once 0.1 is released, security fixes target the latest 0.1.x patch and
+`main`; older patches should be upgraded. Continuity is early software, with no
+LTS promise or independent professional security audit claim.
 
 Please report vulnerabilities through
 [GitHub private vulnerability reporting](https://github.com/cubiix3/continuity/security/advisories/new).

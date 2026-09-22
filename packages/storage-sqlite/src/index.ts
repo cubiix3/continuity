@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { projectSchema } from '../../core/src/contracts.js';
 import type { ContextBundle, EmbeddingCache, RemoteResourceCache, Handoff, Memory, Observation, Project, Provenance, Resource, StoragePort, SyncState, SelectionAudit, Workspace } from '../../core/src/contracts.js';
 import { migrate } from './migrations.js';
+import type { InspectionKind, InspectionPage, InspectionRecord } from '../../core/src/contracts.js';
 
 function decode<T>(row: Record<string, unknown>): T { return JSON.parse(String(row.data)) as T; }
 function scoped<T>(row: Record<string, unknown>, projectId: string): T {
@@ -29,6 +30,44 @@ export class SqliteStorage implements StoragePort {
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   atomic<T>(action: () => T): T { return this.transaction(action); }
+  inspectionStats(projectId: string, workspaceId: string) {
+    const count = (sql: string, ...args: string[]) => Number(this.db.prepare(sql).get(...args)?.n ?? 0);
+    return {
+      sources: count("SELECT count(*) n FROM resources WHERE project_id = ? AND workspace_id = ? AND state = 'fresh'", projectId, workspaceId),
+      memories: count('SELECT count(*) n FROM memories WHERE project_id = ?', projectId),
+      pending: count("SELECT count(*) n FROM memories WHERE project_id = ? AND json_extract(data, '$.status') IN ('proposed', 'needs_attention')", projectId),
+      handoffs: count("SELECT count(*) n FROM handoffs WHERE project_id = ? AND COALESCE(json_extract(data, '$.provenance.workspace_id'), '') = ?", projectId, workspaceId),
+      contexts: count("SELECT count(*) n FROM contexts WHERE project_id = ? AND COALESCE(json_extract(data, '$.workspace_id'), '') = ?", projectId, workspaceId),
+    };
+  }
+  browse(projectId: string, workspaceId: string, kind: InspectionKind, limit: number, after: number, id?: string, status?: string, sourceFilter?: string): InspectionPage {
+    const tables = { handoffs: 'handoffs', memories: 'memories', contexts: 'contexts', sources: 'resources', revisions: 'memory_revisions' } as const;
+    const table = Object.hasOwn(tables, kind) ? tables[kind] : undefined;
+    if (!table || !Number.isInteger(limit) || limit < 1 || limit > 50 || !Number.isSafeInteger(after) || after < 0) throw new Error('Invalid inspection page.');
+    const workspace = kind === 'memories' || kind === 'revisions' ? '' : kind === 'sources' ? ' AND workspace_id = ?' : ` AND COALESCE(json_extract(data, '${kind === 'contexts' ? '$.workspace_id' : '$.provenance.workspace_id'}'), '') = ?`;
+    const identity = id ? ` AND ${kind === 'revisions' ? 'memory_id' : 'id'} = ?` : '';
+    if (status && kind !== 'memories') throw new Error('Status filtering is only available for memories.');
+    const statuses = status === 'accepted' ? ['accepted', 'persist'] : status === 'rejected' ? ['rejected', 'reject'] : status ? [status] : [];
+    const filter = statuses.length ? ` AND json_extract(data, '$.status') IN (${statuses.map(() => '?').join(',')})` : '';
+    const sourceFilters: Record<string, string> = {
+      fresh: "state = 'fresh'", stale: "state IN ('stale', 'superseded', 'missing')", rules: "json_extract(data, '$.kind') = 'rule'",
+      docs: "(lower(path) GLOB '*.md' OR lower(path) GLOB '*.txt' OR lower(path) GLOB '*.rst')",
+      code: "(lower(path) GLOB '*.ts' OR lower(path) GLOB '*.tsx' OR lower(path) GLOB '*.js' OR lower(path) GLOB '*.jsx' OR lower(path) GLOB '*.py' OR lower(path) GLOB '*.rs' OR lower(path) GLOB '*.go' OR lower(path) GLOB '*.java' OR lower(path) GLOB '*.cpp' OR lower(path) GLOB '*.c')",
+    };
+    if (sourceFilter && (kind !== 'sources' || !Object.hasOwn(sourceFilters, sourceFilter))) throw new Error('Invalid source filter.');
+    const sourceClause = sourceFilter ? ` AND (${sourceFilters[sourceFilter]})` : '';
+    const args = [projectId, ...(after ? [after] : []), ...(workspace ? [workspaceId] : []), ...(id ? [id] : []), ...statuses, limit + 1];
+    const rows = this.db.prepare(`SELECT rowid AS cursor, data${kind === 'contexts' ? ', created_at' : ''} FROM ${table} WHERE project_id = ?${after ? ' AND rowid < ?' : ''}${workspace}${identity}${filter}${sourceClause} ORDER BY rowid DESC LIMIT ?`).all(...args);
+    const items = rows.slice(0, limit).map(row => {
+      const record = scoped<InspectionRecord>(row, projectId);
+      if (workspace) {
+        const actual = 'provenance' in record ? record.provenance.workspace_id : record.workspace_id;
+        if ((actual ?? '') !== workspaceId) throw new Error('Corrupted workspace scope.');
+      }
+      return { record, cursor: Number(row.cursor), ...(row.created_at ? { created_at: String(row.created_at) } : {}) };
+    });
+    return { items, next: rows.length > limit ? items.at(-1)!.cursor : null };
+  }
   workspaces(projectId: string): Workspace[] {
     return this.db.prepare('SELECT * FROM workspaces WHERE project_id = ? ORDER BY root').all(projectId).map(r => ({ workspace_id: String(r.workspace_id), project_id: String(r.project_id), root: String(r.root) }));
   }

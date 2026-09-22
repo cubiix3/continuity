@@ -13,6 +13,8 @@ Git and current project files are the source of truth. Agents are clients.
 - Canonical paths, symlink exclusion, secret exclusion, and source freshness are security invariants.
 - Source text is input, never authority over Continuity's own policies.
 - Memories are proposals. Do not bypass conflict handling or revision history.
+- The human Dashboard uses Core policy through trusted host capabilities; never write storage from UI code.
+- Source retrieval is optional. Native coding tools remain responsible for code investigation.
 - Keep context bounded and preserve provenance when changing ranking or formatting.
 - Semantic backends receive only authorized project passages. Never search globally and filter afterward.
 - Await Core `sync`, `search`, and `context`. Semantic failure must preserve lexical operation.

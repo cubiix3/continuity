@@ -138,6 +138,8 @@ The [runnable example](examples/README.md) covers memory and handoff inputs.
 To give every new agent session this context automatically, install a provider
 hook once (current `main`): `continuity integrate claude install` or
 `continuity integrate codex install`. See [agent bootstrap](docs/agent-bootstrap.md).
+The same hooks ask the agent, after a turn that edited files, whether anything is
+worth keeping; it never reads chats. See [agent lifecycle](docs/agent-lifecycle.md).
 
 ## Agent integrations
 
@@ -227,7 +229,7 @@ memory approve | reject <id>  Human review with --by <reviewer>
 handoff create --file <path>  Save structured JSON (use - for stdin)
 handoff latest | show <id>    Retrieve a handoff
 bootstrap                     Read-only startup index for agent sessions (main)
-integrate claude|codex        Provider SessionStart hook: install | status | remove (main)
+integrate claude|codex        Provider startup and autosave hooks: install | status | remove (main)
 project list | status         Inspect local registrations
 project rebind <id>           Explicit move with --from and --to
 retention status              Retention classes and eligibility

@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
 import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
 import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
-import { claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, removeHookIntegration, sessionStartCwd, sessionStartOutput, sessionStartUnavailable } from '../../adapter-hooks/src/index.js';
+import { applySave, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, stopBlock, stopDecision, stopInput, stopMessage, toolUseSession, writeSessionState } from '../../adapter-hooks/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
@@ -137,26 +137,71 @@ const continuityHomePath = () => {
   const home = resolve(program.opts<{ home?: string }>().home ?? process.env.CONTINUITY_HOME ?? join(homedir(), '.continuity'));
   return existsSync(home) ? continuityHome(home) : home;
 };
+/** Bounded provider hook input; oversized input is ignored rather than truncated. */
+async function hookStdin(limit: number) {
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const chunk of process.stdin) { size += (chunk as Buffer).length; if (size > limit) return undefined; chunks.push(chunk as Buffer); }
+  return Buffer.concat(chunks).toString('utf8');
+}
+const hasStore = () => existsSync(join(continuityHomePath(), 'continuity.db'));
+// Runtime kill switch that keeps startup context: CONTINUITY_AUTOSAVE=0|off|false.
+const autosaveDisabled = () => /^(0|off|false|no)$/i.test(process.env.CONTINUITY_AUTOSAVE ?? '');
 for (const provider of ['claude', 'codex'] as const) {
   const name = provider === 'claude' ? 'Claude Code' : 'Codex';
-  const target = () => (provider === 'claude' ? claudeHookTarget : codexHookTarget)(process.execPath, realpathSync.native(fileURLToPath(import.meta.url)), continuityHomePath());
-  const command = integrate.command(provider).description(`${name} SessionStart integration in the user hook settings (${provider === 'claude' ? 'CLAUDE_CONFIG_DIR or ~/.claude/settings.json' : 'CODEX_HOME or ~/.codex/hooks.json'})`);
-  command.command('install').description('Add the Continuity SessionStart hook; other hooks are preserved').action(() => output(installHookIntegration(target())));
-  command.command('status').action(() => { const status = hookIntegrationStatus(target()); output(status); if (status.state !== 'installed') process.exitCode = 1; });
-  command.command('remove').description('Remove only the Continuity SessionStart hook').action(() => output(removeHookIntegration(target())));
+  const target = (autosave = true) => (provider === 'claude' ? claudeHookTarget : codexHookTarget)(process.execPath, realpathSync.native(fileURLToPath(import.meta.url)), continuityHomePath(), process.env, { autosave });
+  const command = integrate.command(provider).description(`${name} startup context and session autosave hooks in the user hook settings (${provider === 'claude' ? 'CLAUDE_CONFIG_DIR or ~/.claude/settings.json' : 'CODEX_HOME or ~/.codex/hooks.json'})`);
+  command.command('install').description('Add or repair the Continuity hooks; other hooks are preserved').option('--no-autosave', 'startup context only; removes Continuity autosave hooks')
+    .action((options: { autosave: boolean }) => output(installHookIntegration(target(options.autosave))));
+  command.command('status').option('--no-autosave', 'expect startup context only')
+    .action((options: { autosave: boolean }) => { const status = hookIntegrationStatus(target(options.autosave)); output(status); if (status.state !== 'installed') process.exitCode = 1; });
+  command.command('remove').description('Remove only the Continuity hooks').action(() => output(removeHookIntegration(target())));
   // Invoked by the provider. Never blocks the session: unregistered directories and unreadable state stay silent.
   command.command('session-start', { hidden: true }).action(async () => {
     process.exitCode = 0;
     try {
-      const chunks: Buffer[] = []; let size = 0;
-      for await (const chunk of process.stdin) { size += (chunk as Buffer).length; if (size > 65536) return; chunks.push(chunk as Buffer); }
-      const cwd = sessionStartCwd(Buffer.concat(chunks).toString('utf8'));
-      if (!cwd || !existsSync(join(continuityHomePath(), 'continuity.db'))) return;
+      const cwd = sessionStartCwd(await hookStdin(65536) ?? '');
+      if (!cwd || !hasStore()) return;
       let bundle;
       try { bundle = runtime().bootstrap(cwd); }
       catch (error) { if (error instanceof BootstrapUnavailableError) process.stdout.write(sessionStartUnavailable(provider, error.message)); return; }
       if (bundle) process.stdout.write(sessionStartOutput(provider, bundle));
     } catch { /* Silent: Continuity must not disturb unrelated agent sessions. */ }
+  });
+  // PostToolUse on file edits: flags the session as edited. Reads only session_id; no database, no tool payload.
+  command.command('tool-use', { hidden: true }).action(async () => {
+    process.exitCode = 0;
+    try {
+      const session = toolUseSession(await hookStdin(1024 * 1024) ?? '');
+      if (!session || autosaveDisabled() || !hasStore()) return;
+      const home = continuityHomePath(), state = readSessionState(home, provider, session);
+      if (!state.dirty) writeSessionState(home, provider, session, { ...state, dirty: true });
+    } catch { /* Silent. */ }
+  });
+  // Stop: after edits, asks the same model once for a deliberate save; on the answering stop, applies it via Core.
+  command.command('stop', { hidden: true }).action(async () => {
+    process.exitCode = 0;
+    let applying = false;
+    try {
+      const input = stopInput(await hookStdin(1024 * 1024) ?? '');
+      if (!input || autosaveDisabled() || !hasStore()) return;
+      const home = continuityHomePath(), state = readSessionState(home, provider, input.session);
+      const decision = stopDecision(state, input.active);
+      // Persist first: a crash or timeout below can never cause a second request or a loop.
+      if (JSON.stringify(decision.state) !== JSON.stringify(state)) writeSessionState(home, provider, input.session, decision.state);
+      if (decision.action === 'none') return;
+      // Only the tagged answer to Continuity's own request is read; without it nothing is saved.
+      const reply = decision.action === 'apply' ? parseSaveReply(input.message) : undefined;
+      if (decision.action === 'apply' && !reply) return;
+      applying = Boolean(reply);
+      const client = runtime().session(input.cwd);
+      if (!client) { writeSessionState(home, provider, input.session, { dirty: false, pending: false }); return; }
+      if (!reply) { process.stdout.write(stopBlock()); return; }
+      const report = saveReport(applySave(client, provider, input.session, reply));
+      if (report) process.stdout.write(stopMessage(report));
+    } catch (error) {
+      // Honest partial-failure report once a save was attempted; otherwise silent.
+      if (applying) process.stdout.write(stopMessage(`Continuity autosave did not complete (${error instanceof Error ? error.message.replace(/\s+/g, ' ').slice(0, 160) : 'error'}); earlier items may have been saved.`));
+    }
   });
 }
 program.command('mcp').description('Serve seven project-bound MCP tools over stdio').action(async () => {

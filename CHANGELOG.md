@@ -8,6 +8,7 @@
 - New Continuity mark, favicon and brand assets.
 - Optional background runtime: Windows current-user sign-in startup, loopback Dashboard and bounded automatic sync that follows the local source scope.
 - Agent auto-bootstrap: read-only startup index (`continuity bootstrap`, `continuity_bootstrap` MCP tool) and explicit Claude Code and Codex `SessionStart` hook integrations.
+- Provider-aware session autosave: after a turn that edited files, a gated `Stop` hook asks the same model once for 0–3 durable lessons and an optional unfinished-work handoff, applied through the existing memory policy. No transcripts are read; `--no-autosave` and `CONTINUITY_AUTOSAVE=0` keep startup context only.
 
 ## 0.1.0 — 2026-09-22
 

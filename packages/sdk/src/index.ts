@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative } from 'node:path';
 import { ProjectClient, ProjectResolver, canonicalRoot } from '../../core/src/index.js';
 import { SqliteStorage } from '../../storage-sqlite/src/index.js';
 import { FileSources, isWithin } from '../../source-files/src/index.js';
-import type { Project } from '../../core/src/contracts.js';
+import type { Project, Workspace } from '../../core/src/contracts.js';
 import { reviewMemory } from '../../core/src/memory/review.js';
 import { accessSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { retrievalConfig } from './retrieval-config.js';
@@ -97,6 +97,21 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       ? new OpenVikingRetrieval(bound.remoteResourceCache(projectId), s.endpoint ?? 'http://127.0.0.1:1933', s.revision ?? '')
       : new OllamaRetrieval(bound.embeddingCache(projectId), s.endpoint, s.model, s.document_prefix, s.query_prefix);
   };
+  /** Nearest registered project or workspace root at or above `path`; a detached worktree path resolves to nothing. */
+  const nearest = (path: string): { project: Project; workspace?: Workspace } | undefined => {
+    let current = canonicalRoot(path);
+    const projects = storage.projects(), workspaceRoots = new Map(projects.flatMap(p => storage.workspaces(p.project_id).map(w => [w.root, { project: p, workspace: w }] as const)));
+    for (;;) {
+      const primary = projects.find(p => p.root === current);
+      if (primary) return { project: primary };
+      const candidate = workspaceRoots.get(current);
+      // A removed worktree's path can be reused by an unrelated checkout: no context rather than a wrong one.
+      if (candidate) return attachedWorktree(candidate.project.root, candidate.workspace.root) ? candidate : undefined;
+      const parent = dirname(current);
+      if (parent === current) return undefined;
+      current = parent;
+    }
+  };
   const coordinate = (client: ProjectClient, projectId: string, workspaceId = '') => {
     const sync = client.sync.bind(client);
     client.sync = () => coordinatedSync(home, `${projectId}:${workspaceId}`, sync);
@@ -169,23 +184,24 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
      * workspace root without registering, syncing, or running git. Returns undefined for an unregistered directory.
      */
     bootstrap: (path: string, options: { budget?: number } = {}) => {
-      let current = canonicalRoot(path);
-      const projects = storage.projects(), workspaceRoots = new Map(projects.flatMap(p => storage.workspaces(p.project_id).map(w => [w.root, { project: p, workspace: w }] as const)));
-      for (;;) {
-        const candidate = projects.find(p => p.root === current) ? { project: projects.find(p => p.root === current)! } : workspaceRoots.get(current);
-        // A removed worktree's path can be reused by an unrelated checkout: no context rather than a wrong one.
-        if (candidate && 'workspace' in candidate && !attachedWorktree(candidate.project.root, candidate.workspace.root)) return undefined;
-        const scope = candidate;
-        if (scope) {
-          const store = boundStore('workspace' in scope ? scope.workspace.workspace_id : '');
-          const client = new ProjectClient(store, sourceFor(scope.project), scope.project, undefined, undefined, 'lexical', 'workspace' in scope ? scope.workspace : undefined);
-          try { return client.bootstrap(options); }
-          catch (error) { throw new BootstrapUnavailableError(error instanceof Error ? error.message : 'Bootstrap failed.', { cause: error }); }
-        }
-        const parent = dirname(current);
-        if (parent === current) return undefined;
-        current = parent;
-      }
+      const scope = nearest(path);
+      if (!scope) return undefined;
+      const client = new ProjectClient(boundStore(scope.workspace?.workspace_id ?? ''), sourceFor(scope.project), scope.project, undefined, undefined, 'lexical', scope.workspace);
+      try { return client.bootstrap(options); }
+      catch (error) { throw new BootstrapUnavailableError(error instanceof Error ? error.message : 'Bootstrap failed.', { cause: error }); }
+    },
+    /**
+     * Project-bound client for an agent session's directory, resolved exactly like bootstrap (nearest registered
+     * project or attached worktree, never registering). Lexical only: no semantic backend. Undefined when unbound.
+     */
+    session: (path: string) => {
+      const scope = nearest(path);
+      if (!scope) return undefined;
+      const { project, workspace } = scope;
+      if (!workspace) return new ProjectClient(storage, sourceFor(project), project, undefined, undefined, 'lexical');
+      const source = sourceFor(project, workspace.root);
+      const workspaceSource = { scan: () => { verifyWorkspace(project.root, workspace.root); return source.scan({ ...project, root: workspace.root }); } };
+      return new ProjectClient(boundStore(workspace.workspace_id), workspaceSource, project, undefined, undefined, 'lexical', workspace);
     },
     project: (path: string) => {
       const project = resolver.resolve(path);

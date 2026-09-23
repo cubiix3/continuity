@@ -94,6 +94,23 @@ boundary against an agent that can execute arbitrary CLI commands as that same u
 Reviewer labels are audit metadata, not authentication. Approved free-form claims
 remain below current sources and do not gain source-authoritative trust.
 
+## Provider hooks and autosave
+
+Provider hooks read only structured hook fields. The `Stop` hook reads
+`last_assistant_message` only on the stop that answers Continuity's own save
+request, and only from a tagged JSON block. Transcripts, transcript paths and tool
+payloads are never opened. Hook commands contain only absolute paths and fixed
+words, quoted literally for PowerShell and POSIX `sh`. Hooks never exit 2. They
+block a stop only with an explicit JSON decision, never on a continuation stop, so
+recursion is impossible.
+
+Saved claims pass the normal memory policy with the provider's session as
+attribution. They cannot reach human-reviewed trust, choose a project or workspace,
+become project rules or override an accepted memory. Secret-looking content is
+dropped before storage. A prompt-injected source can still lead the model to propose
+a false lesson; it is attributed as an agent observation, and sources and human
+review outrank it. See [agent lifecycle](agent-lifecycle.md).
+
 ## Local human Dashboard
 
 The Dashboard is an installation-wide trusted human client, separate from agent

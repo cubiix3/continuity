@@ -11,6 +11,7 @@
   <title>Continuity — Keep the work moving</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
+  <script src="./motion.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -40,8 +41,8 @@
           <p class="hero-note">Open source. Runs locally. Works across agents.</p>
         </div>
 
-        <div class="handoff-demo" aria-label="Example of a handoff between coding agent sessions">
-          <div class="demo-bar"><span class="demo-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>project / reconnect</span><span class="demo-status">local</span></div>
+        <div class="handoff-demo is-playing" data-demo aria-label="Example of a handoff between coding agent sessions">
+          <div class="demo-bar"><span class="demo-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>project / reconnect</span><span class="demo-status">local</span><button class="demo-replay" type="button" data-replay aria-label="Replay the handoff animation" hidden><span aria-hidden="true">↻</span> Replay</button></div>
           <div class="demo-body">
             <div class="demo-session"><span class="session-node" aria-hidden="true"></span><span>Session 01</span><strong>Claude Code</strong></div>
             <div class="demo-record">
@@ -54,7 +55,8 @@
             </div>
             <div class="demo-transfer" aria-hidden="true"><span></span><span>same project, next session</span></div>
             <div class="demo-session next"><span class="session-node" aria-hidden="true"></span><span>Session 02</span><strong>Codex</strong></div>
-            <div class="demo-command"><span class="prompt">$</span> continuity handoff latest<span class="cursor" aria-hidden="true"></span></div>
+            <div class="demo-command"><span class="prompt">$</span> <span class="command-text">continuity handoff latest</span><span class="cursor" aria-hidden="true"></span></div>
+            <div class="demo-result"><span class="result-mark" aria-hidden="true">↳</span><span>Next action restored: <strong>Add a bounded retry test</strong></span></div>
           </div>
           <div class="demo-footer"><span class="live-dot" aria-hidden="true"></span> Project files remain the source of truth</div>
         </div>
@@ -78,21 +80,46 @@
     </section>
 
     <section class="how section" id="how" aria-labelledby="how-title">
-      <div class="wrap how-grid">
-        <div class="how-copy">
-          <p class="eyebrow">How it works</p>
-          <h2 id="how-title">A small layer between sessions.</h2>
-          <p>Register a project, sync its current sources, and leave a structured handoff. The next agent reads the same project record through the CLI or MCP.</p>
-          <ol class="steps">
-            <li><strong>Register</strong><span>Continuity binds an identity to the project's canonical directory.</span></li>
-            <li><strong>Keep context current</strong><span>Source changes are checked before old evidence is used again.</span></li>
-            <li><strong>Hand over work</strong><span>A new session can pick up the latest recorded next action.</span></li>
-          </ol>
+      <div class="wrap">
+        <div class="how-heading">
+          <div><p class="eyebrow">How it works</p><h2 id="how-title">The work moves<br>between agents.</h2></div>
+          <p>One project record carries the context forward. Select a step to see the commands and the information the next session can use.</p>
         </div>
-        <div class="terminal" aria-label="Continuity quickstart commands">
-          <div class="terminal-bar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>your project</span></div>
-          <div class="terminal-body"><p><span class="prompt">$</span> continuity init</p><p><span class="prompt">$</span> continuity sync</p><p><span class="prompt">$</span> continuity dashboard</p><div class="terminal-divider"></div><p class="terminal-caption">Later, in another session</p><p><span class="prompt">$</span> continuity handoff latest</p></div>
-          <a class="terminal-link" href="https://github.com/cubiix3/continuity#quickstart">Read the full quickstart <span aria-hidden="true">↗</span></a>
+        <div class="flow">
+          <div class="flow-steps" role="group" aria-label="Explore the handoff flow">
+            <button class="flow-step is-active" type="button" data-flow-step="0" aria-controls="flow-panel-0" aria-pressed="true" disabled><span class="step-index">01</span><span><strong>Anchor the project</strong><small>Register its identity and check current sources.</small></span><span class="step-arrow" aria-hidden="true">↗</span></button>
+            <button class="flow-step" type="button" data-flow-step="1" aria-controls="flow-panel-1" aria-pressed="false" disabled><span class="step-index">02</span><span><strong>Leave a handoff</strong><small>Save what happened and what comes next.</small></span><span class="step-arrow" aria-hidden="true">↗</span></button>
+            <button class="flow-step" type="button" data-flow-step="2" aria-controls="flow-panel-2" aria-pressed="false" disabled><span class="step-index">03</span><span><strong>Pick up the work</strong><small>Retrieve the latest handoff in another session.</small></span><span class="step-arrow" aria-hidden="true">↗</span></button>
+            <p class="flow-note">Illustrative flow. Commands run in your own project.</p>
+          </div>
+          <div class="flow-stage">
+            <div class="flow-stage-top"><span class="stage-kicker">Continuity / project record</span><span class="stage-indicator"><span aria-hidden="true"></span> Local</span></div>
+            <div class="flow-panel" id="flow-panel-0" data-flow-panel="0">
+              <div class="flow-panel-head"><span>01 / Register</span><strong>Current sources, one project</strong></div>
+              <div class="flow-terminal">
+                <div class="flow-terminal-bar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>terminal</span><span class="terminal-path">~/your-project</span></div>
+                <div class="flow-terminal-body"><p class="flow-command"><span class="prompt">$</span> <span class="flow-command-text">continuity init</span></p><p class="flow-command"><span class="prompt">$</span> <span class="flow-command-text">continuity sync</span></p><div class="flow-output"><span class="output-line" aria-hidden="true"></span><p>Project identity stays bound to this directory. Sources are checked before context is reused.</p></div></div>
+              </div>
+              <p class="flow-panel-foot">Your files and Git remain the source of truth.</p>
+            </div>
+            <div class="flow-panel" id="flow-panel-1" data-flow-panel="1" hidden>
+              <div class="flow-panel-head"><span>02 / Capture</span><strong>A handoff with a clear next action</strong></div>
+              <div class="flow-terminal">
+                <div class="flow-terminal-bar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>terminal</span><span class="terminal-path">~/your-project</span></div>
+                <div class="flow-terminal-body"><p class="flow-command"><span class="prompt">$</span> <span class="flow-command-text">continuity handoff create --file handoff.json</span></p><div class="flow-output flow-record"><span class="output-line" aria-hidden="true"></span><dl><div><dt>Goal</dt><dd>Fix reconnect behavior</dd></div><div><dt>Completed</dt><dd>Read retry policy</dd></div><div><dt>Next action</dt><dd>Add a failing regression test</dd></div><div><dt>Risk</dt><dd>Avoid retry storms</dd></div></dl></div></div>
+              </div>
+              <p class="flow-panel-foot">The record keeps its origin and capture time.</p>
+            </div>
+            <div class="flow-panel" id="flow-panel-2" data-flow-panel="2" hidden>
+              <div class="flow-panel-head"><span>03 / Resume</span><strong>The next session has a starting point</strong></div>
+              <div class="flow-terminal">
+                <div class="flow-terminal-bar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>terminal</span><span class="terminal-path">~/your-project</span></div>
+                <div class="flow-terminal-body"><p class="flow-command"><span class="prompt">$</span> <span class="flow-command-text">continuity handoff latest</span></p><div class="flow-output flow-record"><span class="output-line" aria-hidden="true"></span><dl><div><dt>From</dt><dd>Previous agent session</dd></div><div><dt>Status</dt><dd>In progress</dd></div><div><dt>Next action</dt><dd>Add a failing regression test</dd></div></dl></div></div>
+              </div>
+              <p class="flow-panel-foot">Recheck files and tests before acting on earlier claims.</p>
+            </div>
+            <a class="flow-docs" href="https://github.com/cubiix3/continuity#quickstart">Read the full quickstart <span aria-hidden="true">↗</span></a>
+          </div>
         </div>
       </div>
     </section>

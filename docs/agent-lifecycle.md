@@ -114,7 +114,9 @@ output.
 
 The per-session flag is written before any database work, so a timeout or crash
 cannot cause a second request. If the database is locked past SQLite's busy timeout
-while a save is applied, the hook reports that the save did not complete. The `Stop`
+while a save is applied, the hook reports that the save did not complete. The edit hook
+opens the store to bind the edit; if it is locked past the busy timeout, that edit
+is not flagged. The `Stop`
 hook timeout is 60 seconds.
 
 Saving is best effort. A session interrupted with Ctrl+C, closed while the model is

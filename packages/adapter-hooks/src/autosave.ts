@@ -99,7 +99,8 @@ export function parseSaveReply(message: string): SaveReply | undefined {
   } catch { return undefined; }
 }
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
-const list = (value: unknown) => (Array.isArray(value) ? value : []).map(text).filter(Boolean).slice(0, MAX_LIST).map(v => Array.from(v).slice(0, MAX_ITEM).join(''));
+const list = (value: unknown) => (Array.isArray(value) ? value : []).map(text).filter(Boolean).slice(0, MAX_LIST);
+const clip = (items: string[]) => items.map(v => Array.from(v).slice(0, MAX_ITEM).join(''));
 
 /**
  * Applies a parsed reply through the existing Core APIs. Only key/kind/text/source_path and handoff text are taken
@@ -127,8 +128,10 @@ export function applySave(client: ProjectClient, provider: HookProviderName, ses
   }
   if (reply.handoff && typeof reply.handoff === 'object') {
     const h = reply.handoff as Record<string, unknown>;
-    const handoff = { from, task: { goal: text(h.goal), status: h.status }, completed: [], remaining: list(h.remaining), decisions: list(h.decisions), files_changed: [], risks: list(h.risks), recommended_next_action: text(h.next ?? h.recommended_next_action) };
-    const fields = [handoff.task.goal, handoff.recommended_next_action, ...handoff.remaining, ...handoff.decisions, ...handoff.risks];
+    const remaining = list(h.remaining), decisions = list(h.decisions), risks = list(h.risks);
+    const handoff = { from, task: { goal: text(h.goal), status: h.status }, completed: [], remaining: clip(remaining), decisions: clip(decisions), files_changed: [], risks: clip(risks), recommended_next_action: text(h.next ?? h.recommended_next_action) };
+    // Checked before clipping, so a cut cannot leave an undetectable fragment of a secret.
+    const fields = [handoff.task.goal, handoff.recommended_next_action, ...remaining, ...decisions, ...risks];
     if (h.status !== 'in_progress' && h.status !== 'blocked') outcomes.push({ item: 'handoff', outcome: 'skipped: only unfinished work is handed off' });
     else if (!handoff.task.goal || !handoff.recommended_next_action) outcomes.push({ item: 'handoff', outcome: 'skipped: goal and next action are required' });
     else if (fields.some(looksSensitive)) outcomes.push({ item: 'handoff', outcome: 'skipped: looks like a secret' });

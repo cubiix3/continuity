@@ -168,7 +168,7 @@ for (const provider of ['claude', 'codex'] as const) {
       if (bundle) process.stdout.write(sessionStartOutput(provider, bundle));
     } catch { /* Silent: Continuity must not disturb unrelated agent sessions. */ }
   });
-  // PostToolUse on file edits: flags the session as edited. Reads only session_id; no database, no tool payload.
+  // PostToolUse on file edits: flags the session and its bound scope. Reads only session_id and cwd, never the tool payload.
   command.command('tool-use', { hidden: true }).action(async () => {
     process.exitCode = 0;
     try {
@@ -178,7 +178,8 @@ for (const provider of ['claude', 'codex'] as const) {
       if (!client) return;
       // The project/workspace the edits belong to; `mixed` when a session edits several.
       const home = continuityHomePath(), state = readSessionState(home, provider, input.session), key = scopeOf(client);
-      const scope = state.dirty && state.scope && state.scope !== key ? 'mixed' : key;
+      // While a request is outstanding its scope is fixed: an edit elsewhere makes the answer unusable, never redirects it.
+      const scope = (state.dirty || state.pending) && state.scope && state.scope !== key ? 'mixed' : key;
       if (!state.dirty || state.scope !== scope) writeSessionState(home, provider, input.session, { ...state, dirty: true, scope });
     } catch { /* Silent. */ }
   });

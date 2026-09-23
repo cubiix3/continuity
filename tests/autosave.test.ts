@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { symlinkSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { openContinuity } from '../packages/sdk/src/index.js';
 import { renderBootstrap } from '../packages/core/src/index.js';
@@ -299,4 +298,20 @@ test('a linked autosave state directory is never written or cleaned', (context) 
   const result = session('claude', a, save({ memories: [] }));
   expect([result.edit.status, result.request.status, result.answer.status]).toEqual([0, 0, 0]); expect(result.request.stdout).toBe('');
   expect(readdirSync(elsewhere)).toEqual(['keep.json']);
+});
+
+test('an edit elsewhere during the save turn cannot redirect the outstanding request', () => {
+  run('claude', 'tool-use', { session_id: 'redirect', cwd: a });
+  expect(run('claude', 'stop', { session_id: 'redirect', cwd: a, stop_hook_active: false }).stdout).toContain('block');
+  run('claude', 'tool-use', { session_id: 'redirect', cwd: b });
+  const answer = run('claude', 'stop', { session_id: 'redirect', cwd: b, stop_hook_active: true, last_assistant_message: save({ memories: [{ key: 'm2b.key', kind: 'experience', text: 'Learned in Alpha, must never land in Beta.' }] }) });
+  expect(JSON.parse(answer.stdout).systemMessage).toMatch(/nothing saved/);
+  expect(active(b)).toEqual([]); expect(active(a)).toEqual([]);
+});
+
+test('a secret straddling the list item length limit is still refused', () => {
+  const item = `${'x'.repeat(495)} api_key = "abcdefghijklmnop"`;
+  const { answer } = session('claude', a, save({ handoff: { goal: 'Long notes', status: 'in_progress', risks: [item], next: 'Continue.' } }));
+  expect(JSON.parse(answer.stdout).systemMessage).toContain('looks like a secret');
+  expect(host.project(a).latestHandoff()).toBeNull();
 });

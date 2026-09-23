@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14171a">
+  <meta name="description" content="Continuity keeps project memory, provenance, and handoffs local when agents and sessions change.">
+  <meta property="og:title" content="Continuity — Keep the work moving">
+  <meta property="og:description" content="Local project memory and structured handoffs for interchangeable coding agents.">
+  <meta property="og:type" content="website">
+  <title>Continuity — Keep the work moving</title>
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#top" aria-label="Continuity home"><img src="./assets/continuity-logo-dark.png" alt="Continuity" width="165" height="30"></a>
+      <nav aria-label="Main navigation">
+        <a href="#why">Why Continuity</a>
+        <a href="#how">How it works</a>
+        <a href="https://github.com/cubiix3/continuity#documentation">Docs</a>
+      </nav>
+      <a class="header-github" href="https://github.com/cubiix3/continuity">View on GitHub <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Local context for coding agents</p>
+          <h1 id="hero-title">The work survives<br>the <span>handoff.</span></h1>
+          <p class="hero-lead">Agents and sessions change. Continuity keeps the project's memory, evidence, and next steps in one local place, ready for whoever picks up the work.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/cubiix3/continuity#quickstart">Get started <span aria-hidden="true">↗</span></a>
+            <a class="button button-secondary" href="https://github.com/cubiix3/continuity">Explore the code <span aria-hidden="true">↗</span></a>
+          </div>
+          <p class="hero-note">Open source. Runs locally. Works across agents.</p>
+        </div>
+
+        <div class="handoff-demo" aria-label="Example of a handoff between coding agent sessions">
+          <div class="demo-bar"><span class="demo-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>project / reconnect</span><span class="demo-status">local</span></div>
+          <div class="demo-body">
+            <div class="demo-session"><span class="session-node" aria-hidden="true"></span><span>Session 01</span><strong>Claude Code</strong></div>
+            <div class="demo-record">
+              <p class="record-label">Handoff saved</p>
+              <dl>
+                <div><dt>Goal</dt><dd>Fix reconnect behavior</dd></div>
+                <div><dt>Completed</dt><dd>Read retry policy in AGENTS.md</dd></div>
+                <div><dt>Next action</dt><dd>Add a bounded retry test</dd></div>
+              </dl>
+            </div>
+            <div class="demo-transfer" aria-hidden="true"><span></span><span>same project, next session</span></div>
+            <div class="demo-session next"><span class="session-node" aria-hidden="true"></span><span>Session 02</span><strong>Codex</strong></div>
+            <div class="demo-command"><span class="prompt">$</span> continuity handoff latest<span class="cursor" aria-hidden="true"></span></div>
+          </div>
+          <div class="demo-footer"><span class="live-dot" aria-hidden="true"></span> Project files remain the source of truth</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="intro section" id="why" aria-labelledby="why-title">
+      <div class="wrap">
+        <div class="section-heading">
+          <p class="eyebrow">Why Continuity</p>
+          <h2 id="why-title">A new session should not mean starting over.</h2>
+          <p>Every coding agent brings its own tools. Continuity gives them a shared, project-bound record of what has been learned and what needs to happen next.</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature"><span class="feature-symbol" aria-hidden="true">◎</span><h3>Project identity</h3><p>One local identity follows a project across agents, sessions, and Git worktrees.</p></article>
+          <article class="feature"><span class="feature-symbol" aria-hidden="true">✳</span><h3>Durable memory</h3><p>Keep source-backed facts and attributed lessons with their trust level and history.</p></article>
+          <article class="feature"><span class="feature-symbol" aria-hidden="true">↗</span><h3>Clear handoffs</h3><p>Pass on the goal, completed work, remaining steps, decisions, and risks.</p></article>
+          <article class="feature"><span class="feature-symbol" aria-hidden="true">⌁</span><h3>Visible provenance</h3><p>See which current sources support context, and why an item was selected.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="how section" id="how" aria-labelledby="how-title">
+      <div class="wrap how-grid">
+        <div class="how-copy">
+          <p class="eyebrow">How it works</p>
+          <h2 id="how-title">A small layer between sessions.</h2>
+          <p>Register a project, sync its current sources, and leave a structured handoff. The next agent reads the same project record through the CLI or MCP.</p>
+          <ol class="steps">
+            <li><strong>Register</strong><span>Continuity binds an identity to the project's canonical directory.</span></li>
+            <li><strong>Keep context current</strong><span>Source changes are checked before old evidence is used again.</span></li>
+            <li><strong>Hand over work</strong><span>A new session can pick up the latest recorded next action.</span></li>
+          </ol>
+        </div>
+        <div class="terminal" aria-label="Continuity quickstart commands">
+          <div class="terminal-bar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>your project</span></div>
+          <div class="terminal-body"><p><span class="prompt">$</span> continuity init</p><p><span class="prompt">$</span> continuity sync</p><p><span class="prompt">$</span> continuity dashboard</p><div class="terminal-divider"></div><p class="terminal-caption">Later, in another session</p><p><span class="prompt">$</span> continuity handoff latest</p></div>
+          <a class="terminal-link" href="https://github.com/cubiix3/continuity#quickstart">Read the full quickstart <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="principles section" aria-labelledby="principles-title">
+      <div class="wrap principles-grid">
+        <div><p class="eyebrow">Built for real projects</p><h2 id="principles-title">Context with boundaries.</h2></div>
+        <div class="principle-list">
+          <div><h3>Local by default</h3><p>No hosted account or model key is required for the default experience. Git and your files remain authoritative.</p></div>
+          <div><h3>Scoped to the project</h3><p>The trusted host fixes project scope. Context from another project cannot be retrieved implicitly.</p></div>
+          <div><h3>Evidence stays attached</h3><p>Memory keeps provenance and revision history. Conflicting claims are quarantined for review.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="closing" aria-labelledby="closing-title">
+      <div class="wrap closing-inner"><div><h2 id="closing-title">Keep the next agent moving.</h2><p>Start with a project you already have.</p></div><a class="button button-primary" href="https://github.com/cubiix3/continuity#quickstart">Get started <span aria-hidden="true">↗</span></a></div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="wrap footer-inner"><a href="#top" aria-label="Continuity home"><img src="./assets/continuity-logo-dark.png" alt="Continuity" width="143" height="26"></a><div><a href="https://github.com/cubiix3/continuity">GitHub</a><a href="https://github.com/cubiix3/continuity/blob/main/LICENSE">Apache 2.0</a></div></div></footer>
+</body>
+</html>

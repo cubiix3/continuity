@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { openContinuity } from '../packages/sdk/src/index.js';
 import { AutoSync, AUTO_SYNC } from '../packages/sdk/src/auto-sync.js';
 import { renderBootstrap } from '../packages/core/src/index.js';
@@ -72,3 +73,13 @@ test('parallel session starts during runtime syncs succeed without blocking or c
   expect(Math.max(...results.map(r => r.ms))).toBeLessThan(10_000);
   expect(host.doctor().integrity).toBe('ok');
 }, 60_000);
+
+test('a database locked longer than the busy timeout leaves the session start silent and exit 0', { timeout: 60_000 }, async () => {
+  const lock = new DatabaseSync(join(home, 'continuity.db'));
+  lock.exec('BEGIN IMMEDIATE');
+  try {
+    const result = await hook(a);
+    expect(result.status).toBe(0); expect(result.stdout).toBe(''); expect(result.ms).toBeLessThan(15_000);
+  } finally { lock.exec('ROLLBACK'); lock.close(); }
+  const after = await hook(a); expect(after.status).toBe(0); expect(after.stdout).toContain('Continuity · Alpha');
+});

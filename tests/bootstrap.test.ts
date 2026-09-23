@@ -8,6 +8,8 @@ import { SqliteStorage } from '../packages/storage-sqlite/src/index.js';
 import { renderBootstrap } from '../packages/core/src/index.js';
 import { claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, removeHookIntegration } from '../packages/adapter-hooks/src/index.js';
 
+// Fixtures propose many memories (each refreshes sources); Windows CI runners need more than vitest's 5 s default.
+vi.setConfig({ testTimeout: 60_000 });
 let root: string, a: string, b: string, home: string, host: ReturnType<typeof openContinuity>;
 const agent = (session = 'fixture') => ({ agent: 'Claude Code', session });
 const handoff = (goal: string, status: 'in_progress' | 'blocked' | 'done' = 'in_progress') => ({ from: agent(), task: { goal, status }, completed: [], remaining: ['Compare the two renders.'], decisions: [], files_changed: [], risks: [], recommended_next_action: `Continue ${goal}.` });

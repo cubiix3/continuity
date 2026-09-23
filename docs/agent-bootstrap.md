@@ -47,7 +47,9 @@ From then on, `cd project` and `claude` (or `codex`) is enough. `status` reports
 `invalid_config`. `install` repairs a stale entry. `remove` deletes only
 Continuity's entry. `--home` or `CONTINUITY_HOME` selects the Continuity state that
 the hook reads; the resolved home, Node executable and CLI path are written into
-the hook.
+the hook. Run `install` again after upgrading Continuity or moving Node (for
+example with a version manager); `status` reports `stale` until then, and a stale
+hook fails silently without affecting the session.
 
 Hook commands contain only absolute paths and fixed words. Codex strings quote
 each path for PowerShell (including typographic single quotes) or POSIX `sh`, so

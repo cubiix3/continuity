@@ -55,32 +55,35 @@
           </ul>
         </div>
 
-        <div class="window term-window" aria-label="Example terminal session: one agent leaves a handoff, another picks it up">
-          <div class="window-bar">
-            <span></span><span></span><span></span>
-            <em>~/relay-engine</em>
-            <button class="term-toggle" type="button" id="term-toggle" aria-label="Pause animation" hidden><span data-toggle-label>Pause</span></button>
+        <div class="term-stage" data-term>
+          <div class="window term-window" aria-label="Example: Claude Code leaves a handoff, a new Codex session starts with it">
+            <div class="window-bar">
+              <span></span><span></span><span></span>
+              <div class="term-tabs">
+                <span class="term-tab is-active" data-tab="0"><i class="agent-dot"></i>Claude Code <small>session 01</small></span>
+                <span class="term-tab" data-tab="1"><i class="agent-dot"></i>Codex <small>session 02</small></span>
+              </div>
+              <div class="term-controls" data-controls hidden>
+                <button class="term-btn" type="button" data-replay aria-label="Replay from the start" title="Replay"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></button>
+                <button class="term-btn" type="button" data-toggle aria-label="Pause animation" title="Pause"><svg class="i-pause" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg><svg class="i-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg></button>
+              </div>
+            </div>
+            <pre class="term" id="term" tabindex="0"><code><span class="t-line"><span class="t-comment"># Session 01 · Claude Code</span></span><span class="t-line"><span class="t-prompt">$</span> <span class="t-cmd">continuity init</span></span><span class="t-line"><span class="t-key">name:</span> relay-engine</span><span class="t-line"><span class="t-prompt">$</span> <span class="t-cmd">continuity sync</span></span><span class="t-line"><span class="t-key">files:</span> 72</span><span class="t-line"><span class="t-prompt">$</span> <span class="t-cmd">continuity memory remember "Retries must be bounded to 5 attempts." --key retry-limit --source AGENTS.md</span></span><span class="t-line"><span class="t-key">outcome:</span> persisted</span><span class="t-line"><span class="t-prompt">$</span> <span class="t-cmd">continuity handoff create --file handoff.json</span></span><span class="t-line"><span class="t-key">recommended_next_action:</span> <span class="t-str">Add a regression test for the retry limit</span></span><span class="t-line"> </span><span class="t-line"><span class="t-comment"># Session 02 · Codex starts with the project's context</span></span><span class="t-line"><span class="t-prompt">$</span> <span class="t-cmd">continuity context "bounded reconnect" --budget 1500</span></span><span class="t-line">1384/1500 UTF-8 bytes · 2 items</span></code></pre>
+            <div class="term-progress" data-progress hidden>
+              <button type="button" data-stage="0"><span>Register</span></button>
+              <button type="button" data-stage="1"><span>Sync</span></button>
+              <button type="button" data-stage="2"><span>Remember</span></button>
+              <button type="button" data-stage="3"><span>Hand off</span></button>
+              <button type="button" data-stage="4"><span>Resume</span></button>
+            </div>
           </div>
-          <pre class="term" id="term" tabindex="0"><code><span class="t-comment"># Session 01 · Claude Code</span>
-<span class="t-prompt">$</span> <span class="t-cmd">continuity init</span>
-<span class="t-key">project_id:</span> prj_d241df15
-<span class="t-key">name:</span> relay-engine
-<span class="t-prompt">$</span> <span class="t-cmd">continuity sync</span>
-<span class="t-key">files:</span> 72
-<span class="t-prompt">$</span> <span class="t-cmd">continuity memory remember "Retries are bounded to 5 attempts." --key retry-limit --source AGENTS.md</span>
-<span class="t-key">status:</span> persist
-<span class="t-key">reason:</span> Exact excerpt from a current project source; source remains authoritative.
-<span class="t-prompt">$</span> <span class="t-cmd">continuity handoff create --file handoff.json</span>
-<span class="t-key">id:</span> handoff_30cf526c
-<span class="t-key">recommended_next_action:</span> <span class="t-str">Add a regression test for the retry limit</span>
-
-<span class="t-comment"># Session 02 · Codex, same project</span>
-<span class="t-prompt">$</span> <span class="t-cmd">continuity handoff latest</span>
-<span class="t-key">from:</span> {"agent":"claude-code","session":"session-7f3a"}
-<span class="t-key">task:</span> {"goal":"Implement bounded reconnect","status":"in_progress"}
-<span class="t-key">risks:</span> ["Unbounded retries can amplify an outage"]
-<span class="t-key">recommended_next_action:</span> <span class="t-str">Add a regression test for the retry limit</span>
-</code></pre>
+          <div class="rail" data-rail aria-hidden="true">
+            <span class="rail-node is-active" data-node="0"><i></i>Claude Code</span>
+            <span class="rail-track"></span>
+            <span class="rail-node rail-core" data-node="core"><img src="./assets/continuity-mark.svg" alt="" width="18" height="18">Continuity</span>
+            <span class="rail-track"></span>
+            <span class="rail-node" data-node="1"><i></i>Codex</span>
+          </div>
         </div>
       </div>
     </section>
@@ -115,7 +118,7 @@
 
     <section class="section" id="handoff" aria-labelledby="handoff-title">
       <div class="wrap split">
-        <div class="window code-window">
+        <div class="window code-window" data-reveal>
           <div class="window-bar"><span></span><span></span><span></span><em>handoff.json</em></div>
           <pre><code>{
   <span class="t-key">"from"</span>: { <span class="t-key">"agent"</span>: <span class="t-str">"claude-code"</span>, <span class="t-key">"session"</span>: <span class="t-str">"session-7f3a"</span> },
@@ -125,8 +128,7 @@
   <span class="t-key">"decisions"</span>: [],
   <span class="t-key">"files_changed"</span>: [],
   <span class="t-key">"risks"</span>: [<span class="t-str">"Unbounded retries can amplify an outage"</span>],
-  <span class="t-key">"recommended_next_action"</span>: <span class="t-str">"Add a regression test for the retry limit"</span>
-}</code></pre>
+<span class="hl-line">  <span class="t-key">"recommended_next_action"</span>: <span class="t-str">"Add a regression test for the retry limit"</span></span>}</code></pre>
         </div>
         <div>
           <p class="eyebrow">Structured handoffs</p>

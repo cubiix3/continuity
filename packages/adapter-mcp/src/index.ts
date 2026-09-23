@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { contextRequestSchema, handoffInputSchema, memoryCandidateSchema, observationSchema } from '../../core/src/contracts.js';
+import { renderBootstrap } from '../../core/src/context/bootstrap.js';
 import type { AgentAdapter } from '../../adapter-generic/src/index.js';
 
 async function result(action: () => unknown) {
@@ -20,6 +21,7 @@ export function createMcpServer(adapter: AgentAdapter): McpServer {
   server.registerTool('continuity_search', { description: 'Search current sources in the host-configured project. Returns up to 10 excerpts with provenance.', inputSchema: z.object({ query: z.string().min(1).max(2000), mode: z.enum(['lexical', 'semantic', 'hybrid']).optional() }).strict(), annotations }, args => result(() => adapter.search(args.query, args.mode)));
   server.registerTool('continuity_memory_propose', { description: 'Record durable project knowledge. Current source excerpts activate automatically. Agent lessons require from.agent/from.session and activate with agent_observation trust. Routine output is rejected; conflicts are quarantined. Results report persisted, duplicate, superseded, rejected or quarantined. Do not submit generic advice, TODOs or guesses.', inputSchema: memoryCandidateSchema, annotations }, args => result(() => adapter.propose(args)));
   server.registerTool('continuity_handoff_create', { description: 'Save a structured handoff in the configured project for another agent or session.', inputSchema: handoffInputSchema, annotations }, args => result(() => adapter.createHandoff(args)));
+  server.registerTool('continuity_bootstrap', { description: 'Read the compact startup index for the host-configured project: health, conflicts, latest handoff and a bounded list of durable memories with trust labels. Read-only; no sync. Use at session start when the host has not already injected it.', inputSchema: z.object({}).strict(), annotations: { ...annotations, readOnlyHint: true, idempotentHint: true } }, () => result(() => { const bundle = adapter.bootstrap(); return { text: renderBootstrap(bundle), bundle }; }));
   server.registerTool('continuity_handoff_latest', { description: 'Read the latest structured handoff in the configured project, or null.', inputSchema: z.object({}).strict(), annotations: { ...annotations, readOnlyHint: true, idempotentHint: true } }, () => result(() => adapter.latestHandoff()));
   return server;
 }

@@ -8,7 +8,7 @@ the complete compact JSON context bundle. Selection audit records remain local.
 
 Continuity's unit of access is a `ProjectClient`, created by a trusted host from a
 canonical directory registration. It exposes operations, not a namespace selector.
-Agent adapters receive a narrower `AgentAdapter` contract with six operations.
+Agent adapters receive a narrower `AgentAdapter` contract with seven operations.
 
 | Module | Responsibility |
 | --- | --- |
@@ -18,7 +18,8 @@ Agent adapters receive a narrower `AgentAdapter` contract with six operations.
 | `sdk` | Trusted composition of Core and storage/source adapters |
 | `cli` | Local user commands and service startup |
 | `adapter-generic` | Small programmatic agent contract |
-| `adapter-mcp` | Six stdio MCP tools |
+| `adapter-mcp` | Seven stdio MCP tools |
+| `adapter-claude` | Claude Code SessionStart hook output and explicit settings install/remove |
 | `server` | Local HTTP v1 transport |
 
 These are private pnpm workspace modules compiled together by one TypeScript

@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { openContinuity } from '../../sdk/src/index.js';
+import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
 import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
+import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
+import { claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, removeHookIntegration, sessionStartCwd, sessionStartOutput, sessionStartUnavailable } from '../../adapter-hooks/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
 import { createDashboardServer } from '../../server/src/dashboard.js';
-import { fileURLToPath } from 'node:url';
 import { continuityHome } from '../../sdk/src/local-ipc.js';
 import { runBackground, runtimeRequest, startBackground, stopBackground } from '../../sdk/src/background.js';
 import { startupRegistration } from '../../sdk/src/startup-windows.js';
@@ -117,7 +121,45 @@ program.command('dashboard').description('Open the local project continuity dash
   const address = server.address();
   console.error(`Continuity dashboard listening on http://127.0.0.1:${typeof address === 'object' && address ? address.port : port}`);
 });
-program.command('mcp').description('Serve six project-bound MCP tools over stdio').action(async () => {
+program.command('bootstrap').description('Read-only startup index for an agent session in this project (no sync, no writes)')
+  .option('--budget <bytes>', `UTF-8 byte budget for the JSON bundle (${BOOTSTRAP_BUDGET.min}–${BOOTSTRAP_BUDGET.max})`, String(BOOTSTRAP_BUDGET.default))
+  .action((options: { budget: string }) => {
+    const bundle = runtime().bootstrap(program.opts<{ project: string }>().project, { budget: Number(options.budget) });
+    if (!bundle) {
+      if (json()) output({ registered: false });
+      console.error('Continuity: no project is registered for this directory.'); process.exitCode = 3; return;
+    }
+    if (json()) output(bundle); else process.stdout.write(renderBootstrap(bundle));
+  });
+const integrate = program.command('integrate').description('Explicit provider integrations for automatic agent startup context');
+// Same canonical form as the runtime's continuityHome(), without creating a missing home (hooks must stay side-effect free).
+const continuityHomePath = () => {
+  const home = resolve(program.opts<{ home?: string }>().home ?? process.env.CONTINUITY_HOME ?? join(homedir(), '.continuity'));
+  return existsSync(home) ? continuityHome(home) : home;
+};
+for (const provider of ['claude', 'codex'] as const) {
+  const name = provider === 'claude' ? 'Claude Code' : 'Codex';
+  const target = () => (provider === 'claude' ? claudeHookTarget : codexHookTarget)(process.execPath, realpathSync.native(fileURLToPath(import.meta.url)), continuityHomePath());
+  const command = integrate.command(provider).description(`${name} SessionStart integration in the user hook settings (${provider === 'claude' ? 'CLAUDE_CONFIG_DIR or ~/.claude/settings.json' : 'CODEX_HOME or ~/.codex/hooks.json'})`);
+  command.command('install').description('Add the Continuity SessionStart hook; other hooks are preserved').action(() => output(installHookIntegration(target())));
+  command.command('status').action(() => { const status = hookIntegrationStatus(target()); output(status); if (status.state !== 'installed') process.exitCode = 1; });
+  command.command('remove').description('Remove only the Continuity SessionStart hook').action(() => output(removeHookIntegration(target())));
+  // Invoked by the provider. Never blocks the session: unregistered directories and unreadable state stay silent.
+  command.command('session-start', { hidden: true }).action(async () => {
+    process.exitCode = 0;
+    try {
+      const chunks: Buffer[] = []; let size = 0;
+      for await (const chunk of process.stdin) { size += (chunk as Buffer).length; if (size > 65536) return; chunks.push(chunk as Buffer); }
+      const cwd = sessionStartCwd(Buffer.concat(chunks).toString('utf8'));
+      if (!cwd || !existsSync(join(continuityHomePath(), 'continuity.db'))) return;
+      let bundle;
+      try { bundle = runtime().bootstrap(cwd); }
+      catch (error) { if (error instanceof BootstrapUnavailableError) process.stdout.write(sessionStartUnavailable(provider, error.message)); return; }
+      if (bundle) process.stdout.write(sessionStartOutput(provider, bundle));
+    } catch { /* Silent: Continuity must not disturb unrelated agent sessions. */ }
+  });
+}
+program.command('mcp').description('Serve seven project-bound MCP tools over stdio').action(async () => {
   await serveMcp(new GenericAdapter(client())); persistent = true;
 });
 program.command('serve').description('Start the project-bound HTTP API on 127.0.0.1').option('--port <port>', 'local port', '4783').action(async (options: { port: string }) => {

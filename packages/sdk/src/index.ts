@@ -1,11 +1,11 @@
 import { homedir } from 'node:os';
-import { join, relative } from 'node:path';
-import { ProjectClient, ProjectResolver } from '../../core/src/index.js';
+import { dirname, isAbsolute, join, relative } from 'node:path';
+import { ProjectClient, ProjectResolver, canonicalRoot } from '../../core/src/index.js';
 import { SqliteStorage } from '../../storage-sqlite/src/index.js';
 import { FileSources, isWithin } from '../../source-files/src/index.js';
 import type { Project } from '../../core/src/contracts.js';
 import { reviewMemory } from '../../core/src/memory/review.js';
-import { accessSync, realpathSync, statSync } from 'node:fs';
+import { accessSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { retrievalConfig } from './retrieval-config.js';
 import { OllamaRetrieval } from '../../retrieval-semantic/src/ollama.js';
 import { OpenVikingRetrieval } from '../../retrieval-semantic/src/openviking.js';
@@ -18,6 +18,26 @@ import { anchoredScope, readSourceScopes, sourceScopeSchema, writeSourceScope, S
 import type { SourceScope } from './source-scope.js';
 
 export const CONTINUITY_HOST_API_VERSION = 1;
+const gitLink = (dir: string) => {
+  const link = readFileSync(join(dir, '.git'), 'utf8').match(/^gitdir:\s*(.+?)\s*$/m)?.[1];
+  if (!link) throw new Error('Not a Git link file.');
+  return realpathSync.native(isAbsolute(link) ? link : join(dir, link));
+};
+const sameDir = (a: string, b: string) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+/**
+ * Cheap worktree check without spawning git: the worktree's common Git directory must be the project's. Handles
+ * `.git` directories, `.git` link files (separate git dir, submodules) and relative links.
+ */
+function attachedWorktree(projectRoot: string, workspaceRoot: string) {
+  try {
+    const worktreeGit = gitLink(workspaceRoot);
+    const common = realpathSync.native(join(worktreeGit, readFileSync(join(worktreeGit, 'commondir'), 'utf8').trim()));
+    const projectGit = statSync(join(projectRoot, '.git')).isDirectory() ? realpathSync.native(join(projectRoot, '.git')) : gitLink(projectRoot);
+    return sameDir(common, projectGit);
+  } catch { return false; }
+}
+/** Bootstrap failed after the directory resolved to a registered project or workspace. */
+export class BootstrapUnavailableError extends Error { constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'BootstrapUnavailableError'; } }
 export interface HostOptions { sources?: { include?: readonly string[]; exclude?: readonly string[] } }
 
 /** Trusted composition root for local hosts. Do not pass this host into agent tools. */
@@ -143,6 +163,29 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       const source = sourceFor(project, root);
       const workspaceSource = { scan: () => { verifyWorkspace(project.root, root); return source.scan({ ...project, root }); } };
       return coordinate(new ProjectClient(bound, workspaceSource, project, undefined, semantic, semantic ? config.mode : 'lexical', workspace), project.project_id, workspace.workspace_id);
+    },
+    /**
+     * Read-only agent startup index for the directory an agent runs in. Resolves the nearest registered project or
+     * workspace root without registering, syncing, or running git. Returns undefined for an unregistered directory.
+     */
+    bootstrap: (path: string, options: { budget?: number } = {}) => {
+      let current = canonicalRoot(path);
+      const projects = storage.projects(), workspaceRoots = new Map(projects.flatMap(p => storage.workspaces(p.project_id).map(w => [w.root, { project: p, workspace: w }] as const)));
+      for (;;) {
+        const candidate = projects.find(p => p.root === current) ? { project: projects.find(p => p.root === current)! } : workspaceRoots.get(current);
+        // A removed worktree's path can be reused by an unrelated checkout: no context rather than a wrong one.
+        if (candidate && 'workspace' in candidate && !attachedWorktree(candidate.project.root, candidate.workspace.root)) return undefined;
+        const scope = candidate;
+        if (scope) {
+          const store = boundStore('workspace' in scope ? scope.workspace.workspace_id : '');
+          const client = new ProjectClient(store, sourceFor(scope.project), scope.project, undefined, undefined, 'lexical', 'workspace' in scope ? scope.workspace : undefined);
+          try { return client.bootstrap(options); }
+          catch (error) { throw new BootstrapUnavailableError(error instanceof Error ? error.message : 'Bootstrap failed.', { cause: error }); }
+        }
+        const parent = dirname(current);
+        if (parent === current) return undefined;
+        current = parent;
+      }
     },
     project: (path: string) => {
       const project = resolver.resolve(path);

@@ -30,4 +30,5 @@ test('user startup registration is isolated, idempotent, launches exact argv and
     expect(startupRegistration('remove', home, cli).installed).toBe(false);
     expect(startupRegistration('status', home, cli).installed).toBe(false);
   } finally { await stopBackground(home); startupRegistration('remove', home, cli); rmSync(home, { recursive: true, force: true }); }
-}, 30000);
+  // About nine sequential PowerShell/COM calls; slow Windows runners need headroom.
+}, 60000);

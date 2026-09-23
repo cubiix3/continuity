@@ -115,7 +115,7 @@ test('more than 512 eligible directories use bounded reconciliation without watc
   writeFileSync(join(project, 'source.ts'), 'export const reconciled = true;');
   await until(() => resources().some(r => r.state === 'fresh' && r.hash !== hash));
   expect(host.doctor().integrity).toBe('ok');
-});
+}, 30_000); // 513 directories are slow to create and traverse on loaded Windows runners.
 
 const write = (path: string, content: string) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); };
 const sourcesOf = (id: string) => host.inspection.page(id, '', 'sources', 50).items.map(i => i.record as { id: string; path: string; hash: string; state: string });

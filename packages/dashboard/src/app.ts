@@ -51,10 +51,11 @@ async function api<T>(path: string, values?: Record<string, string>, body?: unkn
  * The server decides whether it exists; on rejection fall back to Primary, then to the first listed project.
  */
 async function restoreScope(requestedProject: string, requestedWorkspace: string) {
+  // Probe with explicit values; the shared scope changes only once the server has confirmed it.
   for (const workspace of requestedWorkspace ? [requestedWorkspace, ''] : ['']) {
-    projectId = requestedProject; workspaceId = workspace;
     try {
-      const registration = await api<{ project: Project }>('workspaces', {});
+      const registration = await api<{ project: Project }>('workspaces', { project: requestedProject, workspace });
+      projectId = requestedProject; workspaceId = workspace;
       if (!projects.some(p => p.project_id === projectId)) projects.push(registration.project);
       return;
     } catch (error) { if (!(error instanceof ApiError) || ![400, 409].includes(error.status)) throw error; }
@@ -316,8 +317,9 @@ window.addEventListener('hashchange', () => {
   const saved = new URLSearchParams(location.hash.split('?')[1] ?? '');
   const requested = saved.get('project');
   if (requested && (requested !== projectId || (saved.get('workspace') ?? '') !== workspaceId)) {
-    generation++;
-    void restoreScope(requested, saved.get('workspace') ?? '').then(() => selectors()).then(render).catch(showError);
+    const navigation = ++generation;
+    // Only the latest navigation may apply its restored scope.
+    void restoreScope(requested, saved.get('workspace') ?? '').then(async () => { if (navigation !== generation) return; await selectors(); if (navigation === generation) await render(); }).catch(showError);
   } else void render();
 });
 void start().catch(showError);

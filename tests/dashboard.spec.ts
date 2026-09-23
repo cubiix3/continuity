@@ -242,12 +242,16 @@ async function expectRecovered(page: import('@playwright/test').Page) {
   await expect(page.locator('nav a')).toHaveCount(8);
 }
 test('a stale project in the URL falls back to a registered project without cross-project access', async ({ page }) => {
-  const approved: string[] = []; page.on('response', r => { if (r.url().includes(staleProject) && r.ok()) approved.push(r.url()); });
-  await page.goto(`${base}/#/overview?project=${staleProject}&workspace=ws_stale`); await expectRecovered(page);
+  const approved: string[] = [], afterRecovery: string[] = []; let recovered = false;
+  page.on('response', r => { if (r.url().includes(staleProject) && r.ok()) approved.push(r.url()); });
+  page.on('request', r => { if (recovered && r.url().includes(staleProject)) afterRecovery.push(r.url()); });
+  await page.goto(`${base}/#/overview?project=${staleProject}&workspace=ws_stale`); await expectRecovered(page); recovered = true;
   const registered = host.projects().map(p => p.project_id), selected = await page.getByLabel('Project', { exact: true }).inputValue();
   expect(registered).toContain(selected); expect(page.url()).toContain(`project=${selected}`); expect(page.url()).not.toContain(staleProject); expect(page.url()).not.toContain('ws_stale');
   await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue('');
   // A stale bookmark opened while the Dashboard is running recovers the same way.
+  await page.getByRole('link', { name: 'Handoffs', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Handoffs', exact: true })).toBeVisible();
+  expect(afterRecovery).toEqual([]);
   await page.evaluate(stale => { location.hash = `/memories?project=${stale}&workspace=`; }, staleProject);
   await expect(page.getByRole('heading', { name: 'Memories' })).toBeVisible(); await expect(page.getByRole('alert')).toHaveCount(0);
   await expect.poll(() => page.url()).not.toContain(staleProject);

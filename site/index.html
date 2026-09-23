@@ -11,6 +11,7 @@
   <title>Continuity — Keep the work moving</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
+  <script src="./motion.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -40,8 +41,8 @@
           <p class="hero-note">Open source. Runs locally. Works across agents.</p>
         </div>
 
-        <div class="handoff-demo" aria-label="Example of a handoff between coding agent sessions">
-          <div class="demo-bar"><span class="demo-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>project / reconnect</span><span class="demo-status">local</span></div>
+        <div class="handoff-demo is-playing" data-demo aria-label="Example of a handoff between coding agent sessions">
+          <div class="demo-bar"><span class="demo-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>project / reconnect</span><span class="demo-status">local</span><button class="demo-replay" type="button" data-replay aria-label="Replay the handoff animation" hidden><span aria-hidden="true">↻</span> Replay</button></div>
           <div class="demo-body">
             <div class="demo-session"><span class="session-node" aria-hidden="true"></span><span>Session 01</span><strong>Claude Code</strong></div>
             <div class="demo-record">
@@ -54,7 +55,7 @@
             </div>
             <div class="demo-transfer" aria-hidden="true"><span></span><span>same project, next session</span></div>
             <div class="demo-session next"><span class="session-node" aria-hidden="true"></span><span>Session 02</span><strong>Codex</strong></div>
-            <div class="demo-command"><span class="prompt">$</span> continuity handoff latest<span class="cursor" aria-hidden="true"></span></div>
+            <div class="demo-command"><span class="prompt">$</span> <span class="command-text">continuity handoff latest</span><span class="cursor" aria-hidden="true"></span></div>
           </div>
           <div class="demo-footer"><span class="live-dot" aria-hidden="true"></span> Project files remain the source of truth</div>
         </div>
@@ -89,9 +90,9 @@
             <li><strong>Hand over work</strong><span>A new session can pick up the latest recorded next action.</span></li>
           </ol>
         </div>
-        <div class="terminal" aria-label="Continuity quickstart commands">
-          <div class="terminal-bar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>your project</span></div>
-          <div class="terminal-body"><p><span class="prompt">$</span> continuity init</p><p><span class="prompt">$</span> continuity sync</p><p><span class="prompt">$</span> continuity dashboard</p><div class="terminal-divider"></div><p class="terminal-caption">Later, in another session</p><p><span class="prompt">$</span> continuity handoff latest</p></div>
+        <div class="terminal" data-demo aria-label="Continuity quickstart commands">
+          <div class="terminal-bar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>your project</span><button class="demo-replay" type="button" data-replay aria-label="Replay the quickstart animation" hidden><span aria-hidden="true">↻</span> Replay</button></div>
+          <div class="terminal-body"><p class="terminal-command terminal-one"><span class="prompt">$</span> <span class="terminal-text">continuity init</span></p><p class="terminal-command terminal-two"><span class="prompt">$</span> <span class="terminal-text">continuity sync</span></p><p class="terminal-command terminal-three"><span class="prompt">$</span> <span class="terminal-text">continuity dashboard</span></p><div class="terminal-divider"></div><p class="terminal-caption">Later, in another session</p><p class="terminal-command terminal-four"><span class="prompt">$</span> <span class="terminal-text">continuity handoff latest</span></p></div>
           <a class="terminal-link" href="https://github.com/cubiix3/continuity#quickstart">Read the full quickstart <span aria-hidden="true">↗</span></a>
         </div>
       </div>

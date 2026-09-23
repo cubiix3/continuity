@@ -49,7 +49,7 @@ test('agent-learned memories are active without approval and can be explicitly f
   await page.getByRole('link', { name: m.key, exact: true }).click();
   await expect(page.getByText('generic / automatic-session', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Forget', exact: true }).click(); const dialog = page.getByRole('dialog'); await expect(dialog).toHaveAccessibleName('Forget this memory?'); await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
-  await dialog.getByRole('button', { name: 'Forget memory' }).click(); expect(client.memory(m.id).status).toBe('forgotten');
+  await dialog.getByRole('button', { name: 'Forget memory' }).click(); await expect.poll(() => client.memory(m.id).status).toBe('forgotten');
   await expect(page.getByRole('heading', { name: 'Revision history' })).toBeVisible();
 });
 

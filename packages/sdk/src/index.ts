@@ -6,11 +6,12 @@ import { FileSources, isWithin } from '../../source-files/src/index.js';
 import type { Project, Workspace } from '../../core/src/contracts.js';
 import { reviewMemory } from '../../core/src/memory/review.js';
 import { accessSync, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { retrievalConfig } from './retrieval-config.js';
 import { OllamaRetrieval } from '../../retrieval-semantic/src/ollama.js';
 import { OpenVikingRetrieval } from '../../retrieval-semantic/src/openviking.js';
 import { randomUUID } from 'node:crypto';
-import { verifyWorkspace } from './workspaces.js';
+import { mapBounded, verifyWorkspace, verifyWorkspaceAsync } from './workspaces.js';
 import { Inspection } from '../../core/src/inspection.js';
 import { passages } from '../../core/src/context/passages.js';
 import { continuityHome, coordinatedSync } from './local-ipc.js';
@@ -18,11 +19,14 @@ import { anchoredScope, readSourceScopes, sourceScopeSchema, writeSourceScope, S
 import type { SourceScope } from './source-scope.js';
 
 export const CONTINUITY_HOST_API_VERSION = 1;
-const gitLink = (dir: string) => {
-  const link = readFileSync(join(dir, '.git'), 'utf8').match(/^gitdir:\s*(.+?)\s*$/m)?.[1];
+/** Workspaces verified at once by doctor. Each verification runs up to five short Git processes in sequence. */
+export const DOCTOR_WORKSPACE_CONCURRENCY = 4;
+const gitLinkTarget = (dir: string, text: string) => {
+  const link = text.match(/^gitdir:\s*(.+?)\s*$/m)?.[1];
   if (!link) throw new Error('Not a Git link file.');
-  return realpathSync.native(isAbsolute(link) ? link : join(dir, link));
+  return isAbsolute(link) ? link : join(dir, link);
 };
+const gitLink = (dir: string) => realpathSync.native(gitLinkTarget(dir, readFileSync(join(dir, '.git'), 'utf8')));
 const sameDir = (a: string, b: string) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
 /**
  * Cheap worktree check without spawning git: the worktree's common Git directory must be the project's. Handles
@@ -35,6 +39,27 @@ function attachedWorktree(projectRoot: string, workspaceRoot: string) {
     const projectGit = statSync(join(projectRoot, '.git')).isDirectory() ? realpathSync.native(join(projectRoot, '.git')) : gitLink(projectRoot);
     return sameDir(common, projectGit);
   } catch { return false; }
+}
+/** attachedWorktree without blocking the event loop, for display-only health over many workspaces. Same checks. */
+async function attachedWorktreeAsync(projectRoot: string, workspaceRoot: string) {
+  const link = async (dir: string) => realpath(gitLinkTarget(dir, await readFile(join(dir, '.git'), 'utf8')));
+  try {
+    const worktreeGit = await link(workspaceRoot);
+    const common = await realpath(join(worktreeGit, (await readFile(join(worktreeGit, 'commondir'), 'utf8')).trim()));
+    const projectGit = (await stat(join(projectRoot, '.git'))).isDirectory() ? await realpath(join(projectRoot, '.git')) : await link(projectRoot);
+    return sameDir(common, projectGit);
+  } catch { return false; }
+}
+/** Runtime findings shared by the full doctor and the cheap Overview health. */
+function runtimeProblems() {
+  const problems: string[] = [];
+  const major = Number(process.versions.node.split('.')[0]);
+  const minor = Number(process.versions.node.split('.')[1]);
+  if (major < 24 || (major === 24 && minor < 13)) problems.push('unsupported Node runtime: use Node 24.13 or later');
+  let mcp = true;
+  try { import.meta.resolve('@modelcontextprotocol/sdk/server/mcp.js'); }
+  catch { mcp = false; problems.push('MCP SDK unavailable'); }
+  return { problems, mcp };
 }
 /** Bootstrap failed after the directory resolved to a registered project or workspace. */
 export class BootstrapUnavailableError extends Error { constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'BootstrapUnavailableError'; } }
@@ -112,6 +137,17 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       if (parent === current) return undefined;
       current = parent;
     }
+  };
+  const sourceScopeFinding = () => {
+    try { readSourceScopes(home); return undefined; }
+    catch (error) { return error instanceof SourceScopeError ? error.message : 'Source-scope configuration unavailable.'; }
+  };
+  const rootAccessible = (p: Project) => {
+    try {
+      accessSync(p.root);
+      const canonical = realpathSync.native(p.root);
+      return statSync(p.root).isDirectory() && (process.platform === 'win32' ? canonical.toLowerCase() : canonical) === p.root;
+    } catch { return false; }
   };
   const coordinate = (client: ProjectClient, projectId: string, workspaceId = '') => {
     const sync = client.sync.bind(client);
@@ -212,36 +248,54 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       const semantic = semanticFor(storage, project.project_id);
       return coordinate(new ProjectClient(storage, sourceFor(project), project, undefined, semantic, semantic ? config.mode : 'lexical'), project.project_id);
     },
-    doctor: () => {
+    /**
+     * Full local diagnostics: storage integrity, every registration and every workspace's Git membership. Git runs
+     * asynchronously, at most DOCTOR_WORKSPACE_CONCURRENCY workspaces at a time; findings keep registration order.
+     */
+    doctor: async () => {
       const health = storage.diagnose();
-      try { readSourceScopes(home); }
-      catch (error) { health.problems.push(error instanceof SourceScopeError ? error.message : 'Source-scope configuration unavailable.'); }
+      const sourceScopeProblem = sourceScopeFinding();
+      if (sourceScopeProblem) health.problems.push(sourceScopeProblem);
       const roots: { project_id: string; accessible: boolean }[] = [];
       const workspaces: { project_id: string; workspace_id: string; accessible: boolean }[] = [];
       if (!health.problems.includes('corrupted project identity')) {
-        for (const p of storage.projects()) {
-          try {
-            accessSync(p.root);
-            const canonical = realpathSync.native(p.root);
-            if (!statSync(p.root).isDirectory() || (process.platform === 'win32' ? canonical.toLowerCase() : canonical) !== p.root) throw new Error('Root binding changed');
-            roots.push({ project_id: p.project_id, accessible: true });
-          }
-          catch { roots.push({ project_id: p.project_id, accessible: false }); health.problems.push(`inaccessible/stale registration: ${p.project_id}`); }
-          for (const w of storage.workspaces(p.project_id)) {
-            let accessible = true;
-            try { verifyWorkspace(p.root, w.root); }
-            catch { accessible = false; health.problems.push(`inaccessible/stale workspace: ${w.workspace_id}`); }
+        const projects = storage.projects().map(project => ({ project, accessible: rootAccessible(project), workspaces: storage.workspaces(project.project_id) }));
+        const checks = projects.flatMap(({ project, workspaces: registered }) => registered.map(workspace => ({ project, workspace })));
+        const verified = await mapBounded(checks, DOCTOR_WORKSPACE_CONCURRENCY, ({ project, workspace }) => verifyWorkspaceAsync(project.root, workspace.root).then(() => true, () => false));
+        let index = 0;
+        for (const { project: p, accessible: rootOk, workspaces: registered } of projects) {
+          roots.push({ project_id: p.project_id, accessible: rootOk });
+          if (!rootOk) health.problems.push(`inaccessible/stale registration: ${p.project_id}`);
+          for (const w of registered) {
+            const accessible = verified[index++]!;
+            if (!accessible) health.problems.push(`inaccessible/stale workspace: ${w.workspace_id}`);
             workspaces.push({ project_id: p.project_id, workspace_id: w.workspace_id, accessible });
           }
         }
       }
-      const major = Number(process.versions.node.split('.')[0]);
-      const minor = Number(process.versions.node.split('.')[1]);
-      if (major < 24 || (major === 24 && minor < 13)) health.problems.push('unsupported Node runtime: use Node 24.13 or later');
-      const adapters = { generic: true, 'http-loopback': true, 'mcp-stdio': false };
-      try { import.meta.resolve('@modelcontextprotocol/sdk/server/mcp.js'); adapters['mcp-stdio'] = true; }
-      catch { health.problems.push('MCP SDK unavailable'); }
+      const runtime = runtimeProblems();
+      health.problems.push(...runtime.problems);
+      const adapters = { generic: true, 'http-loopback': true, 'mcp-stdio': runtime.mcp };
       return { ...health, version: '0.1.0', node: process.versions.node, roots, workspaces, adapters, runtime_note: 'node:sqlite is pre-stable in Node 24; warnings depend on the installed patch version.' };
+    },
+    /**
+     * Cheap current health for one project's Overview: storage capabilities, local configuration, the project root
+     * and each workspace's Git link files (read asynchronously). No Git process, record scan or integrity check runs.
+     * Display only: it never authorizes an operation, which still verifies its workspace in full.
+     */
+    health: async (projectId: string) => {
+      const { project } = inspection.scope(projectId, '');
+      const { schema_version, fts5 } = storage.capabilities();
+      const problems: string[] = [];
+      if (!fts5) problems.push('FTS5 unavailable');
+      const sourceScopeProblem = sourceScopeFinding();
+      if (sourceScopeProblem) problems.push(sourceScopeProblem);
+      if (!rootAccessible(project)) problems.push(`inaccessible/stale registration: ${project.project_id}`);
+      const registered = storage.workspaces(project.project_id);
+      const attached = await Promise.all(registered.map(w => attachedWorktreeAsync(project.root, w.root)));
+      registered.forEach((w, index) => { if (!attached[index]) problems.push(`inaccessible/stale workspace: ${w.workspace_id}`); });
+      problems.push(...runtimeProblems().problems);
+      return { project_id: project.project_id, schema_version, fts5, problems };
     },
     close: () => { for (const bound of workspaceStores.values()) bound.close(); storage.close(); },
   };

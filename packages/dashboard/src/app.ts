@@ -110,9 +110,10 @@ async function selectors(after = 0) {
 }
 async function overview(stamp: number) {
   if (!projectId) { heading('Overview', 'Project knowledge and the work carried between sessions.'); empty('No projects registered.', 'Run continuity init inside a project, then continuity sync. Reload this page to see the registration.'); main.append(el('pre', 'continuity init\ncontinuity sync', 'first-run')); return; }
-  const [handoffs, counts, snapshot, health, retrieval] = await Promise.all([api<Page>('records', { kind: 'handoffs', limit: '5' }), api<{ active: number; conflicts: number; sources: number; memories: number; handoffs: number; workspaces: number }>('stats', {}), api<Record<string, unknown>>('status', {}), api<{ integrity: string; fts5: boolean; problems: string[] }>('diagnostics'), api<{ status: string }>('retrieval', {}).catch(() => ({ status: 'unavailable' }))]);
+  const [handoffs, counts, snapshot, health, retrieval] = await Promise.all([api<Page>('records', { kind: 'handoffs', limit: '5' }), api<{ active: number; conflicts: number; sources: number; memories: number; handoffs: number; workspaces: number }>('stats', {}), api<Record<string, unknown>>('status', {}), api<{ fts5: boolean; problems: string[] }>('health', {}), api<{ status: string }>('retrieval', {}).catch(() => ({ status: 'unavailable' }))]);
   if (stamp !== generation) return;
-  const healthy = health.integrity === 'ok' && health.fts5 && !health.problems.length, sync = snapshot.sync as { at?: string; files?: number } | undefined;
+  // Cheap project health: known problems only. Integrity and Git membership are checked on Diagnostics.
+  const healthy = health.fts5 && !health.problems.length, sync = snapshot.sync as { at?: string; files?: number } | undefined;
   const project = projects.find(p => p.project_id === projectId)!, header = el('header', undefined, 'page-header'), hero = el('div', undefined, 'project-hero');
   hero.append(el('span', project.name, 'project-name'), status(healthy ? 'healthy' : 'degraded'));
   header.append(el('h1', 'Overview', 'eyebrow'), hero, metaLine(sync?.at ? `Last synced ${date(sync.at).toLowerCase()}` : 'Not synced yet', sync?.files !== undefined ? `${sync.files.toLocaleString()} sources` : undefined, workspaceName()));
@@ -292,7 +293,9 @@ async function render() {
       scoped.append(el('p', 'Change with continuity sources set or clear. Project identity is unaffected.', 'note'));
     } else if (name === 'diagnostics') {
       heading('Diagnostics', 'The same local health checks as continuity doctor. Optional semantic services are not required.');
+      const running = el('p', 'Running full diagnostics…', 'muted'); running.role = 'status'; main.append(running);
       const health = await api<Record<string, unknown>>('diagnostics'); if (stamp !== generation) return;
+      running.remove();
       const problems = health.problems as string[];
       const line = el('p', undefined, 'health-line'); line.append(status(problems.length ? 'degraded' : 'healthy', problems.length ? 'Degraded · review the findings below' : 'Healthy · local storage and registrations')); main.append(line);
       const diagnostics = el('div', undefined, 'diagnostic-sections'), core = el('section'), runtime = el('section');

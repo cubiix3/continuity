@@ -142,3 +142,54 @@ it('inspects a current semantic cache without replacing resource IDs or sync sta
     expect(await semanticHost.inspectionRetrievalHealth(id, '')).toMatchObject({ status: 'incomplete' }); expect(client.status().sync).toEqual(before);
   } finally { semanticHost.close(); backend.closeAllConnections(); await new Promise<void>(resolve => backend.close(() => resolve())); }
 });
+
+// The request set the Overview page issues (packages/dashboard/src/app.ts overview()).
+const overviewRequests = (project: string) => ['records?kind=handoffs&limit=5', 'stats', 'status', 'health', 'retrieval'].map(path => `${path}${path.includes('?') ? '&' : '?'}project=${project}&workspace=`);
+const serve = async (dashboardHost: typeof host) => {
+  const dashboard = createDashboardServer(dashboardHost, new URL('../dist/packages/dashboard/', import.meta.url));
+  await new Promise<void>(resolve => dashboard.listen(0, '127.0.0.1', resolve)); const address = dashboard.address(); if (!address || typeof address === 'string') throw new Error('Missing address');
+  const origin = `http://127.0.0.1:${address.port}`;
+  const capability = (await (await fetch(`${origin}/dashboard-api/session`, { headers: { 'X-Continuity-Dashboard': '1' } })).json() as { capability: string }).capability;
+  const call = async (path: string) => { const response = await fetch(`${origin}/dashboard-api/${path}`, { headers: { 'X-Continuity-Token': capability } }); return { status: response.status, body: await response.json() as Record<string, unknown>, at: performance.now() }; };
+  return { call, close: () => new Promise<void>(resolve => { dashboard.closeAllConnections(); dashboard.close(() => resolve()); }) };
+};
+
+it('serves Overview health without running the full doctor, even for overlapping loads', async () => {
+  let doctorRuns = 0;
+  const dashboard = await serve({ ...host, doctor: () => { doctorRuns++; return host.doctor(); } });
+  try {
+    const loads = await Promise.all([0, 1].map(() => Promise.all(overviewRequests(id).map(dashboard.call))));
+    for (const load of loads) expect(load.map(r => r.status)).toEqual([200, 200, 200, 200, 200]);
+    expect(loads[0]![3]!.body).toEqual({ project_id: id, schema_version: expect.any(Number), fts5: true, problems: [] });
+    expect(doctorRuns).toBe(0);
+    expect((await dashboard.call('diagnostics')).status).toBe(200);
+    expect(doctorRuns).toBe(1);
+  } finally { await dashboard.close(); }
+});
+
+it('keeps answering Dashboard requests while full diagnostics are still running', async () => {
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  const dashboard = await serve({ ...host, doctor: async () => { await gate; return host.doctor(); } });
+  try {
+    const full = dashboard.call('diagnostics');
+    const cheap = await Promise.all(overviewRequests(id).map(dashboard.call));
+    expect(cheap.map(r => r.status)).toEqual([200, 200, 200, 200, 200]);
+    const finished = cheap.at(-1)!.at; release();
+    const diagnostics = await full;
+    expect(diagnostics.status).toBe(200); expect(diagnostics.at).toBeGreaterThan(finished);
+    expect(diagnostics.body).toMatchObject({ integrity: 'ok', fts5: true });
+  } finally { release(); await dashboard.close(); }
+});
+
+it('keeps the Overview health route read-only, authenticated and free of paths', async () => {
+  expect((await get(`health?project=${id}`, { 'X-Continuity-Token': '' })).status).toBe(403);
+  expect((await write('health', { project: id })).status).toBe(404);
+  expect((await get('health?project=prj_00000000-0000-4000-8000-000000000000')).status).toBe(409);
+  const body = await (await get(`health?project=${id}`)).text();
+  expect(body).not.toContain(project.replaceAll('\\', '\\\\')); expect(body).not.toContain('Current implementation');
+  rmSync(other, { recursive: true, force: true });
+  // Overview health is scoped to the selected project; the full doctor still reports every registration.
+  expect(JSON.parse(body)).toMatchObject({ problems: [] });
+  expect(await (await get(`health?project=${id}`)).json()).toMatchObject({ problems: [] });
+  expect((await (await get('diagnostics')).json() as { problems: string[] }).problems.some(p => p.startsWith('inaccessible/stale registration'))).toBe(true);
+});

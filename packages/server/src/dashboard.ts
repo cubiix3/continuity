@@ -45,7 +45,8 @@ export function createDashboardServer(host: Host, assetsRoot = new URL('../../da
           const page = z.object({ after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0), limit: z.coerce.number().int().min(1).max(50).default(50) }).strict().parse(Object.fromEntries(url.searchParams));
           const all = host.projects(); return send(200, { projects: all.slice(page.after, page.after + page.limit), next: all.length > page.after + page.limit ? page.after + page.limit : null });
         }
-        if (url.pathname === '/dashboard-api/diagnostics' && !url.search) return send(200, host.doctor());
+        // Full diagnostics: Git runs asynchronously, so other Dashboard requests are served meanwhile.
+        if (url.pathname === '/dashboard-api/diagnostics' && !url.search) return send(200, await host.doctor());
         const q = querySchema.parse(Object.fromEntries(url.searchParams));
         if (!q.project) return send(400, { error: 'Select a registered project.' });
         const scope = host.inspection.scope(q.project, q.workspace);
@@ -57,6 +58,8 @@ export function createDashboardServer(host: Host, assetsRoot = new URL('../../da
         if (url.pathname === '/dashboard-api/status') return send(200, client().status());
         if (url.pathname === '/dashboard-api/source-scope') return send(200, host.sourceScope(q.project));
         if (url.pathname === '/dashboard-api/stats') return send(200, host.inspection.stats(q.project, q.workspace));
+        // Cheap Overview health for the selected project; the full doctor stays on /diagnostics.
+        if (url.pathname === '/dashboard-api/health') return send(200, await host.health(q.project));
         if (url.pathname === '/dashboard-api/retrieval') return send(200, await host.inspectionRetrievalHealth(q.project, q.workspace));
         if (url.pathname === '/dashboard-api/records') {
           if (q.kind === 'sources' && q.id) {

@@ -32,7 +32,7 @@ test('real changes debounce, update hashes, add/rename/delete, and keep integrit
   writeFileSync(join(project, 'added.ts'), 'export const added = true;'); await until(() => resources().some(r => r.path === 'added.ts' && r.state === 'fresh'));
   renameSync(join(project, 'added.ts'), join(project, 'renamed.ts')); await until(() => resources().some(r => r.path === 'renamed.ts' && r.state === 'fresh'));
   unlinkSync(join(project, 'renamed.ts')); expect(existsSync(join(project, 'renamed.ts'))).toBe(false); await until(() => !resources().some(r => r.path === 'renamed.ts' && r.state === 'fresh'));
-  expect(host.doctor().integrity).toBe('ok');
+  expect((await host.doctor()).integrity).toBe('ok');
 });
 
 test('ignored build outputs and secrets have no watches and do not trigger sync', async () => {
@@ -114,7 +114,7 @@ test('more than 512 eligible directories use bounded reconciliation without watc
   const hash = resources()[0]!.hash;
   writeFileSync(join(project, 'source.ts'), 'export const reconciled = true;');
   await until(() => resources().some(r => r.state === 'fresh' && r.hash !== hash));
-  expect(host.doctor().integrity).toBe('ok');
+  expect((await host.doctor()).integrity).toBe('ok');
 }, 30_000); // 513 directories are slow to create and traverse on loaded Windows runners.
 
 const write = (path: string, content: string) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); };
@@ -179,7 +179,7 @@ test('invalid sources.json fails closed without stopping the runtime and recover
   writeFileSync(join(project, 'source.ts'), 'export const value = 99;'); await delay(400);
   expect(freshPaths(id)).toEqual(['docs/guide.md']);
   expect(events).toContain('source scope configuration invalid'); expect(events.join('\n')).not.toContain('Guide');
-  expect(host.doctor().problems.some(p => p.includes('sources.json'))).toBe(true);
+  expect((await host.doctor()).problems.some(p => p.includes('sources.json'))).toBe(true);
   writeFileSync(join(home, 'sources.json'), valid);
   await until(() => all().every(p => p.status === 'healthy' && p.watcher_count > 0));
   expect(freshPaths(id)).toEqual(['docs/guide.md']);
@@ -222,7 +222,7 @@ test('git bulk changes coalesce and runtime capabilities cannot become source co
   expect(auto.status().projects[0]!.runs - runs).toBe(1);
   expect(resources().some(r => r.path === 'runtime.key')).toBe(false);
   expect(resources().filter(r => r.state === 'fresh')).toHaveLength(41);
-  expect(host.doctor().integrity).toBe('ok');
+  expect((await host.doctor()).integrity).toBe('ok');
 });
 
 test('separate processes share a sync and OS ownership recovers after an owned child crash', async () => {

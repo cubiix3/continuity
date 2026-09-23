@@ -252,6 +252,12 @@ export class SqliteStorage implements StoragePort {
     const row = this.db.prepare('SELECT data FROM sync_state WHERE project_id = ? AND workspace_id = ?').get(projectId, this.workspaceId);
     return row ? decode<SyncState>(row) : undefined;
   }
+  /** Constant-cost capability probe for display. Unlike diagnose(), it reads no records and checks no integrity. */
+  capabilities() {
+    let fts5 = false;
+    try { this.db.prepare('SELECT rowid FROM resource_fts LIMIT 1').get(); fts5 = true; } catch { /* reported as unavailable */ }
+    return { schema_version: Number(this.db.prepare('PRAGMA user_version').get()?.user_version), fts5 };
+  }
   diagnose() {
     const problems: string[] = [];
     if (this.db.prepare('PRAGMA foreign_key_check').all().length) problems.push('orphaned foreign-key records');

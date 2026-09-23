@@ -70,7 +70,7 @@ it('fails closed on malformed, oversized and unknown-field configs without reset
     await expect(client.sync()).rejects.toThrow('sources.json');
     expect(() => host.previewSourceScope(project, { include: ['README.md'] })).toThrow('sources.json');
     expect(() => host.setSourceScope(project, { include: ['README.md'] })).toThrow('sources.json');
-    expect(host.doctor().problems.join(' ')).toContain('sources.json'); expect(paths()).toEqual(before);
+    expect((await host.doctor()).problems.join(' ')).toContain('sources.json'); expect(paths()).toEqual(before);
     await expect(host.inspectionRetrievalHealth(id, '')).rejects.toThrow('sources.json');
   }
 });

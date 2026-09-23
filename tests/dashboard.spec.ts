@@ -98,6 +98,15 @@ test('diagnostics distinguishes optional disabled semantic from degraded registr
   rmSync(join(root, 'other'), { recursive: true, force: true });
   await page.reload(); await expect(page.getByText('Degraded · review the findings below')).toBeVisible();
 });
+test('overview reports a stale workspace from cheap health and leaves full checks to diagnostics', async ({ page }) => {
+  const project = host.projects().find(p => p.name === 'Demo · Relay')!;
+  rmSync(join(root, 'worker-reconnect'), { recursive: true, force: true });
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=`);
+  await expect(page.locator('.project-hero')).toContainText('Degraded');
+  await page.getByRole('link', { name: 'Inspect registration and storage findings' }).click();
+  await expect(page.getByText('Degraded · review the findings below')).toBeVisible();
+  await expect(page.getByText(/inaccessible\/stale workspace: ws_/)).toBeVisible();
+});
 test('empty installation provides an actionable first run', async ({ page }) => {
   const emptyHost = openContinuity(join(root, 'empty-state')); const emptyServer = createDashboardServer(emptyHost, new URL('../dist/packages/dashboard/', import.meta.url));
   await new Promise<void>(resolve => emptyServer.listen(0, '127.0.0.1', resolve)); const address = emptyServer.address();
@@ -221,9 +230,10 @@ test('overview workspace total comes from the server, not the paginated workspac
   expect(registered).toHaveLength(56);
   expect(host.inspection.stats(project.project_id, '').workspaces).toBe(total);
   const workspacesRow = page.locator('.state-list dt').filter({ hasText: /^Workspaces$/ }).locator('+ dd');
-  // Overview health runs doctor synchronously, verifying every registered worktree with git; allow for slow Windows runners.
-  const settled = { timeout: 120_000 };
-  // Open the scoped Overview directly so only one doctor pass runs per assertion.
+  // Overview health must not scale with registered worktrees: it never runs the full doctor (issue #16). The bound
+  // still catches the former minute-long Overview on slow runners without depending on runner speed.
+  const settled = { timeout: 15_000 };
+  const diagnostics: string[] = []; page.on('request', request => { if (new URL(request.url()).pathname === '/dashboard-api/diagnostics') diagnostics.push(request.url()); });
   await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=`);
   await expect(workspacesRow).toHaveText(String(total), settled);
   expect(await page.getByLabel('Workspace', { exact: true }).locator('option').count()).toBeLessThan(total);
@@ -232,6 +242,8 @@ test('overview workspace total comes from the server, not the paginated workspac
   await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${outside}`);
   await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(outside);
   await expect(workspacesRow).toHaveText(String(total), settled);
+  await expect(page.locator('.project-hero')).toContainText('Healthy');
+  expect(diagnostics).toEqual([]);
 });
 
 const staleProject = 'prj_00000000-0000-4000-8000-000000000000';

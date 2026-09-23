@@ -68,7 +68,7 @@ it('fails closed on corrupted scoped records and reports source corruption', asy
   const client = host.project(a); (await client.sync());
   const db = new DatabaseSync(join(home, 'continuity.db'));
   db.prepare("UPDATE resources SET data = json_set(data, '$.hash', 'corrupt') WHERE project_id = ?").run(client.status().project_id);
-  expect(host.doctor().problems).toContain('corrupted source reference');
+  expect((await host.doctor()).problems).toContain('corrupted source reference');
   db.prepare("UPDATE resources SET data = json_set(data, '$.project_id', 'forged') WHERE project_id = ?").run(client.status().project_id);
   await expect(client.context({ task: 'reconnect' })).rejects.toThrow('Corrupted record scope'); db.close();
 });
@@ -89,7 +89,7 @@ it('invalidates memory immediately after source deletion and refuses unreadable 
   unlinkSync(join(a, 'AGENTS.md'));
   expect((await client.context({ task: 'reconnect' })).items.some(i => i.id === m.id)).toBe(false);
   renameSync(a, join(root, 'renamed'));
-  expect(host.doctor().problems.some(p => p.includes('stale registration'))).toBe(true);
+  expect((await host.doctor()).problems.some(p => p.includes('stale registration'))).toBe(true);
   await expect(client.context({ task: 'reconnect' })).rejects.toThrow();
 });
 
@@ -130,7 +130,7 @@ it('upgrades populated v1 data without losing identity or context history', asyn
   expect(host.project(a).status().project_id).toBe(id);
   expect(host.project(a).inspect(bundle.context_id)).toEqual(bundle);
   expect(host.retention(a).classes.find(c => c.name === 'context history')?.eligible).toBe(0);
-  expect(host.doctor().schema_version).toBe(5);
+  expect((await host.doctor()).schema_version).toBe(5);
 });
 
 it('keeps token estimates advisory while enforcing exact byte limits', async () => {

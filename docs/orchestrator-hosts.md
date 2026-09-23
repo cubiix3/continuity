@@ -45,6 +45,8 @@ accounts, credentials, raw logs or chat transcripts as memory or handoff content
 Nested project registrations remain boundaries in every checkout of the parent
 project, including registrations created after a client was bound. Diagnostics
 validate every registered workspace against both its canonical root and Git
-membership. Include patterns with a provable root prefix prune unrelated trees;
+membership. `host.doctor()` returns a Promise: Git runs asynchronously so a host's
+event loop stays responsive. `host.health(projectId)` is a cheap, display-only
+project check without Git or integrity checks; never use it to authorize access. Include patterns with a provable root prefix prune unrelated trees;
 unanchored basename patterns still require traversal because they can match at
 any depth. Traversal and content limits remain enforced.

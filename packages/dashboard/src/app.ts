@@ -50,16 +50,18 @@ async function api<T>(path: string, values?: Record<string, string>, body?: unkn
  * A scope from the URL is untrusted navigation state (e.g. a bookmark from another Continuity home).
  * The server decides whether it exists; on rejection fall back to Primary, then to the first listed project.
  */
-async function restoreScope(requestedProject: string, requestedWorkspace: string) {
+async function restoreScope(requestedProject: string, requestedWorkspace: string, current: () => boolean = () => true) {
   // Probe with explicit values; the shared scope changes only once the server has confirmed it.
   for (const workspace of requestedWorkspace ? [requestedWorkspace, ''] : ['']) {
     try {
       const registration = await api<{ project: Project }>('workspaces', { project: requestedProject, workspace });
+      if (!current()) return; // A newer navigation owns the scope.
       projectId = requestedProject; workspaceId = workspace;
       if (!projects.some(p => p.project_id === projectId)) projects.push(registration.project);
       return;
     } catch (error) { if (!(error instanceof ApiError) || ![400, 409].includes(error.status)) throw error; }
   }
+  if (!current()) return;
   projectId = projects[0]?.project_id ?? ''; workspaceId = '';
   if (!projectId) history.replaceState(null, '', location.hash.split('?')[0] || '#/overview');
 }
@@ -319,7 +321,7 @@ window.addEventListener('hashchange', () => {
   if (requested && (requested !== projectId || (saved.get('workspace') ?? '') !== workspaceId)) {
     const navigation = ++generation;
     // Only the latest navigation may apply its restored scope.
-    void restoreScope(requested, saved.get('workspace') ?? '').then(async () => { if (navigation !== generation) return; await selectors(); if (navigation === generation) await render(); }).catch(showError);
+    void restoreScope(requested, saved.get('workspace') ?? '', () => navigation === generation).then(async () => { if (navigation !== generation) return; await selectors(); if (navigation === generation) await render(); }).catch(showError);
   } else void render();
 });
 void start().catch(showError);

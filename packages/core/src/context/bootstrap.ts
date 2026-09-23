@@ -1,5 +1,5 @@
 import type { Handoff, Memory, Project, Resource, SyncState, Trust, Workspace } from '../contracts.js';
-import { handoffActive } from '../contracts.js';
+import { openHandoff } from '../contracts.js';
 import { NamespaceGuard } from '../security/namespace.js';
 import { looksSensitive } from '../security/sensitive.js';
 import { memoryContextKind, sourceBackedCurrent } from './freshness.js';
@@ -77,10 +77,11 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
   const workspaceHandoffs = input.handoffs.filter(h => h.provenance.workspace_id === workspace?.workspace_id);
   // Only open work is offered for continuation; finished and closed handoffs remain history. A withheld newest open
   // handoff is never replaced by an older one.
-  const newest = workspaceHandoffs.find(handoffActive);
+  const newest = openHandoff(workspaceHandoffs);
   const latest = newest && !withheld([newest.from.agent, newest.task.goal, newest.recommended_next_action, ...newest.remaining].join('\n')) ? newest : undefined;
   if (newest && !latest) hidden++;
-  const olderHandoffs = Math.max(0, workspaceHandoffs.length - (newest ? 1 : 0));
+  // Handoffs captured before the one presented (all of them when none is); newer closed ones are only in `handoffs`.
+  const olderHandoffs = newest ? workspaceHandoffs.length - workspaceHandoffs.indexOf(newest) - 1 : workspaceHandoffs.length;
   const sync = input.sync;
   const warnings: string[] = [];
   if (!sync) warnings.push('Sources have not been synced for this workspace.');

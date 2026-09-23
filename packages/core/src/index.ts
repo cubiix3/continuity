@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { ContextRequest, Handoff, HandoffClosure, MemoryProposal, Project, SourcePort, StoragePort, TokenEstimator, SemanticRetrievalPort, SemanticScope, SemanticHealth, RetrievalMode, SemanticCandidate, Workspace } from './contracts.js';
-import { handoffActive, handoffCloseSchema, handoffInputSchema, contextRequestSchema, memoryCandidateSchema, observationSchema } from './contracts.js';
+import { handoffActive, handoffCloseSchema, openHandoff, handoffInputSchema, contextRequestSchema, memoryCandidateSchema, observationSchema } from './contracts.js';
 import { contextBroker } from './context/broker.js';
 import { proposeMemory } from './memory/policy.js';
 import { NamespaceGuard } from './security/namespace.js';
@@ -191,7 +191,7 @@ export class ProjectClient {
     return this.storage.closeHandoff(this.project.project_id, id, closure) ? { handoff: { ...handoff, closure }, outcome: 'closed' } : { handoff: find()!, outcome: 'already_closed' };
   }
   /** Latest handoff in this workspace that still asks for continuation, if any. */
-  activeHandoff() { this.assertBinding(); return this.storage.handoffs(this.project.project_id).find(h => h.provenance.workspace_id === this.workspace?.workspace_id && handoffActive(h)) ?? null; }
+  activeHandoff() { this.assertBinding(); return openHandoff(this.storage.handoffs(this.project.project_id).filter(h => h.provenance.workspace_id === this.workspace?.workspace_id)) ?? null; }
   observe(input: unknown) {
     this.assertBinding();
     const parsed = observationSchema.parse(input);

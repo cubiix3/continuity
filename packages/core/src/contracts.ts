@@ -75,6 +75,14 @@ export interface Handoff extends HandoffInput {
 }
 /** Work a handoff asks someone to continue: not created as done and not closed since. */
 export const handoffActive = (handoff: Handoff) => handoff.task.status !== 'done' && !handoff.closure;
+/**
+ * The handoff to continue, from handoffs ordered newest first. Closed handoffs are skipped, so an older one that is still
+ * open is found; a newest unclosed handoff created as done says the work is finished, so nothing older is resurrected.
+ */
+export function openHandoff<T extends Handoff>(handoffs: readonly T[]): T | undefined {
+  const current = handoffs.find(h => !h.closure);
+  return current && current.task.status !== 'done' ? current : undefined;
+}
 export const contextRequestSchema = z.object({
   task: z.string().trim().min(1).max(2000),
   role: z.enum(['implementation', 'reviewer', 'planning']).default('implementation'),

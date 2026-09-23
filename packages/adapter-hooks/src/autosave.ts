@@ -34,21 +34,23 @@ export function saveInstruction(openHandoffGoal?: string) {
 
 /**
  * Autosave replaces the provider's final answer with a save turn, so it runs by default only in sessions the provider
- * reports as attended and interactive. CONTINUITY_AUTOSAVE=1|0 forces it on or off; other values are ignored.
+ * reports as attended and interactive. CONTINUITY_AUTOSAVE=1 forces it on; any other non-empty value forces it off.
  * Claude Code sets CLAUDE_CODE_SESSION_ATTENDED (1 interactive, 0 for -p/SDK) and CLAUDE_CODE_ENTRYPOINT (cli vs
  * sdk-*) for its hooks. Codex exposes no such signal to hooks, so Codex autosave needs CONTINUITY_AUTOSAVE=1.
  */
 export function autosaveEnabled(provider: HookProviderName, env: NodeJS.ProcessEnv = process.env): boolean {
+  // Only the documented 1 enables; 0 and anything unrecognized (off, false, true, ...) fail safe to off.
   if (env.CONTINUITY_AUTOSAVE === '1') return true;
-  if (env.CONTINUITY_AUTOSAVE === '0') return false;
+  if (env.CONTINUITY_AUTOSAVE !== undefined && env.CONTINUITY_AUTOSAVE !== '') return false;
   if (provider !== 'claude') return false;
   const attended = env.CLAUDE_CODE_SESSION_ATTENDED;
   return attended === '1' || (attended === undefined && env.CLAUDE_CODE_ENTRYPOINT === 'cli');
 }
 
 /** The open handoff's goal for the save request, unless the handoff looks sensitive (bootstrap withholds those too). */
-export function offerableGoal(handoff: { task: { goal: string }; recommended_next_action: string; remaining: readonly string[] }) {
-  return [handoff.task.goal, handoff.recommended_next_action, ...handoff.remaining].some(looksSensitive) ? undefined : handoff.task.goal;
+export function offerableGoal(handoff: { from: { agent: string }; task: { goal: string }; recommended_next_action: string; remaining: readonly string[] }) {
+  const fields = [handoff.from.agent, handoff.task.goal, handoff.recommended_next_action, ...handoff.remaining];
+  return [fields.join('\n'), ...fields].some(looksSensitive) ? undefined : handoff.task.goal;
 }
 
 export interface StopInput { session: string; cwd: string; active: boolean; message: string }
@@ -172,6 +174,8 @@ export function applySave(client: ProjectClient, provider: HookProviderName, ses
   // in the same answer is recorded as its replacement.
   if (reply.close_handoff) {
     if (!offered) outcomes.push({ item: 'handoff close', outcome: 'skipped: no open handoff was offered' });
+    // A replacement that was not saved must not take the open work away.
+    else if (reply.handoff && typeof reply.handoff === 'object' && !created) outcomes.push({ item: 'handoff close', outcome: 'skipped: the replacement handoff was not saved' });
     else {
       try { outcomes.push({ item: 'handoff close', outcome: client.closeHandoff({ id: offered, from, ...(created ? { replaced_by: created } : {}) }).outcome }); }
       catch (error) { outcomes.push({ item: 'handoff close', outcome: `failed: ${error instanceof Error && error.name !== 'ZodError' ? error.message.slice(0, 120) : 'invalid close'}` }); }

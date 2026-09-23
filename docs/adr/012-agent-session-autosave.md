@@ -50,7 +50,7 @@ interactive session. Claude Code sets `CLAUDE_CODE_SESSION_ATTENDED` and
 unknown value means off.
 
 Codex gives hooks no signal that separates `exec` from the TUI, so Codex autosave
-is opt-in. `CONTINUITY_AUTOSAVE=1|0` overrides the default. `--no-autosave`
+is opt-in. `CONTINUITY_AUTOSAVE=1` forces autosave on, and any other non-empty value forces it off. `--no-autosave`
 outranks everything, because the hooks are then absent.
 
 ### Handoff closure
@@ -97,8 +97,8 @@ the host recorded. There is no new MCP tool; people close handoffs through
 
 - Scripted runs keep their final answer by default. A forced headless run
   (`CONTINUITY_AUTOSAVE=1`) ends with the save answer.
-- Interactive Codex users opt in with `CONTINUITY_AUTOSAVE=1`. `codex exec` runs
-  started from that environment inherit it and should set `CONTINUITY_AUTOSAVE=0`.
+- Interactive Codex users opt in with `CONTINUITY_AUTOSAVE=1`. Headless runs of either
+  provider started from that environment inherit it and should set `CONTINUITY_AUTOSAVE=0`.
 - Schema version 5 adds `handoff_closures`. Older Continuity versions refuse the
   upgraded database, as with every schema change.
 - Saving is best effort. Interruptions and crashes can skip it.

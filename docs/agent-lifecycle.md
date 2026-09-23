@@ -43,13 +43,15 @@ Precedence, from strongest:
 
 1. **Installed hooks.** `install --no-autosave` removes the autosave hooks, and
    nothing can turn autosave on.
-2. **`CONTINUITY_AUTOSAVE`.** `1` forces autosave on, `0` forces it off. Other
-   values are ignored.
+2. **`CONTINUITY_AUTOSAVE`.** `1` forces autosave on. `0`, or any other non-empty
+   value such as `off` or `true`, forces it off.
 3. **The provider default** above.
 
 To use autosave with interactive Codex, start it with `CONTINUITY_AUTOSAVE=1`, for
-example from a shell profile or terminal profile. `codex exec` runs started from that
-environment inherit the variable, so scripts there should set `CONTINUITY_AUTOSAVE=0`.
+example from a terminal profile. Every provider started from that environment
+inherits the variable. That includes `codex exec` and `claude -p`, whose final
+answers then become save answers, so scripts there should set `CONTINUITY_AUTOSAVE=0`.
+Scoping the variable to the interactive Codex launcher avoids this.
 A forced headless run (`CONTINUITY_AUTOSAVE=1 claude -p …`) ends with the save
 answer as its final message.
 
@@ -101,6 +103,8 @@ nothing else:
 If the workspace has an open handoff, the request adds one line naming its goal (at
 most 160 characters, no id). The answer may then add `"close_handoff":true`, but
 only if that work is finished or a new handoff in the same answer fully replaces it.
+If that replacement is not saved (invalid, or looks like a secret), the open
+handoff stays open and the hook reports it.
 An open handoff that looks sensitive is not offered.
 
 The model answers without tool calls. Only the last tagged block in the answer to
@@ -149,8 +153,9 @@ rewritten.
 
 - **Reads:** handoff reads (`handoff latest|show`, MCP `continuity_handoff_latest`,
   the Dashboard) include `closure`. The Dashboard shows a closed handoff as done.
-- **Bootstrap and the save offer** use the latest *open* handoff in the workspace: not
-  created as `done` and not closed. A closed or finished handoff stays inspectable but
+- **Bootstrap and the save offer** use the latest *open* handoff in the workspace.
+  Closed handoffs are skipped. If the newest remaining handoff was created as `done`,
+  its work is finished and nothing older is offered. A closed or finished handoff stays inspectable but
   is no longer presented as work to continue.
 - **Older open handoffs:** if the newest open handoff is closed, an older handoff that
   is still open is shown again. A replaced handoff is closed with `replaced_by`, so it

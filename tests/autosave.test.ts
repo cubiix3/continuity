@@ -173,8 +173,8 @@ test('hook input edge cases never block or exit 2; the kill switch keeps session
   }
   expect(host.project(a).memories()).toHaveLength(0);
   const off = session('claude', a, save({ memories: [{ key: 'k.k', kind: 'memory', text: 'Should not be saved while disabled.' }] }), 'off');
-  // Only 1 and 0 are recognized; any other value falls back to the provider default (off without Claude attendance).
-  for (const env of [{ CONTINUITY_AUTOSAVE: '0', CLAUDE_CODE_SESSION_ATTENDED: '1' }, { CONTINUITY_AUTOSAVE: 'off' }, { CONTINUITY_AUTOSAVE: 'true' }]) {
+  // Only 1 enables; 0 and unrecognized values fail safe to off, even in an attended Claude session.
+  for (const env of [{ CONTINUITY_AUTOSAVE: '0', CLAUDE_CODE_SESSION_ATTENDED: '1' }, { CONTINUITY_AUTOSAVE: 'off', CLAUDE_CODE_SESSION_ATTENDED: '1' }, { CONTINUITY_AUTOSAVE: 'true', CLAUDE_CODE_SESSION_ATTENDED: '1' }]) {
     run('claude', 'tool-use', { session_id: 'off2', cwd: a }, env);
     expect(run('claude', 'stop', { session_id: 'off2', cwd: a, stop_hook_active: false }, env).stdout).toBe('');
   }
@@ -424,4 +424,36 @@ test('a Git submodule checkout inside a project is a different tree and gets no 
   const inside = session('claude', join(a, 'vendor', 'lib'), save({ memories: [{ key: 'lib.fact', kind: 'experience', text: 'Learned inside the vendored submodule checkout.' }] }));
   expect([inside.request.stdout, inside.answer.stdout]).toEqual(['', '']);
   expect(active(a)).toEqual([]);
+});
+
+test('a dropped replacement never closes the offered handoff', () => {
+  session('codex', a, save({ handoff: { goal: 'Feature X', status: 'in_progress', next: 'Build X.' } }));
+  const x = host.project(a).latestHandoff()!;
+  const secret = session('claude', a, save({ handoff: { goal: 'Feature X follow-up', status: 'in_progress', remaining: ['Use api_key = "abcd1234efgh5678"'], next: 'Continue.' }, close_handoff: true }));
+  expect(JSON.parse(secret.answer.stdout).systemMessage).toContain('the replacement handoff was not saved');
+  const invalid = session('claude', a, save({ handoff: { goal: 'Feature X follow-up', status: 'in_progress' }, close_handoff: true }));
+  expect(JSON.parse(invalid.answer.stdout).systemMessage).toContain('the replacement handoff was not saved');
+  expect(host.project(a).handoff(x.id).closure).toBeUndefined(); expect(host.bootstrap(a)?.latest_handoff?.goal).toBe('Feature X');
+});
+
+test('a newest handoff created as done ends the open chain; closed ones are skipped', () => {
+  const client = host.project(a), base = { completed: [], remaining: [], decisions: [], files_changed: [], risks: [], recommended_next_action: 'Go.' };
+  client.createHandoff({ ...base, from: { agent: 'Codex', session: 'x' }, task: { goal: 'Old open work', status: 'in_progress' } });
+  client.createHandoff({ ...base, from: { agent: 'Codex', session: 'y' }, task: { goal: 'Old work finished', status: 'done' } });
+  expect(host.bootstrap(a)?.latest_handoff).toBeUndefined(); expect(client.activeHandoff()).toBeNull();
+  expect(host.bootstrap(a)?.available).toMatchObject({ handoffs: 2, older_handoffs: 2 });
+  const newer = client.createHandoff({ ...base, from: { agent: 'Codex', session: 'z' }, task: { goal: 'New open work', status: 'in_progress' } });
+  expect(host.bootstrap(a)?.latest_handoff?.goal).toBe('New open work');
+  client.closeHandoff({ id: newer.id, from: { agent: 'Codex', session: 'z' } });
+  // Skipping the closed newest reaches the done handoff, which ends the chain: nothing older comes back.
+  expect(host.bootstrap(a)?.latest_handoff).toBeUndefined();
+});
+
+test('dashboard handoff lists carry the closure', () => {
+  session('codex', a, save({ handoff: { goal: 'Listed work', status: 'in_progress', next: 'Go.' } }));
+  const h = host.project(a).latestHandoff()!;
+  host.project(a).closeHandoff({ id: h.id, from: { agent: 'Codex', session: 'c' } });
+  const projectId = host.project(a).status().project_id;
+  const page = host.inspection.page(projectId, '', 'handoffs', 10, 0);
+  expect(page.items[0]!.record).toMatchObject({ id: h.id, closure: { status: 'done', closed_by: { agent: 'Codex' } } });
 });

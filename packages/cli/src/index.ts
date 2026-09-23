@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
 import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
 import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
-import { applySave, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, stopBlock, stopDecision, stopInput, stopMessage, toolUseSession, writeSessionState } from '../../adapter-hooks/src/index.js';
+import { applySave, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, stopBlock, stopDecision, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
@@ -143,6 +143,7 @@ async function hookStdin(limit: number) {
   for await (const chunk of process.stdin) { size += (chunk as Buffer).length; if (size > limit) return undefined; chunks.push(chunk as Buffer); }
   return Buffer.concat(chunks).toString('utf8');
 }
+const scopeOf = (client: { status(): { project_id: string; workspace?: { workspace_id: string } } }) => { const s = client.status(); return scopeKey(s.project_id, s.workspace?.workspace_id); };
 const hasStore = () => existsSync(join(continuityHomePath(), 'continuity.db'));
 // Runtime kill switch that keeps startup context: CONTINUITY_AUTOSAVE=0|off|false.
 const autosaveDisabled = () => /^(0|off|false|no)$/i.test(process.env.CONTINUITY_AUTOSAVE ?? '');
@@ -171,10 +172,14 @@ for (const provider of ['claude', 'codex'] as const) {
   command.command('tool-use', { hidden: true }).action(async () => {
     process.exitCode = 0;
     try {
-      const session = toolUseSession(await hookStdin(1024 * 1024) ?? '');
-      if (!session || autosaveDisabled() || !hasStore()) return;
-      const home = continuityHomePath(), state = readSessionState(home, provider, session);
-      if (!state.dirty) writeSessionState(home, provider, session, { ...state, dirty: true });
+      const input = toolUseInput(await hookStdin(1024 * 1024) ?? '');
+      if (!input || autosaveDisabled() || !hasStore()) return;
+      const client = runtime().session(input.cwd);
+      if (!client) return;
+      // The project/workspace the edits belong to; `mixed` when a session edits several.
+      const home = continuityHomePath(), state = readSessionState(home, provider, input.session), key = scopeOf(client);
+      const scope = state.dirty && state.scope && state.scope !== key ? 'mixed' : key;
+      if (!state.dirty || state.scope !== scope) writeSessionState(home, provider, input.session, { ...state, dirty: true, scope });
     } catch { /* Silent. */ }
   });
   // Stop: after edits, asks the same model once for a deliberate save; on the answering stop, applies it via Core.
@@ -186,16 +191,23 @@ for (const provider of ['claude', 'codex'] as const) {
       if (!input || autosaveDisabled() || !hasStore()) return;
       const home = continuityHomePath(), state = readSessionState(home, provider, input.session);
       const decision = stopDecision(state, input.active);
+      const write = (next: typeof state) => { if (JSON.stringify(next) !== JSON.stringify(state)) writeSessionState(home, provider, input.session, next); };
+      if (decision.action === 'none') { write(decision.state); return; }
+      if (decision.action === 'prompt') {
+        // Ask only where the edits happened: this stop must bind to the same project/workspace as the edits.
+        const client = runtime().session(input.cwd);
+        if (!client || scopeOf(client) !== state.scope) { write({ dirty: false, pending: false, ...(state.prompted_at !== undefined ? { prompted_at: state.prompted_at } : {}) }); return; }
+        write({ ...decision.state, scope: state.scope });
+        process.stdout.write(stopBlock()); return;
+      }
       // Persist first: a crash or timeout below can never cause a second request or a loop.
-      if (JSON.stringify(decision.state) !== JSON.stringify(state)) writeSessionState(home, provider, input.session, decision.state);
-      if (decision.action === 'none') return;
+      write(decision.state);
       // Only the tagged answer to Continuity's own request is read; without it nothing is saved.
-      const reply = decision.action === 'apply' ? parseSaveReply(input.message) : undefined;
-      if (decision.action === 'apply' && !reply) return;
-      applying = Boolean(reply);
+      const reply = parseSaveReply(input.message);
+      if (!reply) return;
+      applying = true;
       const client = runtime().session(input.cwd);
-      if (!client) { writeSessionState(home, provider, input.session, { dirty: false, pending: false }); return; }
-      if (!reply) { process.stdout.write(stopBlock()); return; }
+      if (!client || scopeOf(client) !== state.scope) { process.stdout.write(stopMessage('Continuity autosave: nothing saved; the session left the project or workspace where the save was requested.')); return; }
       const report = saveReport(applySave(client, provider, input.session, reply));
       if (report) process.stdout.write(stopMessage(report));
     } catch (error) {

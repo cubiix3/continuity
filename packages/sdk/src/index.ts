@@ -5,7 +5,7 @@ import { SqliteStorage } from '../../storage-sqlite/src/index.js';
 import { FileSources, isWithin } from '../../source-files/src/index.js';
 import type { Project, Workspace } from '../../core/src/contracts.js';
 import { reviewMemory } from '../../core/src/memory/review.js';
-import { accessSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { accessSync, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { retrievalConfig } from './retrieval-config.js';
 import { OllamaRetrieval } from '../../retrieval-semantic/src/ollama.js';
 import { OpenVikingRetrieval } from '../../retrieval-semantic/src/openviking.js';
@@ -198,6 +198,9 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       const scope = nearest(path);
       if (!scope) return undefined;
       const { project, workspace } = scope;
+      // A Git checkout nested below the resolved root (an unregistered worktree, submodule or nested repository) is a
+      // different tree: writes there would carry the wrong workspace and source evidence.
+      for (let dir = canonicalRoot(path); dir !== (workspace?.root ?? project.root); dir = dirname(dir)) if (existsSync(join(dir, '.git'))) return undefined;
       if (!workspace) return new ProjectClient(storage, sourceFor(project), project, undefined, undefined, 'lexical');
       const source = sourceFor(project, workspace.root);
       const workspaceSource = { scan: () => { verifyWorkspace(project.root, workspace.root); return source.scan({ ...project, root: workspace.root }); } };

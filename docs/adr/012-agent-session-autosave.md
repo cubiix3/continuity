@@ -20,7 +20,11 @@ the session (flagged by `PostToolUse` from structured tool names), at most every
 15 minutes. A continuation is never blocked again. The request asks for one
 tagged JSON block (0–3 memories, an optional unfinished-work handoff) and no tool
 calls. The next `Stop` parses only that block from `last_assistant_message` and
-calls the existing `ProjectClient.propose()` and `createHandoff()`.
+calls the existing memory policy and `createHandoff()`. `ProjectClient.proposeAll()`
+submits several proposals against one source refresh.
+
+Edits, request and answer must bind to the same project or workspace (a hashed scope
+in the session flag). A Git checkout nested below the resolved root gets no writes.
 
 Attribution comes from the provider (`agent`, `session_id`). Trust, status,
 scope and provenance come from Core. The hook additionally drops:

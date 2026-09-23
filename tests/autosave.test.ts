@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { symlinkSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { openContinuity } from '../packages/sdk/src/index.js';
 import { renderBootstrap } from '../packages/core/src/index.js';
@@ -194,7 +195,7 @@ test('roundtrip: Claude session A saves, Codex session B loads; B hands off, Cla
   expect(c).toContain('Codex · in progress'); expect(c).toContain('Validate every locale file'); expect(c).toContain('Locale files must not contain blank lines');
   // Flags only: the per-session state holds no content and disappears once answered.
   const states = existsSync(join(home, 'hooks', 'autosave')) ? readdirSync(join(home, 'hooks', 'autosave')) : [];
-  for (const file of states) expect(readFileSync(join(home, 'hooks', 'autosave', file), 'utf8')).toMatch(/^\{"dirty":(true|false),"pending":(true|false)(,"prompted_at":\d+)?\}$/);
+  for (const file of states) expect(readFileSync(join(home, 'hooks', 'autosave', file), 'utf8')).toMatch(/^\{"dirty":(true|false),"pending":(true|false)(,"prompted_at":\d+)?(,"scope":"([0-9a-f]{24}|mixed)")?\}$/);
 });
 
 test('a locked database never blocks the stop; a lost save is reported, not silent', async () => {
@@ -253,4 +254,49 @@ test('Codex install: Stop and apply_patch hooks, PowerShell-safe commands, real 
   expect(cmd('status').status).toBe(0);
   expect(JSON.parse(cmd('remove').stdout)).toMatchObject({ state: 'missing', changed: true });
   expect(JSON.parse(readFileSync(join(env.CODEX_HOME, 'hooks.json'), 'utf8'))).toEqual({ hooks: {} });
+});
+
+test('secrets are caught per field, including quoted values that serialization would escape', () => {
+  const { answer } = session('claude', a, save({ memories: [{ key: 'db.creds', kind: 'memory', text: 'Staging uses password: "hunter2hunter2" for the database.' }],
+    handoff: { goal: 'Rotate creds', status: 'blocked', risks: ['Staging DB password: "hunter2hunter2"'], next: 'Use api_key="abcdefghijkl" in CI' } }));
+  expect(JSON.parse(answer.stdout).systemMessage).toMatch(/0 of 2 saved/);
+  expect(host.project(a).latestHandoff()).toBeNull(); expect(host.project(a).memories()).toHaveLength(0);
+  expect(readFileSync(join(home, 'continuity.db')).toString('latin1')).not.toContain('hunter2hunter2');
+});
+
+test('a save cannot follow the agent into another project, workspace or nested checkout', () => {
+  const reply = save({ memories: [{ key: 'alpha.design', kind: 'decision', text: 'Alpha keeps its design notes private to Alpha.' }] });
+  // Edited Alpha, stopped in Beta: no request at all.
+  run('claude', 'tool-use', { session_id: 'moved', cwd: a });
+  expect(run('claude', 'stop', { session_id: 'moved', cwd: b, stop_hook_active: false }).stdout).toBe('');
+  // Requested in Alpha, answered from Beta: reported, nothing saved.
+  run('claude', 'tool-use', { session_id: 'moved2', cwd: a });
+  expect(run('claude', 'stop', { session_id: 'moved2', cwd: a, stop_hook_active: false }).stdout).toContain('block');
+  const answer = run('claude', 'stop', { session_id: 'moved2', cwd: b, stop_hook_active: true, last_assistant_message: reply });
+  expect(JSON.parse(answer.stdout).systemMessage).toMatch(/nothing saved/);
+  // Edits in two projects: no request.
+  run('claude', 'tool-use', { session_id: 'mixed', cwd: a }); run('claude', 'tool-use', { session_id: 'mixed', cwd: b });
+  expect(run('claude', 'stop', { session_id: 'mixed', cwd: a, stop_hook_active: false }).stdout).toBe('');
+  // A Git checkout nested in the project (e.g. an unregistered .claude/worktrees entry) is a different tree.
+  const nested = join(a, '.claude', 'worktrees', 'feat'); mkdirSync(nested, { recursive: true }); writeFileSync(join(nested, '.git'), 'gitdir: ../../../.git/worktrees/feat\n');
+  const inWorktree = session('claude', nested, save({ handoff: { goal: 'Worktree task', status: 'in_progress', next: 'Continue in the worktree.' } }));
+  expect(inWorktree.request.stdout).toBe('');
+  expect(active(a)).toEqual([]); expect(active(b)).toEqual([]); expect(host.project(a).latestHandoff()).toBeNull();
+  // Unregistered directories leave no state behind.
+  const outside = join(root, 'scratch'); mkdirSync(outside); run('claude', 'tool-use', { session_id: 'out', cwd: outside });
+  expect(readdirSync(join(home, 'hooks', 'autosave')).length).toBeLessThanOrEqual(3);
+});
+
+test('proposeAll refreshes once and fails invalid items alone', () => {
+  const client = host.session(a)!;
+  const results = client.proposeAll([{ key: 'ok.one', kind: 'experience', text: 'A valid durable lesson about locales.', from: { agent: 'Codex', session: 's' } }, { key: '', kind: 'nope', text: 'x' }]);
+  expect(results[0]).toMatchObject({ outcome: 'persisted' }); expect(results[1]).toBeInstanceOf(Error);
+});
+
+test('a linked autosave state directory is never written or cleaned', (context) => {
+  const elsewhere = join(root, 'elsewhere'); mkdirSync(elsewhere); writeFileSync(join(elsewhere, 'keep.json'), '{}');
+  try { symlinkSync(elsewhere, join(home, 'hooks'), 'junction'); } catch { context.skip(); return; }
+  const result = session('claude', a, save({ memories: [] }));
+  expect([result.edit.status, result.request.status, result.answer.status]).toEqual([0, 0, 0]); expect(result.request.stdout).toBe('');
+  expect(readdirSync(elsewhere)).toEqual(['keep.json']);
 });

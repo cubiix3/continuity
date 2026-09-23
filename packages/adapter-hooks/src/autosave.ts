@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ProjectClient } from '../../core/src/index.js';
 import { looksSensitive } from '../../core/src/security/sensitive.js';
@@ -23,7 +23,7 @@ export const SAVE_INSTRUCTION = [
   'Continuity save check (automatic, once). Decide what a future agent in this project must know, then reply with only this block and no tool calls:',
   `<${SAVE_TAG}>{"memories":[],"handoff":null}</${SAVE_TAG}>`,
   'memories: 0-3 durable, non-obvious lessons or decisions, each {"key":"area.topic","kind":"decision|experience|memory","text":"one factual sentence"}; add "source_path" only if that project file contains the text verbatim. Never: test/build results, changed-file lists, generic advice, guesses, secrets, chat. Empty is normal.',
-  'handoff: only if meaningful work is left unfinished, {"goal":"...","status":"in_progress|blocked","remaining":["..."],"decisions":["..."],"risks":["..."],"next":"one concrete next action"}; otherwise null.',
+  'handoff: only if meaningful work is left unfinished (including parts deferred to a later session), {"goal":"...","status":"in_progress|blocked","remaining":["..."],"decisions":["..."],"risks":["..."],"next":"one concrete next action"}; otherwise null.',
 ].join('\n');
 
 export interface StopInput { session: string; cwd: string; active: boolean; message: string }
@@ -37,26 +37,33 @@ export function stopInput(stdin: string): StopInput | undefined {
     return { session, cwd, active: input.stop_hook_active === true, message: typeof input.last_assistant_message === 'string' ? input.last_assistant_message : '' };
   } catch { return undefined; }
 }
-/** PostToolUse input: only the session id is used; tool input/output is never read or stored. */
-export function toolUseSession(stdin: string): string | undefined {
+/** PostToolUse input: only session id and cwd are used; tool input/output is never read or stored. */
+export function toolUseInput(stdin: string): { session: string; cwd: string } | undefined {
   try {
-    const session = (JSON.parse(stdin) as { session_id?: unknown }).session_id;
-    return typeof session === 'string' && session.trim() && session.length <= 100 ? session.trim() : undefined;
+    const { session_id: session, cwd } = JSON.parse(stdin) as { session_id?: unknown; cwd?: unknown };
+    return typeof session === 'string' && session.trim() && session.length <= 100 && typeof cwd === 'string' && cwd && cwd.length < 4096 ? { session: session.trim(), cwd } : undefined;
   } catch { return undefined; }
 }
 
-/** Ephemeral per-session flags, no content: whether edits happened and whether a save request is outstanding. */
-export interface SessionState { dirty: boolean; pending: boolean; prompted_at?: number }
+/**
+ * Ephemeral per-session flags, no content: whether edits happened, whether a save request is outstanding, and a hash of
+ * the project/workspace the edits and the request belong to (`mixed` when edits spanned several).
+ */
+export interface SessionState { dirty: boolean; pending: boolean; prompted_at?: number; scope?: string }
+export const scopeKey = (projectId: string, workspaceId = '') => createHash('sha256').update(`${projectId}\0${workspaceId}`).digest('hex').slice(0, 24);
 const stateDir = (home: string) => join(home, 'hooks', 'autosave');
 const stateFile = (home: string, provider: HookProviderName, session: string) => join(stateDir(home), `${createHash('sha256').update(`${provider}\0${session}`).digest('hex').slice(0, 40)}.json`);
 export function readSessionState(home: string, provider: HookProviderName, session: string): SessionState {
   try {
     const value = JSON.parse(readFileSync(stateFile(home, provider, session), 'utf8')) as Partial<SessionState>;
-    return { dirty: value.dirty === true, pending: value.pending === true, ...(typeof value.prompted_at === 'number' ? { prompted_at: value.prompted_at } : {}) };
+    return { dirty: value.dirty === true, pending: value.pending === true, ...(typeof value.prompted_at === 'number' ? { prompted_at: value.prompted_at } : {}), ...(typeof value.scope === 'string' && /^([0-9a-f]{24}|mixed)$/.test(value.scope) ? { scope: value.scope } : {}) };
   } catch { return { dirty: false, pending: false }; }
 }
 export function writeSessionState(home: string, provider: HookProviderName, session: string, state: SessionState, now = Date.now()) {
   const dir = stateDir(home), file = stateFile(home, provider, session);
+  // Never follow a linked state directory (cleanup deletes files there); checked before anything is created in it.
+  const linked = (path: string) => { try { return lstatSync(path).isSymbolicLink(); } catch { return false; } };
+  if (linked(join(home, 'hooks')) || linked(dir)) throw new Error('Autosave state directory is a link.');
   mkdirSync(dir, { recursive: true });
   if (!state.dirty && !state.pending && state.prompted_at === undefined) { try { unlinkSync(file); } catch { /* absent */ } }
   else { const temporary = `${file}.${process.pid}.tmp`; writeFileSync(temporary, JSON.stringify(state)); renameSync(temporary, file); }
@@ -100,23 +107,31 @@ const list = (value: unknown) => (Array.isArray(value) ? value : []).map(text).f
  */
 export function applySave(client: ProjectClient, provider: HookProviderName, session: string, reply: SaveReply): Outcome[] {
   const from = { agent: AGENT_NAME[provider], session };
-  const outcomes: Outcome[] = [];
+  const outcomes: Outcome[] = [], proposals: { at: number; candidate: Record<string, unknown> }[] = [];
   reply.memories.forEach((raw, index) => {
     const m = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-    const key = text(m.key), item = key ? `memory ${key.slice(0, 60)}` : `memory ${index + 1}`;
+    const key = text(m.key), source = text(m.source_path), item = key && !looksSensitive(key) ? `memory ${key.slice(0, 60)}` : `memory ${index + 1}`;
     if (index >= MAX_MEMORIES) { outcomes.push({ item, outcome: 'skipped: too many memories' }); return; }
     if (m.kind === 'rule') { outcomes.push({ item, outcome: 'skipped: project rules come from project files' }); return; }
-    const candidate = { key, kind: m.kind, text: text(m.text), ...(text(m.source_path) ? { source_path: text(m.source_path) } : {}), from };
-    if (looksSensitive(`${candidate.key}\n${candidate.text}\n${candidate.source_path ?? ''}`)) { outcomes.push({ item: `memory ${index + 1}`, outcome: 'skipped: looks like a secret' }); return; }
-    try { outcomes.push({ item, outcome: client.propose(candidate).outcome }); }
-    catch (error) { outcomes.push({ item, outcome: `failed: ${error instanceof Error && error.name !== 'ZodError' ? error.message.slice(0, 120) : 'invalid memory'}` }); }
+    // Each raw field separately: serialization would escape quotes and hide `key = "value"` patterns.
+    if ([key, text(m.text), source].some(looksSensitive)) { outcomes.push({ item, outcome: 'skipped: looks like a secret' }); return; }
+    proposals.push({ at: outcomes.length, candidate: { key, kind: m.kind, text: text(m.text), ...(source ? { source_path: source } : {}), from } });
+    outcomes.push({ item, outcome: 'pending' });
   });
+  if (proposals.length) {
+    const results = client.proposeAll(proposals.map(p => p.candidate));
+    proposals.forEach((p, i) => {
+      const result = results[i]!;
+      outcomes[p.at]!.outcome = result instanceof Error ? `failed: ${result.name !== 'ZodError' ? result.message.slice(0, 120) : 'invalid memory'}` : result.outcome;
+    });
+  }
   if (reply.handoff && typeof reply.handoff === 'object') {
     const h = reply.handoff as Record<string, unknown>;
     const handoff = { from, task: { goal: text(h.goal), status: h.status }, completed: [], remaining: list(h.remaining), decisions: list(h.decisions), files_changed: [], risks: list(h.risks), recommended_next_action: text(h.next ?? h.recommended_next_action) };
+    const fields = [handoff.task.goal, handoff.recommended_next_action, ...handoff.remaining, ...handoff.decisions, ...handoff.risks];
     if (h.status !== 'in_progress' && h.status !== 'blocked') outcomes.push({ item: 'handoff', outcome: 'skipped: only unfinished work is handed off' });
     else if (!handoff.task.goal || !handoff.recommended_next_action) outcomes.push({ item: 'handoff', outcome: 'skipped: goal and next action are required' });
-    else if (looksSensitive(JSON.stringify(handoff))) outcomes.push({ item: 'handoff', outcome: 'skipped: looks like a secret' });
+    else if (fields.some(looksSensitive)) outcomes.push({ item: 'handoff', outcome: 'skipped: looks like a secret' });
     else {
       try { client.createHandoff(handoff); outcomes.push({ item: 'handoff', outcome: 'created' }); }
       catch (error) { outcomes.push({ item: 'handoff', outcome: `failed: ${error instanceof Error && error.name !== 'ZodError' ? error.message.slice(0, 120) : 'invalid handoff'}` }); }

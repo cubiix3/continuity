@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ContextRequest, Handoff, Project, SourcePort, StoragePort, TokenEstimator, SemanticRetrievalPort, SemanticScope, SemanticHealth, RetrievalMode, SemanticCandidate, Workspace } from './contracts.js';
+import type { ContextRequest, Handoff, MemoryProposal, Project, SourcePort, StoragePort, TokenEstimator, SemanticRetrievalPort, SemanticScope, SemanticHealth, RetrievalMode, SemanticCandidate, Workspace } from './contracts.js';
 import { handoffInputSchema, contextRequestSchema, memoryCandidateSchema, observationSchema } from './contracts.js';
 import { contextBroker } from './context/broker.js';
 import { proposeMemory } from './memory/policy.js';
@@ -143,6 +143,16 @@ export class ProjectClient {
     memoryCandidateSchema.parse(input);
     this.refresh();
     return this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id), this.workspace?.workspace_id));
+  }
+  /** Several proposals against one source snapshot: one refresh, each proposal in its own transaction; an invalid item fails alone. */
+  proposeAll(inputs: readonly unknown[]): (MemoryProposal | Error)[] {
+    this.refresh();
+    return inputs.map(input => {
+      try {
+        memoryCandidateSchema.parse(input);
+        return this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id), this.workspace?.workspace_id));
+      } catch (error) { return error instanceof Error ? error : new Error('Proposal failed.'); }
+    });
   }
   memories() { this.assertBinding(); return this.storage.memories(this.project.project_id); }
   memory(id: string) {

@@ -4,7 +4,7 @@ Continuity closes the loop around an agent session without reading its transcrip
 
 1. **Load.** `SessionStart` injects the read-only [bootstrap index](agent-bootstrap.md).
 2. **Work.** Native tools do the work. A `PostToolUse` hook on file-edit tools records
-   only that this session edited files.
+   only that this session edited files, and in which project or workspace.
 3. **Save.** When a turn that edited files ends, a `Stop` hook asks the same model
    once to decide what future sessions must know. The model answers with one tagged
    JSON block. The next `Stop` applies that block through Core's existing memory and
@@ -29,6 +29,8 @@ work. This was verified against Claude Code 2.1.280 and Codex 0.156.1.
 
 - only after file-edit tools ran in this session since the last request (Claude Code:
   `Edit|Write|MultiEdit|NotebookEdit`; Codex reports edits as `apply_patch`);
+- only when the stop binds to the same project or workspace as the edits (a session that
+  edited several, or moved elsewhere with `cd`, is not asked);
 - at most once per 15 minutes per session;
 - never on a stop that is already a continuation (`stop_hook_active`). Continuity can
   therefore not loop, and it never re-blocks another hook's continuation.
@@ -37,7 +39,7 @@ A question-only or read-only session sees nothing and writes nothing.
 
 ## The save request
 
-The request is the `Stop` reason: about 740 bytes, fixed, with no project data. It
+The request is the `Stop` reason: about 790 bytes, fixed, with no project data. It
 asks for this and nothing else:
 
 ```text
@@ -49,7 +51,7 @@ asks for this and nothing else:
   `source_path` only if that file contains the text verbatim). Never test or build
   results, changed-file lists, generic advice, guesses, secrets or chat. Empty is
   normal.
-- `handoff`: only for meaningful unfinished work
+- `handoff`: only for meaningful unfinished work, including parts deferred to a later session
   (`goal`, `status` of `in_progress|blocked`, `remaining`, `decisions`, `risks`, `next`).
   Otherwise `null`.
 
@@ -86,12 +88,19 @@ the hook reports it in one `systemMessage` line, for example
 
 ## Binding
 
-The same resolver as bootstrap binds the `Stop` hook's `cwd`:
+The same resolver as bootstrap binds the hook's `cwd`:
 
 - the nearest registered project or workspace root;
 - a nested project resolves to itself;
 - an attached Git worktree saves into its workspace;
-- a registered worktree root that no longer links into the project gets nothing.
+- a registered worktree root that no longer links into the project gets nothing;
+- a Git checkout nested below the resolved root (an unregistered worktree such as
+  `.claude/worktrees/<name>`, a submodule or a nested repository) gets nothing, because
+  its files and evidence are a different tree. Register it as a workspace instead.
+
+The edit flag records a hash of the bound project and workspace. The answer is
+applied only if the answering stop binds to that same scope; otherwise the hook
+reports that nothing was saved.
 
 Unregistered directories are silent and never written. Project, workspace and trust
 fields in the model's answer are ignored.
@@ -126,7 +135,9 @@ Autosave does not archive chats:
 
 Per session, the hook keeps one small file under
 `<continuity home>/hooks/autosave/`, named by a hash of provider and session id. It
-contains `{"dirty":…,"pending":…,"prompted_at":…}` and nothing else. Files older than
+contains `{"dirty":…,"pending":…,"prompted_at":…,"scope":…}` (the scope is a hash of
+project and workspace ids) and nothing else. A linked state directory is never
+written. Files older than
 seven days are removed.
 
 In `claude -p` or `codex exec`, the answer to the save request becomes the final
@@ -152,13 +163,14 @@ Windows, Node 24, 401-source project, 7 runs each, medians:
 
 | Hook | Runtime stopped | Runtime running |
 | --- | --- | --- |
-| `PostToolUse` edit flag | 192 ms | 193 ms |
-| `Stop`, nothing to do | 196 ms | 197 ms |
-| `Stop`, save request | 198 ms | 198 ms |
-| `Stop`, apply 2 memories + handoff | 596 ms (max 613) | 595 ms (max 696) |
+| `PostToolUse` edit flag | 220 ms | 206 ms |
+| `Stop`, nothing to do | 216 ms | 201 ms |
+| `Stop`, save request | 213 ms | 208 ms |
+| `Stop`, apply 2 memories + handoff | 459 ms (max 504) | 433 ms (max 522) |
 
-Almost all of the fast paths is Node start-up. Applying a save refreshes the source
-snapshot once per memory proposal, which is how exact source claims are verified. No
+Almost all of the fast paths is Node start-up and opening the store. Applying a save
+refreshes the source snapshot once (`ProjectClient.proposeAll`), which is how exact
+source claims are verified. No
 sync, Doctor, semantic backend, network or external model is involved.
 
 ## Live evidence
@@ -175,7 +187,8 @@ Opt-in runs, not CI:
   - An edit session was asked once. The model deliberately answered with nothing to
     save, because the lesson was already a code comment.
   - An unfinished task saved a handoff that the next Claude Code session start
-    showed.
+    showed. Before the instruction named work deferred to a later session, one run
+    answered with no handoff for the same task.
   - A read-only question was not asked.
   - In one earlier run the model renamed a file only through the shell, and no
     request was made.

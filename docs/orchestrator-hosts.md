@@ -46,7 +46,8 @@ Nested project registrations remain boundaries in every checkout of the parent
 project, including registrations created after a client was bound. Diagnostics
 validate every registered workspace against both its canonical root and Git
 membership. `host.doctor()` returns a Promise: Git runs asynchronously so a host's
-event loop stays responsive. `host.health(projectId)` is a cheap, display-only
+event loop stays responsive. This changed after v0.1.0 without a host API version
+bump; hosts that read `host.doctor()` synchronously must `await` it. `host.health(projectId)` is a cheap, display-only
 project check without Git or integrity checks; never use it to authorize access. Include patterns with a provable root prefix prune unrelated trees;
 unanchored basename patterns still require traversal because they can match at
 any depth. Traversal and content limits remain enforced.

@@ -12,6 +12,9 @@ const writeSchema = z.object({ project: z.string().max(100), workspace: z.string
 
 export function createDashboardServer(host: Host, assetsRoot = new URL('../../dashboard/', import.meta.url)) {
   const capability = randomBytes(32).toString('hex');
+  // Overlapping Diagnostics requests share one run, so the doctor's Git concurrency bound holds per server.
+  let diagnostics: ReturnType<Host['doctor']> | undefined;
+  const doctor = () => diagnostics ??= host.doctor().finally(() => { diagnostics = undefined; });
   const assets = new Map([
     ['/', { type: 'text/html; charset=utf-8', body: readFileSync(new URL('public/index.html', assetsRoot)) }],
     ['/app.css', { type: 'text/css; charset=utf-8', body: readFileSync(new URL('public/app.css', assetsRoot)) }],
@@ -46,7 +49,7 @@ export function createDashboardServer(host: Host, assetsRoot = new URL('../../da
           const all = host.projects(); return send(200, { projects: all.slice(page.after, page.after + page.limit), next: all.length > page.after + page.limit ? page.after + page.limit : null });
         }
         // Full diagnostics: Git runs asynchronously, so other Dashboard requests are served meanwhile.
-        if (url.pathname === '/dashboard-api/diagnostics' && !url.search) return send(200, await host.doctor());
+        if (url.pathname === '/dashboard-api/diagnostics' && !url.search) return send(200, await doctor());
         const q = querySchema.parse(Object.fromEntries(url.searchParams));
         if (!q.project) return send(400, { error: 'Select a registered project.' });
         const scope = host.inspection.scope(q.project, q.workspace);

@@ -63,6 +63,6 @@ export async function mapBounded<T, R>(items: readonly T[], limit: number, opera
   const results = new Array<R>(items.length);
   let next = 0;
   const worker = async () => { while (next < items.length) { const index = next++; results[index] = await operation(items[index]!, index); } };
-  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, Math.trunc(limit) || 1), items.length) }, worker));
   return results;
 }

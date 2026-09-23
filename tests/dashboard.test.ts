@@ -181,6 +181,18 @@ it('keeps answering Dashboard requests while full diagnostics are still running'
   } finally { release(); await dashboard.close(); }
 });
 
+it('shares one full doctor run between overlapping Diagnostics requests', async () => {
+  let runs = 0, release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  const dashboard = await serve({ ...host, doctor: async () => { runs++; await gate; return host.doctor(); } });
+  try {
+    const overlapping = [dashboard.call('diagnostics'), dashboard.call('diagnostics'), dashboard.call('diagnostics')];
+    await dashboard.call(`stats?project=${id}&workspace=`); release();
+    const results = await Promise.all(overlapping);
+    expect(results.map(r => r.status)).toEqual([200, 200, 200]); expect(runs).toBe(1);
+    expect((await dashboard.call('diagnostics')).status).toBe(200); expect(runs).toBe(2);
+  } finally { release(); await dashboard.close(); }
+});
+
 it('keeps the Overview health route read-only, authenticated and free of paths', async () => {
   expect((await get(`health?project=${id}`, { 'X-Continuity-Token': '' })).status).toBe(403);
   expect((await write('health', { project: id })).status).toBe(404);

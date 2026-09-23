@@ -282,6 +282,7 @@ it('bounds concurrent verifications and keeps results in input order', async () 
   expect(peak).toBe(DOCTOR_WORKSPACE_CONCURRENCY);
   expect(finished).not.toEqual(results);
   expect(await mapBounded([], 4, async () => 1)).toEqual([]);
+  expect(await mapBounded([1, 2, 3], Number.NaN, async value => value * 2)).toEqual([2, 4, 6]);
 });
 
 it('keeps doctor findings in registration order and isolates a failing workspace', async () => {

@@ -239,7 +239,7 @@ test('overview workspace total comes from the server, not the paginated workspac
   expect(await page.getByLabel('Workspace', { exact: true }).locator('option').count()).toBeLessThan(total);
   // A workspace beyond the selector's first page must not change the project total.
   const outside = registered.at(-1)!; expect(host.inspection.stats(project.project_id, outside).workspaces).toBe(total);
-  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${outside}`);
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${outside}`); await page.reload();
   await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(outside);
   await expect(workspacesRow).toHaveText(String(total), settled);
   await expect(page.locator('.project-hero')).toContainText('Healthy');

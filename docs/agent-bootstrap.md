@@ -49,6 +49,11 @@ Continuity's entry. `--home` or `CONTINUITY_HOME` selects the Continuity state t
 the hook reads; the resolved home, Node executable and CLI path are written into
 the hook.
 
+Hook commands contain only absolute paths and fixed words. Codex strings quote
+each path for PowerShell (including typographic single quotes) or POSIX `sh`, so
+spaces, `$`, quotes and Unicode stay literal. A symlinked settings file stays a
+symlink; its target is updated and backed up.
+
 Codex runs user hooks only after a one-time review: open Codex and trust the
 Continuity hook in `/hooks`. Codex skips untrusted hooks and warns at startup.
 
@@ -86,11 +91,17 @@ with 100 available memories.
   resolves the nearest registered project or workspace root; nested projects
   resolve to themselves. Nothing from other projects is read.
 - **Workspace-aware.** A registered Git worktree gets its own handoffs and source
-  freshness, sharing the project's durable memories as elsewhere.
+  freshness, sharing the project's durable memories as elsewhere. Its root must still
+  link into the project's `.git/worktrees` (checked by reading the `.git` file, without
+  starting Git); a path reused by an unrelated checkout gets no context.
 - **Silent when irrelevant.** Unregistered directories, missing Continuity state,
   unreadable input or any failure before a project is resolved produce no output
   and exit 0. A failure inside a registered project injects one short line.
   Continuity never blocks provider startup.
+- **Storage open.** The hook opens the local database like any CLI command: SQLite
+  briefly takes a write lock and applies a pending schema migration after an
+  upgrade. A lock held elsewhere delays the hook by up to SQLite's busy timeout,
+  after which it stays silent.
 - **Data, not instructions.** The text says so, and current sources and rules
   outrank agent observations.
 

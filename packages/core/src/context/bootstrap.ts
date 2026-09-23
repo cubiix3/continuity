@@ -58,8 +58,9 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
     if (!['persist', 'accepted'].includes(m.status)) continue;
     if (withheld(`${m.key}\n${m.text}`)) { hidden++; continue; }
     // Same precedence and freshness rules as the context broker; nothing is promoted here.
+    if (!sourceBackedCurrent(m, input.sources)) { stale++; continue; }
     if (m.status === 'accepted') groups.human.push(m);
-    else if (m.source_path) { if (sourceBackedCurrent(m, input.sources)) groups.source.push(m); else stale++; }
+    else if (m.source_path) groups.source.push(m);
     else if (m.provenance.trust === 'agent_observation') groups.agent.push(m);
   }
   for (const group of Object.values(groups)) group.sort(newestFirst);
@@ -73,7 +74,9 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
   const shortlist = picked.slice(0, LIMITS.memories).sort((a, b) => order(a[0]) - order(b[0]) || newestFirst(a[1], b[1]));
 
   const workspaceHandoffs = input.handoffs.filter(h => h.provenance.workspace_id === workspace?.workspace_id);
-  const latest = workspaceHandoffs.find(h => !withheld([h.task.goal, h.recommended_next_action, ...h.remaining].join('\n')));
+  const newest = workspaceHandoffs[0];
+  const latest = newest && !withheld([newest.from.agent, newest.task.goal, newest.recommended_next_action, ...newest.remaining].join('\n')) ? newest : undefined;
+  if (newest && !latest) hidden++;
   const sync = input.sync;
   const warnings: string[] = [];
   if (!sync) warnings.push('Sources have not been synced for this workspace.');
@@ -85,7 +88,7 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
     workspace: { ...(workspace ? { workspace_id: workspace.workspace_id } : {}), label: workspace ? (workspace.root.split(/[\\/]/).filter(Boolean).at(-1) ?? 'Workspace') : 'Primary workspace' },
     sync: sync ? { at: sync.at, files: sync.files } : {},
     health: { status: warnings.length ? 'degraded' : 'healthy', warnings },
-    attention: { conflicts: conflicts.length, conflict_keys: [...new Set(conflicts.map(m => m.key).filter(k => !withheld(k)))].sort().slice(0, LIMITS.conflictKeys), stale_source_backed: stale, withheld: hidden },
+    attention: { conflicts: conflicts.length, conflict_keys: [...new Set(conflicts.filter(m => !withheld(m.key)).map(m => clip(m.key, 80).text))].sort().slice(0, LIMITS.conflictKeys), stale_source_backed: stale, withheld: hidden },
     memories: [],
     available: { memories: available, more_memories: available, handoffs: workspaceHandoffs.length, older_handoffs: workspaceHandoffs.length },
     budget: { requested: budget, used: 0, unit: 'utf8_bytes' },
@@ -96,7 +99,7 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
   // Whole items only, in priority order: latest handoff, then memories. Anything left is reported as available.
   if (latest) {
     const remaining = latest.remaining.slice(0, LIMITS.remaining).map(r => clip(r, LIMITS.remainingItem).text);
-    bundle.latest_handoff = { id: latest.id, agent: latest.from.agent, status: latest.task.status, goal: clip(latest.task.goal, LIMITS.goal).text, next_action: clip(latest.recommended_next_action, LIMITS.next).text, remaining, remaining_total: latest.remaining.length, captured_at: latest.provenance.captured_at, selection_reason: 'latest_handoff' };
+    bundle.latest_handoff = { id: latest.id, agent: clip(latest.from.agent, 60).text, status: latest.task.status, goal: clip(latest.task.goal, LIMITS.goal).text, next_action: clip(latest.recommended_next_action, LIMITS.next).text, remaining, remaining_total: latest.remaining.length, captured_at: latest.provenance.captured_at, selection_reason: 'latest_handoff' };
     if (!fits()) { bundle.latest_handoff.remaining = []; if (!fits()) delete bundle.latest_handoff; }
     if (bundle.latest_handoff) bundle.available.older_handoffs--;
   }
@@ -129,7 +132,7 @@ export function renderBootstrap(bundle: BootstrapBundle, now = new Date()) {
   const attention = [...bundle.health.warnings];
   const { conflicts, conflict_keys: keys, stale_source_backed: stale, withheld } = bundle.attention;
   if (conflicts) attention.push(`${conflicts} unresolved memory conflict${conflicts === 1 ? '' : 's'}${keys.length ? ` (${keys.join(', ')})` : ''}; no side is current truth.`);
-  if (stale) attention.push(`${stale} source-backed memor${stale === 1 ? 'y' : 'ies'} withheld: supporting source changed since capture.`);
+  if (stale) attention.push(`${stale} source-backed memor${stale === 1 ? 'y' : 'ies'} withheld: ${bundle.sync.at ? 'supporting source changed since capture' : 'sources are not indexed in this workspace yet'}.`);
   if (withheld) attention.push(`${withheld} record${withheld === 1 ? '' : 's'} withheld from startup context (sensitive-looking content).`);
   if (attention.length) lines.push('', 'Needs attention', ...attention.map(a => `  ${a}`));
   const h = bundle.latest_handoff;

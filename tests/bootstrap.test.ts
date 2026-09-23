@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, symlinkSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -159,14 +159,18 @@ test('Claude settings install is additive, idempotent, repairable and removes on
   const after = JSON.parse(readFileSync(settings, 'utf8'));
   expect(after.model).toBe('opus'); expect(after.hooks.PreToolUse).toEqual([{ matcher: 'Bash', hooks: [foreign] }]);
   expect(after.hooks.SessionStart).toEqual([{ matcher: 'startup', hooks: [foreign] }, { matcher: 'resume', hooks: [] }, { matcher: 'startup|resume|clear|compact', hooks: [target.expected] }]);
-  expect(target.expected).toMatchObject({ command: process.execPath, args: [resolve('dist/packages/cli/src/index.js'), '--home', home, 'integrate', 'claude', 'session-start'] });
+  expect(target.expected).toMatchObject({ command: process.execPath, args: ['--no-warnings', resolve('dist/packages/cli/src/index.js'), '--home', home, 'integrate', 'claude', 'session-start'] });
+  // A foreign hook that merely ends with the same words is not Continuity's and is never touched.
+  const lookalike = { type: 'command', command: 'node', args: ['tools/other.js', 'integrate', 'claude', 'session-start'] };
+  const withLookalike = JSON.parse(readFileSync(settings, 'utf8')); withLookalike.hooks.SessionStart[0].hooks.push(lookalike); writeFileSync(settings, JSON.stringify(withLookalike));
+  expect(hookIntegrationStatus(target)).toMatchObject({ state: 'installed', entries: 1 });
   expect(installHookIntegration(target)).toMatchObject({ changed: false, entries: 1 });
-  const moved = claudeHookTarget(process.execPath, join(root, 'moved', 'index.js'), home, env);
+  const moved = claudeHookTarget(process.execPath, join(root, 'moved', 'cli', 'src', 'index.js'), home, env);
   expect(hookIntegrationStatus(moved)).toMatchObject({ state: 'stale', cli_available: false });
   installHookIntegration(target); expect(hookIntegrationStatus(target)).toMatchObject({ state: 'installed', entries: 1 });
   removeHookIntegration(target);
   const removed = JSON.parse(readFileSync(settings, 'utf8'));
-  expect(removed.hooks.SessionStart).toEqual([{ matcher: 'startup', hooks: [foreign] }, { matcher: 'resume', hooks: [] }]); expect(removed.model).toBe('opus');
+  expect(removed.hooks.SessionStart).toEqual([{ matcher: 'startup', hooks: [foreign, lookalike] }, { matcher: 'resume', hooks: [] }]); expect(removed.model).toBe('opus');
   expect(removeHookIntegration(target)).toMatchObject({ changed: false, state: 'missing' });
   writeFileSync(settings, '{ not json'); expect(hookIntegrationStatus(target).state).toBe('invalid_config');
   expect(() => installHookIntegration(target)).toThrow(); expect(readFileSync(settings, 'utf8')).toBe('{ not json');
@@ -174,12 +178,12 @@ test('Claude settings install is additive, idempotent, repairable and removes on
 
 test('Codex hooks.json install quotes paths literally and restores the original file on remove', () => {
   const env = { CODEX_HOME: join(root, 'codex') }; mkdirSync(env.CODEX_HOME);
-  const odd = join(root, "it's $HOME ü", 'index.js'), target = codexHookTarget(process.execPath, odd, home, env);
+  const odd = join(root, "it's $HOME ü", 'cli', 'src', 'index.js'), target = codexHookTarget(process.execPath, odd, home, env);
   writeFileSync(target.file, JSON.stringify({ hooks: {} }));
   installHookIntegration(target);
   const hook = JSON.parse(readFileSync(target.file, 'utf8')).hooks.SessionStart[0].hooks[0];
-  expect(hook.commandWindows).toBe(`& '${process.execPath}' '${odd.replace(/'/g, "''")}' --home '${home}' integrate codex session-start`);
-  expect(hook.command).toBe(`'${process.execPath}' '${odd.replace(/'/g, "'\\''")}' --home '${home}' integrate codex session-start`);
+  expect(hook.commandWindows).toBe(`& '${process.execPath}' --no-warnings '${odd.replace(/'/g, "''")}' --home '${home}' integrate codex session-start`);
+  expect(hook.command).toBe(`'${process.execPath}' --no-warnings '${odd.replace(/'/g, "'\\''")}' --home '${home}' integrate codex session-start`);
   expect(installHookIntegration(target)).toMatchObject({ entries: 1 }); expect(JSON.parse(readFileSync(target.file, 'utf8')).hooks.SessionStart).toHaveLength(1);
   expect(hookIntegrationStatus(target)).toMatchObject({ state: 'stale', current: true, cli_available: false });
   removeHookIntegration(target); expect(JSON.parse(readFileSync(target.file, 'utf8'))).toEqual({ hooks: {} });
@@ -203,4 +207,60 @@ test('Claude SessionStart hook: registered emits context, anything else stays si
   const codexOutside = spawnSync(process.execPath, [cli, '--home', home, 'integrate', 'codex', 'session-start'], { input: JSON.stringify({ cwd: outside }), encoding: 'utf8', windowsHide: true });
   expect(codexOutside.status).toBe(0); expect(codexOutside.stdout).toBe('');
   const noHome = hook(JSON.stringify({ cwd: a }), join(root, 'no-home')); expect(noHome.status).toBe(0); expect(noHome.stdout).toBe(''); expect(existsSync(join(root, 'no-home'))).toBe(false);
+});
+
+test('a human-accepted source-backed memory is withheld once its source changes, like the broker', async () => {
+  const client = host.project(a); await client.sync();
+  const quarantined = client.propose({ key: 'deploy.branch', kind: 'memory', text: 'Deploys come from the release branch.', source_path: 'README.md' });
+  host.review(a, quarantined.id, 'accepted', 'Maintainer');
+  writeFileSync(join(a, 'README.md'), '# Alpha\nDeploys come from the release branch.\n'); await client.sync();
+  // Accepted while unproven, then the source changed again: the exact version is not current.
+  writeFileSync(join(a, 'README.md'), '# Alpha\nSomething else entirely.\n'); await client.sync();
+  const result = bundle();
+  expect(result.memories.map(m => m.id)).not.toContain(quarantined.id); expect(result.attention.stale_source_backed).toBeGreaterThanOrEqual(1);
+  expect((await client.context({ task: 'deploy release branch' })).items.some(i => i.id === quarantined.id)).toBe(false);
+});
+
+test('a sensitive newest handoff is withheld, never replaced by an older one', async () => {
+  const client = host.project(a); await client.sync();
+  client.createHandoff(handoff('Older harmless work'));
+  client.createHandoff({ ...handoff('Rotate credentials'), recommended_next_action: 'Use api_key = "abcd1234efgh5678" for the deploy.' });
+  const result = bundle();
+  expect(result.latest_handoff).toBeUndefined(); expect(result.attention.withheld).toBe(1); expect(JSON.stringify(result)).not.toContain('abcd1234efgh5678');
+  expect(renderBootstrap(result)).not.toContain('Older harmless work');
+});
+
+test('a reused path of a removed worktree does not inherit the project', async () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' });
+  git(a, 'init'); git(a, 'add', '.'); git(a, '-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-m', 'fixture');
+  const feature = join(root, 'alpha-feature'); git(a, 'worktree', 'add', '-b', 'feature', feature);
+  host.workspace(a, feature); host.project(a).propose({ key: 'alpha.private', kind: 'decision', text: 'Alpha private decision.', from: agent() });
+  expect(host.bootstrap(feature)?.project.name).toBe('Alpha');
+  git(a, 'worktree', 'remove', '--force', feature);
+  mkdirSync(feature); git(feature, 'init');
+  expect(host.bootstrap(feature)).toBeUndefined();
+});
+
+test('hook commands keep hostile-looking paths literal in the real shell', () => {
+  const quote = String.fromCharCode(0x2019);
+  const dir = join(root, `O${quote}Brien's $HOME ${quote}; Write-Output INJECTED; #`, 'cli', 'src'); mkdirSync(dir, { recursive: true });
+  const cli = join(dir, 'index.js'); writeFileSync(cli, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))');
+  const weirdHome = join(root, `home ${quote}; Write-Output INJECTED; # 'x' $env:USERNAME`);
+  const hook = codexHookTarget(process.execPath, cli, weirdHome).expected;
+  const run = process.platform === 'win32'
+    ? spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', hook.commandWindows as string], { encoding: 'utf8', windowsHide: true })
+    : spawnSync('sh', ['-c', hook.command as string], { encoding: 'utf8' });
+  // Injection would print a separate INJECTED line; literal quoting yields exactly the argv JSON.
+  expect(run.stdout.trim().includes(String.fromCharCode(10))).toBe(false);
+  expect(JSON.parse(run.stdout)).toEqual(['--home', weirdHome, 'integrate', 'codex', 'session-start']);
+});
+
+test('a symlinked provider settings file stays a symlink and its target is updated', (context) => {
+  const dotfiles = join(root, 'dotfiles'), config = join(root, 'claude-linked'); mkdirSync(dotfiles); mkdirSync(config);
+  const real = join(dotfiles, 'settings.json'); writeFileSync(real, JSON.stringify({ theme: 'dark' }));
+  try { symlinkSync(real, join(config, 'settings.json'), 'file'); } catch { context.skip(); return; }
+  const target = claudeHookTarget(process.execPath, resolve('dist/packages/cli/src/index.js'), home, { CLAUDE_CONFIG_DIR: config });
+  installHookIntegration(target);
+  expect(lstatSync(join(config, 'settings.json')).isSymbolicLink()).toBe(true);
+  expect(JSON.parse(readFileSync(real, 'utf8'))).toMatchObject({ theme: 'dark', hooks: { SessionStart: [{ hooks: [target.expected] }] } });
 });

@@ -1,4 +1,4 @@
-import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, copyFileSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -41,24 +41,26 @@ export interface HookIntegrationStatus {
 }
 const posixQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 /** PowerShell single-quoted literals: no `$`/backtick expansion; `&` invokes a quoted executable path. */
-const powershellQuote = (value: string) => `'${value.replace(/'/g, "''")}'`;
+const POWERSHELL_QUOTES = new Set(["'", String.fromCharCode(0x2018), String.fromCharCode(0x2019), String.fromCharCode(0x201a), String.fromCharCode(0x201b)]);
+const powershellQuote = (value: string) => `'${Array.from(value, c => POWERSHELL_QUOTES.has(c) ? c + c : c).join('')}'`;
 
 /** Claude Code honors CLAUDE_CONFIG_DIR. Exec form (`args`) spawns directly: no Git Bash/PowerShell dependency. */
 export function claudeHookTarget(executable: string, cli: string, home: string, env: NodeJS.ProcessEnv = process.env): HookTarget {
   return { provider: 'claude', executable, cli, file: join(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'settings.json'),
-    expected: { type: 'command', command: executable, args: [cli, '--home', home, ...marker('claude')], timeout: TIMEOUT_SECONDS } };
+    expected: { type: 'command', command: executable, args: ['--no-warnings', cli, '--home', home, ...marker('claude')], timeout: TIMEOUT_SECONDS } };
 }
 /** Codex honors CODEX_HOME and runs hook command strings through a shell (PowerShell on Windows). */
 export function codexHookTarget(executable: string, cli: string, home: string, env: NodeJS.ProcessEnv = process.env): HookTarget {
   // Only the paths are quoted; the fixed marker words stay bare so the entry can be recognized for repair/removal.
-  const line = (quote: (value: string) => string) => `${quote(executable)} ${quote(cli)} --home ${quote(home)} ${marker('codex').join(' ')}`;
+  const line = (quote: (value: string) => string) => `${quote(executable)} --no-warnings ${quote(cli)} --home ${quote(home)} ${marker('codex').join(' ')}`;
   return { provider: 'codex', executable, cli, file: join(env.CODEX_HOME || join(homedir(), '.codex'), 'hooks.json'),
     expected: { type: 'command', command: line(posixQuote), commandWindows: `& ${line(powershellQuote)}`, timeout: TIMEOUT_SECONDS } };
 }
+const CLI_ENTRY = /[\\/]cli[\\/]src[\\/]index\.js'?$/;
 function isContinuity(provider: HookProviderName, hook: HookCommand) {
   const tail = marker(provider).join(' ');
-  if (Array.isArray(hook.args)) return hook.args.slice(-3).join(' ') === tail;
-  return typeof hook.command === 'string' && hook.command.endsWith(tail);
+  if (Array.isArray(hook.args)) return hook.args.slice(-3).join(' ') === tail && hook.args.some(a => typeof a === 'string' && CLI_ENTRY.test(a));
+  return typeof hook.command === 'string' && hook.command.endsWith(` ${tail}`) && hook.command.split(' --home ')[0]!.split(/\s+/).some(part => CLI_ENTRY.test(part));
 }
 const same = (hook: HookCommand, expected: HookCommand) => JSON.stringify(Object.keys(expected).sort().map(k => [k, hook[k]])) === JSON.stringify(Object.keys(expected).sort().map(k => [k, expected[k]])) && Object.keys(hook).length === Object.keys(expected).length;
 
@@ -86,7 +88,8 @@ function withoutContinuity(provider: HookProviderName, settings: Settings): Grou
   });
 }
 /** Same-directory temporary file, flush, backup of the previous file, then atomic rename. */
-function writeSettings(path: string, settings: Settings, existed: boolean) {
+function writeSettings(requested: string, settings: Settings, existed: boolean) {
+  const path = existed && lstatSync(requested).isSymbolicLink() ? realpathSync.native(requested) : requested;
   mkdirSync(dirname(path), { recursive: true });
   const backup = existed ? `${path}.continuity-backup-${new Date().toISOString().replace(/[:.]/g, '-')}` : undefined;
   if (backup) copyFileSync(path, backup);

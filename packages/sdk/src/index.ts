@@ -1,11 +1,11 @@
 import { homedir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { ProjectClient, ProjectResolver, canonicalRoot } from '../../core/src/index.js';
 import { SqliteStorage } from '../../storage-sqlite/src/index.js';
 import { FileSources, isWithin } from '../../source-files/src/index.js';
 import type { Project } from '../../core/src/contracts.js';
 import { reviewMemory } from '../../core/src/memory/review.js';
-import { accessSync, realpathSync, statSync } from 'node:fs';
+import { accessSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { retrievalConfig } from './retrieval-config.js';
 import { OllamaRetrieval } from '../../retrieval-semantic/src/ollama.js';
 import { OpenVikingRetrieval } from '../../retrieval-semantic/src/openviking.js';
@@ -18,6 +18,16 @@ import type { SourceScope } from './source-scope.js';
 
 export const CONTINUITY_HOST_API_VERSION = 1;
 /** Bootstrap failed after the directory resolved to a registered project or workspace. */
+/** Cheap worktree check without spawning git: the root's .git file must point into <project>/.git/worktrees. */
+function attachedWorktree(projectRoot: string, workspaceRoot: string) {
+  try {
+    const link = readFileSync(join(workspaceRoot, '.git'), 'utf8').match(/^gitdir:\s*(.+?)\s*$/m)?.[1];
+    if (!link) return false;
+    const gitdir = realpathSync.native(isAbsolute(link) ? link : join(workspaceRoot, link)), worktrees = realpathSync.native(join(projectRoot, '.git', 'worktrees'));
+    const [a, b] = process.platform === 'win32' ? [gitdir.toLowerCase(), worktrees.toLowerCase()] : [gitdir, worktrees];
+    return isWithin(b, a) && a !== b;
+  } catch { return false; }
+}
 export class BootstrapUnavailableError extends Error { constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'BootstrapUnavailableError'; } }
 export interface HostOptions { sources?: { include?: readonly string[]; exclude?: readonly string[] } }
 
@@ -141,7 +151,9 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       let current = canonicalRoot(path);
       const projects = storage.projects(), workspaceRoots = new Map(projects.flatMap(p => storage.workspaces(p.project_id).map(w => [w.root, { project: p, workspace: w }] as const)));
       for (;;) {
-        const scope = projects.find(p => p.root === current) ? { project: projects.find(p => p.root === current)! } : workspaceRoots.get(current);
+        const candidate = projects.find(p => p.root === current) ? { project: projects.find(p => p.root === current)! } : workspaceRoots.get(current);
+        // A removed worktree's path can be reused by an unrelated checkout; require its .git link into this project.
+        const scope = candidate && 'workspace' in candidate && !attachedWorktree(candidate.project.root, candidate.workspace.root) ? undefined : candidate;
         if (scope) {
           const store = boundStore('workspace' in scope ? scope.workspace.workspace_id : '');
           const client = new ProjectClient(store, sourceFor(scope.project), scope.project, undefined, undefined, 'lexical', 'workspace' in scope ? scope.workspace : undefined);

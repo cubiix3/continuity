@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { verifyWorkspace } from './workspaces.js';
 import { Inspection } from '../../core/src/inspection.js';
 import { passages } from '../../core/src/context/passages.js';
+import { continuityHome, coordinatedSync } from './local-ipc.js';
 import { anchoredScope, readSourceScopes, sourceScopeSchema, writeSourceScope, SourceScopeError } from './source-scope.js';
 import type { SourceScope } from './source-scope.js';
 
@@ -21,6 +22,7 @@ export interface HostOptions { sources?: { include?: readonly string[]; exclude?
 
 /** Trusted composition root for local hosts. Do not pass this host into agent tools. */
 export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedir(), '.continuity'), options: HostOptions = {}) {
+  home = continuityHome(home);
   const config = retrievalConfig(home);
   const storage = new SqliteStorage(join(home, 'continuity.db'));
   const resolver = new ProjectResolver(storage);
@@ -75,8 +77,19 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       ? new OpenVikingRetrieval(bound.remoteResourceCache(projectId), s.endpoint ?? 'http://127.0.0.1:1933', s.revision ?? '')
       : new OllamaRetrieval(bound.embeddingCache(projectId), s.endpoint, s.model, s.document_prefix, s.query_prefix);
   };
+  const coordinate = (client: ProjectClient, projectId: string, workspaceId = '') => {
+    const sync = client.sync.bind(client);
+    client.sync = () => coordinatedSync(home, `${projectId}:${workspaceId}`, sync);
+    return client;
+  };
   return {
     inspection,
+    /** Trusted local runtime only; the same scanner chooses watch directories and source exclusions. */
+    watchPlan: (projectId: string, workspaceId = '') => {
+      const { project, workspace } = inspectionScope(projectId, workspaceId);
+      const root = workspace?.root ?? project.root;
+      return sourceFor(project, root).watchPlan({ ...project, root });
+    },
     sourceScope,
     setSourceScope: (path: string, input: unknown) => {
       const project = resolver.resolve(path);
@@ -129,12 +142,12 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       const semantic = semanticFor(bound, project.project_id);
       const source = sourceFor(project, root);
       const workspaceSource = { scan: () => { verifyWorkspace(project.root, root); return source.scan({ ...project, root }); } };
-      return new ProjectClient(bound, workspaceSource, project, undefined, semantic, semantic ? config.mode : 'lexical', workspace);
+      return coordinate(new ProjectClient(bound, workspaceSource, project, undefined, semantic, semantic ? config.mode : 'lexical', workspace), project.project_id, workspace.workspace_id);
     },
     project: (path: string) => {
       const project = resolver.resolve(path);
       const semantic = semanticFor(storage, project.project_id);
-      return new ProjectClient(storage, sourceFor(project), project, undefined, semantic, semantic ? config.mode : 'lexical');
+      return coordinate(new ProjectClient(storage, sourceFor(project), project, undefined, semantic, semantic ? config.mode : 'lexical'), project.project_id);
     },
     doctor: () => {
       const health = storage.diagnose();

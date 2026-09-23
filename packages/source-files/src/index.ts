@@ -42,6 +42,8 @@ class SourceLimitError extends Error {
 export class FileSources implements SourcePort {
   constructor(private readonly registeredRoots: () => readonly string[] = () => [], private readonly selection: SourceSelection | (() => readonly SourceSelection[]) = {}) {}
   scan(project: Project): Resource[] { return this.collect(project).resources; }
+  /** Directories and event filters from the same traversal and resolved selection as scan. */
+  watchPlan(project: Project) { return this.collect(project, true).directories; }
   preview(project: Project) {
     try {
       const result = this.collect(project);
@@ -51,12 +53,13 @@ export class FileSources implements SourcePort {
       return { files: error.files, bytes: error.bytes, skipped_oversized: error.oversized, limit_exceeded: true, complete: false, reason: error.message };
     }
   }
-  private collect(project: Project) {
+  private collect(project: Project, metadataOnly = false) {
     const selections = typeof this.selection === 'function' ? this.selection() : [this.selection];
     const root = realpathSync.native(project.root);
     const identityRoot = process.platform === 'win32' ? root.toLowerCase() : root;
     if (identityRoot !== project.root) throw new Error('Project root changed its canonical location. Re-register the intended directory.');
     const output: Resource[] = [];
+    const directories: { path: string; accepts: (name: string) => boolean }[] = [];
     let bytes = 0;
     let visited = 0;
     let oversized = 0;
@@ -66,6 +69,17 @@ export class FileSources implements SourcePort {
       included: selection.include ? ignore().add([...selection.include]) : undefined,
       prefixes: selection.include ? includePrefixes(selection.include) : undefined,
     }));
+    // Scan traversal and watch event acceptance share these checks and the resolved filters above.
+    const excluded = (layers: IgnoreLayer[], path: string, local: string, directory: boolean) => {
+      const suffix = directory ? '/' : '';
+      return filters.some(f => f.excluded.ignores(local + suffix)) || layers.some(layer => layer.rules.ignores(relative(layer.base, path).split(sep).join('/') + suffix));
+    };
+    const outsidePrefixes = (local: string) => {
+      const selectedPath = local.toLowerCase();
+      return filters.some(({ prefixes }) => prefixes && !prefixes.some(prefix => selectedPath === prefix || selectedPath.startsWith(prefix + '/') || prefix.startsWith(selectedPath + '/')));
+    };
+    const eligibleFile = (name: string, local: string) => (allowedExtensions.has(extname(name).toLowerCase()) || /^(README|AGENTS|LICENSE)$/i.test(name))
+      && !filters.some(f => f.included && !f.included.ignores(local));
     const walk = (directory: string, inherited: IgnoreLayer[]) => {
       const layers = [...inherited];
       const ignorePath = join(directory, '.gitignore');
@@ -73,24 +87,31 @@ export class FileSources implements SourcePort {
         if (statSync(ignorePath).size > 65536) throw new Error('Oversized .gitignore; sync aborted.');
         layers.push({ base: directory, rules: ignore().add(readFileSync(ignorePath, 'utf8')) });
       }
+      if (metadataOnly) directories.push({ path: directory, accepts: name => {
+        if (name === '.gitignore') return true;
+        if (name.includes('/') || name.includes('\\') || deniedName.test(name)) return false;
+        const candidate = join(directory, name), local = relative(root, candidate).split(sep).join('/');
+        const info = existsSync(candidate) ? lstatSync(candidate) : undefined;
+        if (info?.isSymbolicLink() || excluded(layers, candidate, local, Boolean(info?.isDirectory()))) return false;
+        if (info?.isDirectory()) return !outsidePrefixes(local);
+        return eligibleFile(name, local);
+      } });
       for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
         if (++visited > 20000) throw new SourceLimitError('Source traversal exceeds 20,000 entries; narrow the source scope.', output.length, bytes, oversized);
         if (deniedName.test(entry.name) || entry.isSymbolicLink()) continue;
         const path = join(directory, entry.name);
         const relativePath = relative(root, path).split(sep).join('/');
-        if (filters.some(f => f.excluded.ignores(relativePath + (entry.isDirectory() ? '/' : '')))) continue;
-        if (layers.some(layer => layer.rules.ignores(relative(layer.base, path).split(sep).join('/') + (entry.isDirectory() ? '/' : '')))) continue;
+        if (excluded(layers, path, relativePath, entry.isDirectory())) continue;
         const canonical = realpathSync.native(path);
         if (!isWithin(root, canonical) || canonical !== path) continue;
         if (entry.isDirectory()) {
-          const selectedPath = relativePath.toLowerCase();
-          if (filters.some(({ prefixes }) => prefixes && !prefixes.some(prefix => selectedPath === prefix || selectedPath.startsWith(prefix + '/') || prefix.startsWith(selectedPath + '/')))) continue;
+          if (outsidePrefixes(relativePath)) continue;
           const normalized = process.platform === 'win32' ? canonical.toLowerCase() : canonical;
           if (nestedRoots.includes(normalized) || existsSync(join(path, '.git'))) continue;
           walk(path, layers); continue;
         }
-        if (!entry.isFile() || (!allowedExtensions.has(extname(entry.name).toLowerCase()) && !/^(README|AGENTS|LICENSE)$/i.test(entry.name))) continue;
-        if (filters.some(f => f.included && !f.included.ignores(relativePath))) continue;
+        if (!entry.isFile() || !eligibleFile(entry.name, relativePath)) continue;
+        if (metadataOnly) continue;
         const info = statSync(path);
         if (info.nlink > 1) continue;
         if (info.size > 65536) { oversized++; continue; }
@@ -108,6 +129,6 @@ export class FileSources implements SourcePort {
       }
     };
     walk(root, []);
-    return { resources: output, bytes, oversized };
+    return { resources: output, directories, bytes, oversized };
   }
 }

@@ -39,6 +39,7 @@
     "lint": "eslint .",
     "prepack": "pnpm build",
     "test:pack": "node scripts/pack-smoke.mjs",
+    "test:runtime-pack": "node scripts/runtime-smoke.mjs",
     "test:ui": "playwright test",
     "baseline": "node scripts/retrieval-baseline.mjs",
     "test:agents": "node scripts/real-agents.mjs",

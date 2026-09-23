@@ -14,6 +14,6 @@ Invalid configuration fails closed. Doctor can open the installation and report
 the error without scanning. Writes are serialized by an exclusive lock and commit
 through a flushed temporary file and atomic rename. No database migration is needed.
 
-Runtime/watch integration remains in PR #9. Its watcher must consume these same
-selection layers and refresh its plan after config changes. No runtime code is
-copied into this change. See [source-scope operation and limits](../source-scope.md).
+The background runtime watch plan is metadata-only traversal of the same selection
+layers and is rebuilt when the local filter changes (ADR 008). See
+[source-scope operation and limits](../source-scope.md).

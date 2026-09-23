@@ -120,6 +120,11 @@ continuity dashboard
 
 Open <http://127.0.0.1:4783>. The browser does not open automatically.
 
+On Windows, current `main` can keep the Dashboard running and sync projects
+automatically after sign-in: `continuity startup install`, then `continuity runtime start`
+to start it now. It runs as the current user, without administrator rights. See the
+[background runtime](docs/background-runtime.md) for limits and removal.
+
 Leave a handoff and pick it up in another agent's session:
 
 ```sh
@@ -224,6 +229,8 @@ prune --dry-run               Preview only; never deletes
 mcp                           Serve project-bound tools over stdio
 serve                         Local authenticated HTTP API on 127.0.0.1
 dashboard                     Local Dashboard on 127.0.0.1:4783
+runtime start | status | stop Background Dashboard and automatic sync (main)
+startup install | remove      Windows current-user sign-in startup; also status (main)
 ```
 
 Commands marked (main) are not in v0.1.0. Global flags: `--project <directory>`, `--home <directory>`, `--json`.
@@ -233,7 +240,7 @@ Commands marked (main) are not in v0.1.0. Global flags: `--project <directory>`,
 
 - [Architecture](docs/architecture.md) and [decision records](docs/adr/README.md)
 - [Memory model](docs/memory-model.md) · [Handoffs](docs/handoffs.md) · [Source scope](docs/source-scope.md)
-- [Dashboard](docs/dashboard.md) · [Adapters, MCP and HTTP](docs/adapters.md) · [Retrieval](docs/retrieval.md)
+- [Dashboard](docs/dashboard.md) · [Background runtime](docs/background-runtime.md) · [Adapters, MCP and HTTP](docs/adapters.md) · [Retrieval](docs/retrieval.md)
 - [Security model](docs/security.md) · [Operations](docs/operations.md) · [Product scope](docs/product-scope.md)
 - [Brand assets](docs/branding/README.md)
 
@@ -244,14 +251,13 @@ Project identity, workspaces, handoffs, reviewed memory, provenance, context
 audit, MCP, local HTTP and the Dashboard.
 
 **Current `main` (unreleased):** automatic-first durable memory, local per-project
-source scope, a refreshed and denser Dashboard, and the new brand mark. See the
+source scope, a refreshed and denser Dashboard, the new brand mark, and an optional
+background runtime with Windows sign-in startup and automatic sync. See the
 [changelog](CHANGELOG.md).
 
-**Next:** a background runtime with Windows sign-in startup and automatic sync is
-under validation in a draft pull request. Provider-neutral agent bootstrap and
-future release packaging follow. Agent orchestration, cloud sync and a RIVET
-cutover are out of scope; the [RIVET dogfood notes](docs/research/rivet-dogfood.md)
-record what was and was not proven.
+**Next:** provider-neutral agent bootstrap and future release packaging. Agent
+orchestration, cloud sync and a RIVET cutover are out of scope; the
+[RIVET dogfood notes](docs/research/rivet-dogfood.md) record what was and was not proven.
 
 ## Development
 

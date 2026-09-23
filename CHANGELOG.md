@@ -6,6 +6,7 @@
 - Local per-project source scope (`continuity sources`) to narrow the source index of large projects without changing project identity.
 - Refreshed Dashboard: visual system and information hierarchy, then a denser desktop shell, project-first Overview, automatic-memory filters, handoff-first detail views and a read-only source view.
 - New Continuity mark, favicon and brand assets.
+- Optional background runtime: Windows current-user sign-in startup, loopback Dashboard and bounded automatic sync that follows the local source scope.
 
 ## 0.1.0 — 2026-09-22
 

@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.1.0 — release candidate (unreleased)
+## Unreleased (main)
+
+- Automatic-first durable memory: source-backed facts and attributed agent lessons activate automatically with provenance and trust; conflicts are quarantined; human review is optional.
+- Local per-project source scope (`continuity sources`) to narrow the source index of large projects without changing project identity.
+- Refreshed Dashboard: visual system and information hierarchy, then a denser desktop shell, project-first Overview, automatic-memory filters, handoff-first detail views and a read-only source view.
+- New Continuity mark, favicon and brand assets.
+- Optional background runtime: Windows current-user sign-in startup, loopback Dashboard and bounded automatic sync that follows the local source scope.
+
+## 0.1.0 — 2026-09-22
 
 - Local project identity and isolated Git workspaces.
 - Structured agent handoffs, durable memory proposals, explicit human review and conflict handling.

@@ -40,6 +40,8 @@ export class SqliteStorage implements StoragePort {
       conflicts: count("SELECT count(*) n FROM memories WHERE project_id = ? AND json_extract(data, '$.status') = 'needs_attention'", projectId),
       handoffs: count("SELECT count(*) n FROM handoffs WHERE project_id = ? AND COALESCE(json_extract(data, '$.provenance.workspace_id'), '') = ?", projectId, workspaceId),
       contexts: count("SELECT count(*) n FROM contexts WHERE project_id = ? AND COALESCE(json_extract(data, '$.workspace_id'), '') = ?", projectId, workspaceId),
+      // Primary checkout plus registered workspaces; independent of the selected workspace.
+      workspaces: 1 + count('SELECT count(*) n FROM workspaces WHERE project_id = ?', projectId),
     };
   }
   browse(projectId: string, workspaceId: string, kind: InspectionKind, limit: number, after: number, id?: string, status?: string, sourceFilter?: string): InspectionPage {

@@ -211,3 +211,75 @@ test('long scope paths and memory text stay accessible with keyboard-safe confir
   await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0); await expect(forget).toBeFocused();
   expect(host.project(longRoot).memory(memory.id).status).toBe('persist');
 });
+
+test('overview workspace total comes from the server, not the paginated workspace selector', async ({ page }) => {
+  // 55 real Git worktrees are slow to create on Windows CI runners.
+  test.setTimeout(360_000);
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: primary, stdio: 'pipe' });
+  for (let i = 0; i < 55; i++) { const worktree = join(root, `ws-${String(i).padStart(2, '0')}`); git('worktree', 'add', '-q', '-b', `ws-${i}`, worktree); host.workspace(primary, worktree); }
+  const project = host.projects().find(p => p.name === 'Demo · Relay')!, total = 1 + 1 + 55, registered = host.inspection.workspaces(project.project_id).map(w => w.workspace_id);
+  expect(registered).toHaveLength(56);
+  expect(host.inspection.stats(project.project_id, '').workspaces).toBe(total);
+  const workspacesRow = page.locator('.state-list dt').filter({ hasText: /^Workspaces$/ }).locator('+ dd');
+  // Overview health runs doctor synchronously, verifying every registered worktree with git; allow for slow Windows runners.
+  const settled = { timeout: 120_000 };
+  // Open the scoped Overview directly so only one doctor pass runs per assertion.
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=`);
+  await expect(workspacesRow).toHaveText(String(total), settled);
+  expect(await page.getByLabel('Workspace', { exact: true }).locator('option').count()).toBeLessThan(total);
+  // A workspace beyond the selector's first page must not change the project total.
+  const outside = registered.at(-1)!; expect(host.inspection.stats(project.project_id, outside).workspaces).toBe(total);
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${outside}`);
+  await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(outside);
+  await expect(workspacesRow).toHaveText(String(total), settled);
+});
+
+const staleProject = 'prj_00000000-0000-4000-8000-000000000000';
+async function expectRecovered(page: import('@playwright/test').Page) {
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+  await expect(page.getByText('Connecting to local Continuity', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.locator('nav a')).toHaveCount(8);
+}
+test('a stale project in the URL falls back to a registered project without cross-project access', async ({ page }) => {
+  const approved: string[] = [], afterRecovery: string[] = []; let recovered = false;
+  page.on('response', r => { if (r.url().includes(staleProject) && r.ok()) approved.push(r.url()); });
+  page.on('request', r => { if (recovered && r.url().includes(staleProject)) afterRecovery.push(r.url()); });
+  await page.goto(`${base}/#/overview?project=${staleProject}&workspace=ws_stale`); await expectRecovered(page); recovered = true;
+  const registered = host.projects().map(p => p.project_id), selected = await page.getByLabel('Project', { exact: true }).inputValue();
+  expect(registered).toContain(selected); expect(page.url()).toContain(`project=${selected}`); expect(page.url()).not.toContain(staleProject); expect(page.url()).not.toContain('ws_stale');
+  await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue('');
+  // A stale bookmark opened while the Dashboard is running recovers the same way.
+  await page.getByRole('link', { name: 'Handoffs', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Handoffs', exact: true })).toBeVisible();
+  expect(afterRecovery).toEqual([]);
+  await page.evaluate(stale => { location.hash = `/memories?project=${stale}&workspace=`; }, staleProject);
+  await expect(page.getByRole('heading', { name: 'Memories' })).toBeVisible(); await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect.poll(() => page.url()).not.toContain(staleProject);
+  expect(approved).toEqual([]);
+});
+test('a stale workspace keeps the project and falls back to the primary workspace', async ({ page }) => {
+  const relay = host.projects().find(p => p.name === 'Demo · Relay')!;
+  await page.goto(`${base}/#/overview?project=${relay.project_id}&workspace=ws_00000000-0000-4000-8000-000000000000`); await expectRecovered(page);
+  await expect(page.getByLabel('Project', { exact: true })).toHaveValue(relay.project_id);
+  await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue('');
+  await expect(page.getByText('Review reconnect cancellation', { exact: true })).toBeVisible();
+  await expect.poll(() => page.url()).toMatch(new RegExp(`project=${relay.project_id}&workspace=$`));
+});
+test('an empty installation with a stale URL shows the first run state', async ({ page }) => {
+  const emptyHost = openContinuity(join(root, 'empty-stale')); const emptyServer = createDashboardServer(emptyHost, new URL('../dist/packages/dashboard/', import.meta.url));
+  await new Promise<void>(resolve => emptyServer.listen(0, '127.0.0.1', resolve)); const address = emptyServer.address();
+  try {
+    if (!address || typeof address === 'string') throw new Error('Missing address');
+    await page.goto(`http://127.0.0.1:${address.port}/#/overview?project=${staleProject}&workspace=`);
+    await expect(page.getByText('No projects registered.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0); await expect(page.getByText('Connecting to local Continuity', { exact: false })).toHaveCount(0);
+    expect(page.url()).not.toContain(staleProject);
+  } finally { emptyServer.closeAllConnections(); await new Promise<void>(resolve => emptyServer.close(() => resolve())); emptyHost.close(); }
+});
+test('a valid scoped URL keeps its project and workspace', async ({ page }) => {
+  const relay = host.projects().find(p => p.name === 'Demo · Relay')!, worker = host.inspection.workspaces(relay.project_id)[0]!;
+  await page.goto(`${base}/#/overview?project=${relay.project_id}&workspace=${worker.workspace_id}`); await expectRecovered(page);
+  await expect(page.getByLabel('Project', { exact: true })).toHaveValue(relay.project_id);
+  await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(worker.workspace_id);
+  expect(page.url()).toContain(`workspace=${worker.workspace_id}`);
+});

@@ -61,9 +61,10 @@ export type HandoffInput = z.infer<typeof handoffInputSchema>;
 export const handoffCloseSchema = z.object({
   id: z.string().min(1).max(200),
   from: z.object({ agent: z.string().trim().min(1).max(100), session: z.string().trim().min(1).max(100) }).strict(),
+  replaced_by: z.string().min(1).max(200).optional(),
 }).strict();
 /** Lifecycle metadata recorded next to an immutable handoff: its work is finished. */
-export interface HandoffClosure { status: 'done'; closed_at: string; closed_by: { agent: string; session: string } }
+export interface HandoffClosure { status: 'done'; closed_at: string; closed_by: { agent: string; session: string }; replaced_by?: string }
 export interface Handoff extends HandoffInput {
   schema_version: 1;
   id: string;

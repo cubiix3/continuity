@@ -29,7 +29,7 @@ export const SAVE_INSTRUCTION = [
 export function saveInstruction(openHandoffGoal?: string) {
   if (!openHandoffGoal) return SAVE_INSTRUCTION;
   const goal = Array.from(openHandoffGoal.replace(/\s+/g, ' ').replace(/"/g, "'").trim()).slice(0, 160).join('');
-  return `${SAVE_INSTRUCTION}\nOpen handoff in this project: "${goal}". Only if this session finished all of its remaining work, add "close_handoff":true; never create a handoff just to say work is done.`;
+  return `${SAVE_INSTRUCTION}\nOpen handoff in this project: "${goal}". Add "close_handoff":true only if its work is now finished or your new handoff fully replaces it; never create a handoff just to say work is done.`;
 }
 
 /**
@@ -136,14 +136,7 @@ const clip = (items: string[]) => items.map(v => Array.from(v).slice(0, MAX_ITEM
 export function applySave(client: ProjectClient, provider: HookProviderName, session: string, reply: SaveReply, offered?: string): Outcome[] {
   const from = { agent: AGENT_NAME[provider], session };
   const outcomes: Outcome[] = [], proposals: { at: number; candidate: Record<string, unknown> }[] = [];
-  // Only the open handoff the host named in its request can be closed; the model never supplies an id.
-  if (reply.close_handoff) {
-    if (!offered) outcomes.push({ item: 'handoff close', outcome: 'skipped: no open handoff was offered' });
-    else {
-      try { outcomes.push({ item: 'handoff close', outcome: client.closeHandoff({ id: offered, from }).outcome }); }
-      catch (error) { outcomes.push({ item: 'handoff close', outcome: `failed: ${error instanceof Error && error.name !== 'ZodError' ? error.message.slice(0, 120) : 'invalid close'}` }); }
-    }
-  }
+  let created: string | undefined;
   reply.memories.forEach((raw, index) => {
     const m = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
     const key = text(m.key), source = text(m.source_path), item = key && !looksSensitive(key) ? `memory ${key.slice(0, 60)}` : `memory ${index + 1}`;
@@ -171,8 +164,17 @@ export function applySave(client: ProjectClient, provider: HookProviderName, ses
     else if (!handoff.task.goal || !handoff.recommended_next_action) outcomes.push({ item: 'handoff', outcome: 'skipped: goal and next action are required' });
     else if (fields.some(looksSensitive)) outcomes.push({ item: 'handoff', outcome: 'skipped: looks like a secret' });
     else {
-      try { client.createHandoff(handoff); outcomes.push({ item: 'handoff', outcome: 'created' }); }
+      try { created = client.createHandoff(handoff).id; outcomes.push({ item: 'handoff', outcome: 'created' }); }
       catch (error) { outcomes.push({ item: 'handoff', outcome: `failed: ${error instanceof Error && error.name !== 'ZodError' ? error.message.slice(0, 120) : 'invalid handoff'}` }); }
+    }
+  }
+  // Only the open handoff the host named in its request can be closed; the model never supplies an id. A handoff created
+  // in the same answer is recorded as its replacement.
+  if (reply.close_handoff) {
+    if (!offered) outcomes.push({ item: 'handoff close', outcome: 'skipped: no open handoff was offered' });
+    else {
+      try { outcomes.push({ item: 'handoff close', outcome: client.closeHandoff({ id: offered, from, ...(created ? { replaced_by: created } : {}) }).outcome }); }
+      catch (error) { outcomes.push({ item: 'handoff close', outcome: `failed: ${error instanceof Error && error.name !== 'ZodError' ? error.message.slice(0, 120) : 'invalid close'}` }); }
     }
   }
   return outcomes;

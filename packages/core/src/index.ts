@@ -180,12 +180,14 @@ export class ProjectClient {
    */
   closeHandoff(input: unknown): { handoff: Handoff; outcome: 'closed' | 'already_closed' } {
     this.assertBinding();
-    const { id, from } = handoffCloseSchema.parse(input);
-    const find = () => this.storage.handoffs(this.project.project_id).find(h => h.id === id && h.provenance.workspace_id === this.workspace?.workspace_id);
+    const { id, from, replaced_by } = handoffCloseSchema.parse(input);
+    const find = (handoffId = id) => this.storage.handoffs(this.project.project_id).find(h => h.id === handoffId && h.provenance.workspace_id === this.workspace?.workspace_id);
     const handoff = find();
     if (!handoff) throw new Error('Handoff not found in this workspace.');
+    // A replacement must be another handoff of the same workspace.
+    if (replaced_by !== undefined && (replaced_by === id || !find(replaced_by))) throw new Error('Replacement handoff not found in this workspace.');
     if (!handoffActive(handoff)) return { handoff, outcome: 'already_closed' };
-    const closure: HandoffClosure = { status: 'done', closed_at: new Date().toISOString(), closed_by: from };
+    const closure: HandoffClosure = { status: 'done', closed_at: new Date().toISOString(), closed_by: from, ...(replaced_by ? { replaced_by } : {}) };
     return this.storage.closeHandoff(this.project.project_id, id, closure) ? { handoff: { ...handoff, closure }, outcome: 'closed' } : { handoff: find()!, outcome: 'already_closed' };
   }
   /** Latest handoff in this workspace that still asks for continuation, if any. */

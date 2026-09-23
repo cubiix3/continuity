@@ -400,3 +400,28 @@ test('a sensitive open handoff is neither offered for closure nor replaced by an
   expect(request.reason).not.toContain('Open handoff'); expect(request.reason).not.toContain('abcd1234');
   const start = renderBootstrap(host.bootstrap(a)!); expect(start).not.toContain('Older open work'); expect(start).not.toContain('Rotate keys');
 });
+
+test('a follow-up handoff that replaces the open one closes it with a link, so the old one never resurfaces', () => {
+  session('codex', a, save({ handoff: { goal: 'Convert modules to ESM', status: 'in_progress', remaining: ['a', 'b'], next: 'Convert a.' } }));
+  const h1 = host.project(a).latestHandoff()!;
+  session('claude', a, save({ handoff: { goal: 'Convert modules to ESM', status: 'in_progress', remaining: ['b'], next: 'Convert b.' }, close_handoff: true }));
+  const h2 = host.project(a).latestHandoff()!;
+  expect(h2.id).not.toBe(h1.id);
+  expect(host.project(a).handoff(h1.id).closure).toMatchObject({ status: 'done', replaced_by: h2.id, closed_by: { agent: 'Claude Code' } });
+  expect(host.bootstrap(a)?.latest_handoff?.id).toBe(h2.id);
+  host.project(a).closeHandoff({ id: h2.id, from: { agent: 'Codex', session: 'done' } });
+  expect(host.bootstrap(a)?.latest_handoff).toBeUndefined();
+  // A replacement must exist in the same workspace.
+  const h3 = host.project(a).createHandoff({ from: { agent: 'Codex', session: 'z' }, task: { goal: 'Other', status: 'in_progress' }, completed: [], remaining: [], decisions: [], files_changed: [], risks: [], recommended_next_action: 'Go.' });
+  expect(() => host.project(a).closeHandoff({ id: h3.id, from: { agent: 'Codex', session: 'z' }, replaced_by: 'handoff_missing' })).toThrow(/Replacement/);
+  expect(() => host.project(a).closeHandoff({ id: h3.id, from: { agent: 'Codex', session: 'z' }, replaced_by: h3.id })).toThrow(/Replacement/);
+});
+
+test('a Git submodule checkout inside a project is a different tree and gets no save', () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.invalid', '-c', 'protocol.file.allow=always', ...args], { cwd, stdio: 'pipe' });
+  const lib = join(root, 'lib'); mkdirSync(lib); writeFileSync(join(lib, 'README.md'), '# Lib\n'); git(lib, 'init'); git(lib, 'add', '.'); git(lib, 'commit', '-m', 'lib');
+  git(a, 'init'); git(a, 'add', '.'); git(a, 'commit', '-m', 'alpha'); git(a, 'submodule', 'add', lib, 'vendor/lib');
+  const inside = session('claude', join(a, 'vendor', 'lib'), save({ memories: [{ key: 'lib.fact', kind: 'experience', text: 'Learned inside the vendored submodule checkout.' }] }));
+  expect([inside.request.stdout, inside.answer.stdout]).toEqual(['', '']);
+  expect(active(a)).toEqual([]);
+});

@@ -109,7 +109,12 @@ attribution. They cannot reach human-reviewed trust, choose a project or workspa
 become project rules or override an accepted memory. A save is applied only in the
 project or workspace where the edits and the request happened; a `cd` elsewhere or a
 nested Git checkout gets nothing. Secret-looking content is checked per raw field
-and dropped before storage. A prompt-injected source can still lead the model to propose
+and dropped before storage.
+
+A handoff close applies only to the open handoff the host offered in that session's
+request. It is bound to the same project and workspace, and it never rewrites the
+handoff. Autosave runs by default only in attended interactive sessions, so headless
+runs keep their final output. A prompt-injected source can still lead the model to propose
 a false lesson; it is attributed as an agent observation, and sources and human
 review outrank it. See [agent lifecycle](agent-lifecycle.md).
 

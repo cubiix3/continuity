@@ -39,8 +39,31 @@ The trusted host binds the directory with the same resolver as bootstrap
 
 Per-session state is a content-free flag file under the Continuity home. Hooks exit
 0, are silent on success and report anything not saved in one line. The installer
-owns one entry per event and supports `--no-autosave`. `CONTINUITY_AUTOSAVE=0` is
-a runtime kill switch.
+owns one entry per event and supports `--no-autosave`.
+
+### Attended sessions only by default
+
+The save turn replaces the provider's final answer, which breaks scripts that read
+it. Autosave therefore runs by default only when the provider reports an attended
+interactive session. Claude Code sets `CLAUDE_CODE_SESSION_ATTENDED` and
+`CLAUDE_CODE_ENTRYPOINT` for its hooks. These are verified but undocumented, so an
+unknown value means off.
+
+Codex gives hooks no signal that separates `exec` from the TUI, so Codex autosave
+is opt-in. `CONTINUITY_AUTOSAVE=1|0` overrides the default. `--no-autosave`
+outranks everything, because the hooks are then absent.
+
+### Handoff closure
+
+An unfinished handoff stayed the latest work to continue forever. Closure is
+lifecycle metadata in its own table (`status: done`, `closed_at`, `closed_by`,
+optional `replaced_by`). The handoff record is never rewritten.
+
+`ProjectClient.closeHandoff()` is bound to the client's project and workspace and is
+idempotent. Bootstrap and the save request use the latest open handoff. The request
+names that handoff's goal, and the answer's `close_handoff` can close only the id
+the host recorded. There is no new MCP tool; people close handoffs through
+`continuity handoff close`.
 
 ## Alternatives
 
@@ -58,14 +81,26 @@ a runtime kill switch.
 - **Asking after every turn, or on any shell command:** rejected. Every chat turn
   would get an extra answer.
 - **Detecting shell edits with `git status`:** rejected. It runs Git with
-  repository-controlled configuration on every stop. Shell-only edits are a
-  documented gap.
+  repository-controlled configuration on every stop. Neither provider reports file
+  mutations for shell commands, so shell-only edits are a documented gap.
+- **Detecting `codex exec` from the parent process's command line or from
+  `permission_mode`:** rejected. Command-line parsing is brittle. `permission_mode`
+  reads `bypassPermissions` in interactive sessions with `approval_policy = "never"`,
+  and `default` in `exec --approve-for-me`.
+- **Rewriting a handoff's status in place, or a new `closed` status:** rejected.
+  History stays immutable, and `done` is the existing terminal status.
+- **Letting the model name handoff ids to close:** rejected. The host names the one
+  handoff it offered.
 - **Session summaries or changed-file lists:** rejected by policy.
 
 ## Consequences
 
-- In `-p`/`exec` runs with edits, the save answer is the final message. Scripts
-  that consume it set `CONTINUITY_AUTOSAVE=0` or install `--no-autosave`.
+- Scripted runs keep their final answer by default. A forced headless run
+  (`CONTINUITY_AUTOSAVE=1`) ends with the save answer.
+- Interactive Codex users opt in with `CONTINUITY_AUTOSAVE=1`. `codex exec` runs
+  started from that environment inherit it and should set `CONTINUITY_AUTOSAVE=0`.
+- Schema version 5 adds `handoff_closures`. Older Continuity versions refuse the
+  upgraded database, as with every schema change.
 - Saving is best effort. Interruptions and crashes can skip it.
 - Codex users trust the new hooks once in `/hooks`.
 - No session tables, telemetry or transcripts are stored.

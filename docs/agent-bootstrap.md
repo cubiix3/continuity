@@ -66,7 +66,7 @@ Continuity hook in `/hooks`. Codex skips untrusted hooks and warns at startup.
 | --- | --- |
 | Project name, workspace label, sync age, source count | Absolute paths, internal IDs in the text output |
 | Conflict count and up to three conflict keys | Either side of a conflict as memory |
-| Latest handoff in this workspace: agent, status, goal, next action, up to three remaining items | Full handoffs, transcripts, chat history |
+| Latest open handoff in this workspace (not done, not closed): agent, status, goal, next action, up to three remaining items | Full handoffs, transcripts, chat history |
 | Up to eight durable memories: key, kind, trust label, first 160 characters | Full memory bodies, source passages, Git history |
 | Counts of further memories and older handoffs | Records that look like secrets (withheld and counted) |
 

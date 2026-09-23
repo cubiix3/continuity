@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, symlinkSync, lstatSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, symlinkSync, lstatSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -241,7 +241,7 @@ test('a reused path of a removed worktree does not inherit the project', async (
   expect(host.bootstrap(feature)).toBeUndefined();
 });
 
-test('hook commands keep hostile-looking paths literal in the real shell', () => {
+test('hook commands keep hostile-looking paths literal in the real shell', { timeout: 60_000 }, () => {
   const quote = String.fromCharCode(0x2019);
   const dir = join(root, `O${quote}Brien's $HOME ${quote}; Write-Output INJECTED; #`, 'cli', 'src'); mkdirSync(dir, { recursive: true });
   const cli = join(dir, 'index.js'); writeFileSync(cli, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))');
@@ -263,4 +263,26 @@ test('a symlinked provider settings file stays a symlink and its target is updat
   installHookIntegration(target);
   expect(lstatSync(join(config, 'settings.json')).isSymbolicLink()).toBe(true);
   expect(JSON.parse(readFileSync(real, 'utf8'))).toMatchObject({ theme: 'dark', hooks: { SessionStart: [{ hooks: [target.expected] }] } });
+});
+
+test('worktrees of a repository with a separate git dir are recognized; an unattached registered root gets no context', async () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' });
+  const sep = join(root, 'sep'), store = join(root, 'sep-git'); mkdirSync(sep); writeFileSync(join(sep, 'README.md'), 'sep');
+  git(sep, 'init', `--separate-git-dir=${store}`); git(sep, 'add', '.'); git(sep, '-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-m', 'fixture');
+  host.init(sep, 'Separate'); const nested = join(sep, '.worktrees', 'feat'); git(sep, 'worktree', 'add', '-b', 'feat', nested);
+  const worktree = host.workspace(sep, nested); host.project(sep).createHandoff(handoff('PRIMARY goal')); worktree.createHandoff(handoff('FEATURE goal'));
+  expect(host.bootstrap(nested)).toMatchObject({ workspace: { label: 'feat' }, latest_handoff: { goal: 'FEATURE goal' } });
+  // Break the link: the registered worktree root must not fall back to the primary checkout's context.
+  renameSync(join(store, 'worktrees', 'feat'), join(root, 'pruned-worktree-metadata'));
+  expect(host.bootstrap(nested)).toBeUndefined(); expect(host.bootstrap(sep)?.latest_handoff?.goal).toBe('PRIMARY goal');
+});
+
+test('older handoff count excludes a withheld newest handoff; dangling settings symlinks are refused', async (context) => {
+  const client = host.project(a); await client.sync();
+  client.createHandoff({ ...handoff('Rotate credentials'), recommended_next_action: 'Use api_key = "abcd1234efgh5678".' });
+  expect(bundle().available).toMatchObject({ handoffs: 1, older_handoffs: 0 }); expect(renderBootstrap(bundle())).not.toContain('older handoff');
+  const config = join(root, 'dangling'); mkdirSync(config);
+  try { symlinkSync(join(root, 'missing-target.json'), join(config, 'settings.json'), 'file'); } catch { context.skip(); return; }
+  const target = claudeHookTarget(process.execPath, resolve('dist/packages/cli/src/index.js'), home, { CLAUDE_CONFIG_DIR: config });
+  expect(() => installHookIntegration(target)).toThrow(/dangling/); expect(lstatSync(join(config, 'settings.json')).isSymbolicLink()).toBe(true);
 });

@@ -89,7 +89,11 @@ function withoutContinuity(provider: HookProviderName, settings: Settings): Grou
 }
 /** Same-directory temporary file, flush, backup of the previous file, then atomic rename. */
 function writeSettings(requested: string, settings: Settings, existed: boolean) {
-  const path = existed && lstatSync(requested).isSymbolicLink() ? realpathSync.native(requested) : requested;
+  let path = requested, link = false;
+  try { link = lstatSync(requested).isSymbolicLink(); } catch { /* absent */ }
+  if (link) {
+    try { path = realpathSync.native(requested); } catch { throw new Error('Provider settings path is a dangling symbolic link. Nothing was changed.'); }
+  }
   mkdirSync(dirname(path), { recursive: true });
   const backup = existed ? `${path}.continuity-backup-${new Date().toISOString().replace(/[:.]/g, '-')}` : undefined;
   if (backup) copyFileSync(path, backup);

@@ -77,6 +77,7 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
   const newest = workspaceHandoffs[0];
   const latest = newest && !withheld([newest.from.agent, newest.task.goal, newest.recommended_next_action, ...newest.remaining].join('\n')) ? newest : undefined;
   if (newest && !latest) hidden++;
+  const olderHandoffs = Math.max(0, workspaceHandoffs.length - 1);
   const sync = input.sync;
   const warnings: string[] = [];
   if (!sync) warnings.push('Sources have not been synced for this workspace.');
@@ -90,7 +91,7 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
     health: { status: warnings.length ? 'degraded' : 'healthy', warnings },
     attention: { conflicts: conflicts.length, conflict_keys: [...new Set(conflicts.filter(m => !withheld(m.key)).map(m => clip(m.key, 80).text))].sort().slice(0, LIMITS.conflictKeys), stale_source_backed: stale, withheld: hidden },
     memories: [],
-    available: { memories: available, more_memories: available, handoffs: workspaceHandoffs.length, older_handoffs: workspaceHandoffs.length },
+    available: { memories: available, more_memories: available, handoffs: workspaceHandoffs.length, older_handoffs: olderHandoffs },
     budget: { requested: budget, used: 0, unit: 'utf8_bytes' },
   };
   const size = () => Buffer.byteLength(JSON.stringify(bundle), 'utf8');
@@ -101,7 +102,6 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
     const remaining = latest.remaining.slice(0, LIMITS.remaining).map(r => clip(r, LIMITS.remainingItem).text);
     bundle.latest_handoff = { id: latest.id, agent: clip(latest.from.agent, 60).text, status: latest.task.status, goal: clip(latest.task.goal, LIMITS.goal).text, next_action: clip(latest.recommended_next_action, LIMITS.next).text, remaining, remaining_total: latest.remaining.length, captured_at: latest.provenance.captured_at, selection_reason: 'latest_handoff' };
     if (!fits()) { bundle.latest_handoff.remaining = []; if (!fits()) delete bundle.latest_handoff; }
-    if (bundle.latest_handoff) bundle.available.older_handoffs--;
   }
   for (const [origin, m] of shortlist) {
     const summary = clip(m.text, LIMITS.summary);

@@ -17,17 +17,25 @@ import { anchoredScope, readSourceScopes, sourceScopeSchema, writeSourceScope, S
 import type { SourceScope } from './source-scope.js';
 
 export const CONTINUITY_HOST_API_VERSION = 1;
-/** Bootstrap failed after the directory resolved to a registered project or workspace. */
-/** Cheap worktree check without spawning git: the root's .git file must point into <project>/.git/worktrees. */
+const gitLink = (dir: string) => {
+  const link = readFileSync(join(dir, '.git'), 'utf8').match(/^gitdir:\s*(.+?)\s*$/m)?.[1];
+  if (!link) throw new Error('Not a Git link file.');
+  return realpathSync.native(isAbsolute(link) ? link : join(dir, link));
+};
+const sameDir = (a: string, b: string) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+/**
+ * Cheap worktree check without spawning git: the worktree's common Git directory must be the project's. Handles
+ * `.git` directories, `.git` link files (separate git dir, submodules) and relative links.
+ */
 function attachedWorktree(projectRoot: string, workspaceRoot: string) {
   try {
-    const link = readFileSync(join(workspaceRoot, '.git'), 'utf8').match(/^gitdir:\s*(.+?)\s*$/m)?.[1];
-    if (!link) return false;
-    const gitdir = realpathSync.native(isAbsolute(link) ? link : join(workspaceRoot, link)), worktrees = realpathSync.native(join(projectRoot, '.git', 'worktrees'));
-    const [a, b] = process.platform === 'win32' ? [gitdir.toLowerCase(), worktrees.toLowerCase()] : [gitdir, worktrees];
-    return isWithin(b, a) && a !== b;
+    const worktreeGit = gitLink(workspaceRoot);
+    const common = realpathSync.native(join(worktreeGit, readFileSync(join(worktreeGit, 'commondir'), 'utf8').trim()));
+    const projectGit = statSync(join(projectRoot, '.git')).isDirectory() ? realpathSync.native(join(projectRoot, '.git')) : gitLink(projectRoot);
+    return sameDir(common, projectGit);
   } catch { return false; }
 }
+/** Bootstrap failed after the directory resolved to a registered project or workspace. */
 export class BootstrapUnavailableError extends Error { constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'BootstrapUnavailableError'; } }
 export interface HostOptions { sources?: { include?: readonly string[]; exclude?: readonly string[] } }
 
@@ -152,8 +160,9 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       const projects = storage.projects(), workspaceRoots = new Map(projects.flatMap(p => storage.workspaces(p.project_id).map(w => [w.root, { project: p, workspace: w }] as const)));
       for (;;) {
         const candidate = projects.find(p => p.root === current) ? { project: projects.find(p => p.root === current)! } : workspaceRoots.get(current);
-        // A removed worktree's path can be reused by an unrelated checkout; require its .git link into this project.
-        const scope = candidate && 'workspace' in candidate && !attachedWorktree(candidate.project.root, candidate.workspace.root) ? undefined : candidate;
+        // A removed worktree's path can be reused by an unrelated checkout: no context rather than a wrong one.
+        if (candidate && 'workspace' in candidate && !attachedWorktree(candidate.project.root, candidate.workspace.root)) return undefined;
+        const scope = candidate;
         if (scope) {
           const store = boundStore('workspace' in scope ? scope.workspace.workspace_id : '');
           const client = new ProjectClient(store, sourceFor(scope.project), scope.project, undefined, undefined, 'lexical', 'workspace' in scope ? scope.workspace : undefined);

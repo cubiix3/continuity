@@ -74,19 +74,23 @@ of proposed replacements. Correct the file rather than relying on a fallback.
 `doctor` and Dashboard Diagnostics report the problem. Workspaces shows the filter
 and the source count from the last successful sync; it does not scan on navigation.
 
-## Runtime integration boundary
+## Background runtime
 
-Background runtime PR #9 is separate. This change contains no watcher or scheduler.
 The SDK `sourceFor` is the composition point for every FileSources consumer. Its
 selection callback reads the local filter for the bound project at scan time;
-workspace clients, source previews and retrieval-health snapshots use it too.
+workspace clients, source previews, retrieval-health snapshots, manual sync and
+the background runtime's automatic sync use it.
 
-When runtime is integrated, its existing `sourceFor`/`watchPlan` path must use the
-same resolved selection layers for directory pruning and event acceptance. Do not
-add another ignore engine. Runtime discovery/reconciliation must rebuild a watch
-plan when local selection changes; until then a narrower filter must still apply
-to every scan. Watch/scan equivalence and config-change watcher refresh require
-integration tests on that combined branch. They are not claimed as tested here.
+The runtime watch plan is the metadata-only mode of the same FileSources traversal.
+Directory pruning and watch event acceptance use the same resolved selection
+layers as the scan; there is no separate watcher filter. Filtered-out directories
+are not watched, so a narrow include list also bounds the watcher set.
+
+Runtime discovery (every 30 seconds) compares each project's filter with the one
+its watches were planned for. A change from `sources set`/`clear` or a repaired file
+replaces the watches and schedules a sync without restarting the runtime. An
+invalid file removes the watches and fails every scan closed; affected scopes report
+`degraded` with the configuration error while the runtime and Dashboard keep running.
 
 Scope selects historical handoff documents as source text only. It does not turn
 them into durable memory, promote observations, or change memory trust policy.

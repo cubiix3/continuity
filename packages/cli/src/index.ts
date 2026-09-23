@@ -13,6 +13,9 @@ import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
 import { createDashboardServer } from '../../server/src/dashboard.js';
+import { continuityHome } from '../../sdk/src/local-ipc.js';
+import { runBackground, runtimeRequest, startBackground, stopBackground } from '../../sdk/src/background.js';
+import { startupRegistration } from '../../sdk/src/startup-windows.js';
 
 const program = new Command().name('continuity').description('Persistent context for interchangeable agents.').version('0.1.0')
   .option('--project <directory>', 'project directory', process.cwd())
@@ -91,6 +94,24 @@ handoff.command('create').description('Read a structured handoff JSON file or st
 handoff.command('latest').action(() => output(client().latestHandoff()));
 handoff.command('show <id>').action((id: string) => output(client().handoff(id)));
 let persistent = false;
+const backgroundHome = () => continuityHome(program.opts<{ home?: string }>().home);
+const cliPath = fileURLToPath(import.meta.url);
+const runtimeCommands = program.command('runtime').description('Control the optional local background runtime');
+for (const command of ['start', 'run'] as const) runtimeCommands.command(command).description(command === 'run' ? 'Run in the foreground (diagnostics)' : 'Start a hidden background process')
+  .option('--port <port>', 'loopback dashboard port', '4783').option('--no-auto-sync', 'serve the dashboard without automatic source sync')
+  .action(async (options: { port: string; autoSync: boolean }) => {
+    const port = Number(options.port); if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Port must be 0–65535.');
+    if (command === 'start') output(await startBackground(backgroundHome(), cliPath, port, options.autoSync));
+    else { await runBackground(backgroundHome(), port, options.autoSync); persistent = true; }
+  });
+runtimeCommands.command('status').action(async () => output(await runtimeRequest(backgroundHome())));
+runtimeCommands.command('stop').action(async () => output(await stopBackground(backgroundHome())));
+const startup = program.command('startup').description('Manage optional Windows sign-in startup for this home');
+for (const command of ['install', 'status', 'remove'] as const) startup.command(command).option('--port <port>', 'loopback dashboard port', '4783').option('--no-auto-sync', 'disable automatic source sync')
+  .action(async (options: { port: string; autoSync: boolean }) => {
+    const port = Number(options.port); if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Port must be 1–65535.');
+    output({ ...startupRegistration(command, backgroundHome(), cliPath, port, options.autoSync), runtime: await runtimeRequest(backgroundHome()) });
+  });
 program.command('dashboard').description('Open the local project continuity dashboard (no browser auto-open)').option('--port <port>', 'loopback port; 0 selects an available port', '4783').action(async (options: { port: string }) => {
   const port = Number(options.port);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Port must be 0–65535.');
@@ -111,9 +132,10 @@ program.command('bootstrap').description('Read-only startup index for an agent s
     if (json()) output(bundle); else process.stdout.write(renderBootstrap(bundle));
   });
 const integrate = program.command('integrate').description('Explicit provider integrations for automatic agent startup context');
+// Same canonical form as the runtime's continuityHome(), without creating a missing home (hooks must stay side-effect free).
 const continuityHomePath = () => {
   const home = resolve(program.opts<{ home?: string }>().home ?? process.env.CONTINUITY_HOME ?? join(homedir(), '.continuity'));
-  return existsSync(home) ? realpathSync.native(home) : home;
+  return existsSync(home) ? continuityHome(home) : home;
 };
 for (const provider of ['claude', 'codex'] as const) {
   const name = provider === 'claude' ? 'Claude Code' : 'Codex';

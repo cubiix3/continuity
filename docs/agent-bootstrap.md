@@ -87,6 +87,11 @@ with 100 available memories.
 - **Read-only.** No sync, no memory or handoff writes, no registration, no Doctor,
   no Git process, no semantic backend. Sync age is reported instead; a stale
   index shows as `degraded`.
+- **Independent of the background runtime.** When the [runtime](background-runtime.md)
+  runs, its automatic sync keeps the index fresh and bootstrap simply reads that state;
+  without it, bootstrap reports the last sync age. Measured on Windows, hook latency is
+  the same with the runtime running (about 0.2 s, Core under 1 ms), including parallel
+  session starts during runtime syncs.
 - **Project-bound.** The provider supplies only its working directory. The host
   resolves the nearest registered project or workspace root; nested projects
   resolve to themselves. Nothing from other projects is read.

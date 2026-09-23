@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -147,11 +147,13 @@ it('inspects a current semantic cache without replacing resource IDs or sync sta
 const overviewRequests = (project: string) => ['records?kind=handoffs&limit=5', 'stats', 'status', 'health', 'retrieval'].map(path => `${path}${path.includes('?') ? '&' : '?'}project=${project}&workspace=`);
 const serve = async (dashboardHost: typeof host) => {
   const dashboard = createDashboardServer(dashboardHost, new URL('../dist/packages/dashboard/', import.meta.url));
+  const arrived = new Map<string, number>();
+  dashboard.prependListener('request', (req: { url?: string }) => { const path = new URL(req.url ?? '/', 'http://local').pathname; arrived.set(path, (arrived.get(path) ?? 0) + 1); });
   await new Promise<void>(resolve => dashboard.listen(0, '127.0.0.1', resolve)); const address = dashboard.address(); if (!address || typeof address === 'string') throw new Error('Missing address');
   const origin = `http://127.0.0.1:${address.port}`;
   const capability = (await (await fetch(`${origin}/dashboard-api/session`, { headers: { 'X-Continuity-Dashboard': '1' } })).json() as { capability: string }).capability;
   const call = async (path: string) => { const response = await fetch(`${origin}/dashboard-api/${path}`, { headers: { 'X-Continuity-Token': capability } }); return { status: response.status, body: await response.json() as Record<string, unknown>, at: performance.now() }; };
-  return { call, close: () => new Promise<void>(resolve => { dashboard.closeAllConnections(); dashboard.close(() => resolve()); }) };
+  return { call, arrived: (path: string) => arrived.get(`/dashboard-api/${path}`) ?? 0, close: () => new Promise<void>(resolve => { dashboard.closeAllConnections(); dashboard.close(() => resolve()); }) };
 };
 
 it('serves Overview health without running the full doctor, even for overlapping loads', async () => {
@@ -186,7 +188,8 @@ it('shares one full doctor run between overlapping Diagnostics requests', async 
   const dashboard = await serve({ ...host, doctor: async () => { runs++; await gate; return host.doctor(); } });
   try {
     const overlapping = [dashboard.call('diagnostics'), dashboard.call('diagnostics'), dashboard.call('diagnostics')];
-    await dashboard.call(`stats?project=${id}&workspace=`); release();
+    // Release only after all three requests reached the server, so they overlap by construction.
+    await vi.waitFor(() => expect(dashboard.arrived('diagnostics')).toBe(3), { timeout: 10_000 }); release();
     const results = await Promise.all(overlapping);
     expect(results.map(r => r.status)).toEqual([200, 200, 200]); expect(runs).toBe(1);
     expect((await dashboard.call('diagnostics')).status).toBe(200); expect(runs).toBe(2);

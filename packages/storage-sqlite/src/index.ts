@@ -3,11 +3,15 @@ import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { projectSchema } from '../../core/src/contracts.js';
-import type { ContextBundle, EmbeddingCache, RemoteResourceCache, Handoff, Memory, Observation, Project, Provenance, Resource, StoragePort, SyncState, SelectionAudit, Workspace } from '../../core/src/contracts.js';
+import type { ContextBundle, EmbeddingCache, RemoteResourceCache, Handoff, HandoffClosure, Memory, Observation, Project, Provenance, Resource, StoragePort, SyncState, SelectionAudit, Workspace } from '../../core/src/contracts.js';
 import { migrate } from './migrations.js';
 import type { InspectionKind, InspectionPage, InspectionRecord } from '../../core/src/contracts.js';
 
 function decode<T>(row: Record<string, unknown>): T { return JSON.parse(String(row.data)) as T; }
+/** A closure row is lifecycle metadata; the stored handoff itself is never rewritten. */
+function withClosure(handoff: Handoff, row: Record<string, unknown>): Handoff {
+  return row.closure ? { ...handoff, closure: JSON.parse(String(row.closure)) as HandoffClosure } : handoff;
+}
 function scoped<T>(row: Record<string, unknown>, projectId: string): T {
   const value = decode<T & { project_id: string; provenance?: Provenance }>(row);
   if (value.project_id !== projectId || (value.provenance && value.provenance.project_id !== projectId)) throw new Error('Corrupted record scope. Run continuity doctor.');
@@ -62,9 +66,9 @@ export class SqliteStorage implements StoragePort {
     if (sourceFilter && (kind !== 'sources' || !Object.hasOwn(sourceFilters, sourceFilter))) throw new Error('Invalid source filter.');
     const sourceClause = sourceFilter ? ` AND (${sourceFilters[sourceFilter]})` : '';
     const args = [projectId, ...(after ? [after] : []), ...(workspace ? [workspaceId] : []), ...(id ? [id] : []), ...statuses, limit + 1];
-    const rows = this.db.prepare(`SELECT rowid AS cursor, data${kind === 'contexts' ? ', created_at' : ''} FROM ${table} WHERE project_id = ?${after ? ' AND rowid < ?' : ''}${workspace}${identity}${filter}${sourceClause} ORDER BY rowid DESC LIMIT ?`).all(...args);
+    const rows = this.db.prepare(`SELECT rowid AS cursor, data${kind === 'contexts' ? ', created_at' : ''}${kind === 'handoffs' ? ', (SELECT c.data FROM handoff_closures c WHERE c.handoff_id = handoffs.id AND c.project_id = handoffs.project_id) AS closure' : ''} FROM ${table} WHERE project_id = ?${after ? ' AND rowid < ?' : ''}${workspace}${identity}${filter}${sourceClause} ORDER BY rowid DESC LIMIT ?`).all(...args);
     const items = rows.slice(0, limit).map(row => {
-      const record = scoped<InspectionRecord>(row, projectId);
+      const record = kind === 'handoffs' ? withClosure(scoped<Handoff>(row, projectId), row) : scoped<InspectionRecord>(row, projectId);
       if (workspace) {
         const actual = 'provenance' in record ? record.provenance.workspace_id : record.workspace_id;
         if ((actual ?? '') !== workspaceId) throw new Error('Corrupted workspace scope.');
@@ -207,7 +211,15 @@ export class SqliteStorage implements StoragePort {
       this.provenance(memory.id, memory.provenance);
     });
   }
-  handoffs(projectId: string): Handoff[] { return this.db.prepare('SELECT data FROM handoffs WHERE project_id = ? ORDER BY captured_at DESC, rowid DESC').all(projectId).map(r => scoped<Handoff>(r, projectId)); }
+  handoffs(projectId: string): Handoff[] {
+    return this.db.prepare('SELECT h.data, c.data AS closure FROM handoffs h LEFT JOIN handoff_closures c ON c.handoff_id = h.id AND c.project_id = h.project_id WHERE h.project_id = ? ORDER BY h.captured_at DESC, h.rowid DESC').all(projectId).map(r => withClosure(scoped<Handoff>(r, projectId), r));
+  }
+  closeHandoff(projectId: string, handoffId: string, closure: HandoffClosure): boolean {
+    return this.transaction(() => {
+      if (!this.db.prepare('SELECT 1 FROM handoffs WHERE id = ? AND project_id = ?').get(handoffId, projectId)) throw new Error('Handoff not found in this project.');
+      return Number(this.db.prepare('INSERT OR IGNORE INTO handoff_closures VALUES (?, ?, ?)').run(handoffId, projectId, JSON.stringify(closure)).changes) > 0;
+    });
+  }
   saveHandoff(handoff: Handoff): void {
     this.transaction(() => {
       this.db.prepare('INSERT OR IGNORE INTO sessions VALUES (?, ?, ?, ?)').run(handoff.from.session, handoff.project_id, handoff.from.agent, handoff.provenance.captured_at);

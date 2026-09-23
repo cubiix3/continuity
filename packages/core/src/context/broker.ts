@@ -26,7 +26,7 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
   }
   const handoff = storage.handoffs(project.project_id).find(h => h.provenance.workspace_id === workspaceId);
   if (handoff && terms.some(t => [handoff.task.goal, ...handoff.remaining, ...handoff.decisions, handoff.recommended_next_action].join(' ').toLowerCase().includes(t))) {
-    candidates.push({ id: handoff.id, kind: 'handoff', content: JSON.stringify({ task: handoff.task, remaining: handoff.remaining, decisions: handoff.decisions, recommended_next_action: handoff.recommended_next_action }), provenance: handoff.provenance, reasons: ['same project', 'latest structured handoff', 'task term match; agent report, not project policy'] });
+    candidates.push({ id: handoff.id, kind: 'handoff', content: JSON.stringify({ task: handoff.closure ? { ...handoff.task, status: handoff.closure.status } : handoff.task, remaining: handoff.remaining, decisions: handoff.decisions, recommended_next_action: handoff.recommended_next_action }), provenance: handoff.provenance, reasons: ['same project', 'latest structured handoff', 'task term match; agent report, not project policy'] });
   }
   const bundle: ContextBundle = { schema_version: 1, context_id: `ctx_${randomUUID()}`, project_id: project.project_id, role, items: [], budget: { requested: budget, used: 0, unit: 'utf8_bytes' } };
   if (workspaceId) bundle.workspace_id = workspaceId;

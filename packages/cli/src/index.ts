@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
 import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
 import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
-import { applySave, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, stopBlock, stopDecision, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
+import { applySave, autosaveEnabled, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, stopBlock, stopDecision, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
@@ -93,6 +93,9 @@ const handoff = program.command('handoff').description('Transfer structured work
 handoff.command('create').description('Read a structured handoff JSON file or stdin (-)').requiredOption('--file <path>').action((options: { file: string }) => output(client().createHandoff(JSON.parse(readFileSync(options.file === '-' ? 0 : options.file, 'utf8')) as unknown)));
 handoff.command('latest').action(() => output(client().latestHandoff()));
 handoff.command('show <id>').action((id: string) => output(client().handoff(id)));
+handoff.command('close <id>').description('Mark a handoff finished; the handoff itself stays unchanged history')
+  .requiredOption('--agent <name>', 'who confirms the work is finished').requiredOption('--session <id>', 'session or reference for the record')
+  .action((id: string, options: { agent: string; session: string }) => output(client().closeHandoff({ id, from: { agent: options.agent, session: options.session } })));
 let persistent = false;
 const backgroundHome = () => continuityHome(program.opts<{ home?: string }>().home);
 const cliPath = fileURLToPath(import.meta.url);
@@ -145,8 +148,6 @@ async function hookStdin(limit: number) {
 }
 const scopeOf = (client: { status(): { project_id: string; workspace?: { workspace_id: string } } }) => { const s = client.status(); return scopeKey(s.project_id, s.workspace?.workspace_id); };
 const hasStore = () => existsSync(join(continuityHomePath(), 'continuity.db'));
-// Runtime kill switch that keeps startup context: CONTINUITY_AUTOSAVE=0|off|false.
-const autosaveDisabled = () => /^(0|off|false|no)$/i.test(process.env.CONTINUITY_AUTOSAVE ?? '');
 for (const provider of ['claude', 'codex'] as const) {
   const name = provider === 'claude' ? 'Claude Code' : 'Codex';
   const target = (autosave = true) => (provider === 'claude' ? claudeHookTarget : codexHookTarget)(process.execPath, realpathSync.native(fileURLToPath(import.meta.url)), continuityHomePath(), process.env, { autosave });
@@ -173,7 +174,7 @@ for (const provider of ['claude', 'codex'] as const) {
     process.exitCode = 0;
     try {
       const input = toolUseInput(await hookStdin(1024 * 1024) ?? '');
-      if (!input || autosaveDisabled() || !hasStore()) return;
+      if (!input || !autosaveEnabled(provider) || !hasStore()) return;
       const client = runtime().session(input.cwd);
       if (!client) return;
       // The project/workspace the edits belong to; `mixed` when a session edits several.
@@ -189,7 +190,7 @@ for (const provider of ['claude', 'codex'] as const) {
     let applying = false;
     try {
       const input = stopInput(await hookStdin(1024 * 1024) ?? '');
-      if (!input || autosaveDisabled() || !hasStore()) return;
+      if (!input || !autosaveEnabled(provider) || !hasStore()) return;
       const home = continuityHomePath(), state = readSessionState(home, provider, input.session);
       const decision = stopDecision(state, input.active);
       const write = (next: typeof state) => { if (JSON.stringify(next) !== JSON.stringify(state)) writeSessionState(home, provider, input.session, next); };
@@ -198,8 +199,10 @@ for (const provider of ['claude', 'codex'] as const) {
         // Ask only where the edits happened: this stop must bind to the same project/workspace as the edits.
         const client = runtime().session(input.cwd);
         if (!client || scopeOf(client) !== state.scope) { write({ dirty: false, pending: false, ...(state.prompted_at !== undefined ? { prompted_at: state.prompted_at } : {}) }); return; }
-        write({ ...decision.state, scope: state.scope });
-        process.stdout.write(stopBlock()); return;
+        // The latest open handoff in this scope may be closed by the answer; only its id is kept, never text.
+        const open = client.activeHandoff(), goal = open ? offerableGoal(open) : undefined;
+        write({ ...decision.state, scope: state.scope, ...(open && goal ? { close: open.id } : {}) });
+        process.stdout.write(stopBlock(goal)); return;
       }
       // Persist first: a crash or timeout below can never cause a second request or a loop.
       write(decision.state);
@@ -209,7 +212,7 @@ for (const provider of ['claude', 'codex'] as const) {
       applying = true;
       const client = runtime().session(input.cwd);
       if (!client || scopeOf(client) !== state.scope) { process.stdout.write(stopMessage('Continuity autosave: nothing saved; the session left the project or workspace where the save was requested.')); return; }
-      const report = saveReport(applySave(client, provider, input.session, reply));
+      const report = saveReport(applySave(client, provider, input.session, reply, state.close));
       if (report) process.stdout.write(stopMessage(report));
     } catch (error) {
       // Honest partial-failure report once a save was attempted; otherwise silent.

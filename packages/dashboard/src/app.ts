@@ -136,7 +136,7 @@ function timeline(rows: Row[]) {
   const list = el('ol', undefined, 'timeline');
   for (const row of rows) {
     const h = row.record as unknown as Handoff, li = el('li'), meta = el('div', undefined, 'handoff-meta'), next = el('p', undefined, 'next');
-    meta.append(el('strong', h.from.agent), el('span', h.from.session, 'mono'), status(h.task.status));
+    meta.append(el('strong', h.from.agent), el('span', h.from.session, 'mono'), status(h.closure?.status ?? h.task.status));
     next.append(el('span', 'Next'), h.recommended_next_action || 'No next action recorded.'); next.title = h.recommended_next_action;
     li.append(pageLink('handoffs', h.id, h.task.goal), timestamp(h.provenance.captured_at), meta, next); list.append(li);
   }
@@ -188,7 +188,8 @@ async function detail(kind: string, id: string, stamp: number) {
   const wrap = el('div', undefined, 'detail'); main.append(wrap);
   if (kind === 'handoffs') {
     const h = row.record as unknown as Handoff, header = el('header', undefined, 'page-header');
-    header.append(el('h1', h.task.goal), metaLine(el('strong', h.from.agent), el('span', h.from.session, 'mono'), status(h.task.status), timestamp(h.provenance.captured_at), h.provenance.workspace_id ? 'Workspace checkout' : 'Primary workspace'));
+    header.append(el('h1', h.task.goal), metaLine(el('strong', h.from.agent), el('span', h.from.session, 'mono'), status(h.closure?.status ?? h.task.status), timestamp(h.provenance.captured_at), h.provenance.workspace_id ? 'Workspace checkout' : 'Primary workspace'));
+    if (h.closure) header.append(el('p', `Closed by ${h.closure.closed_by.agent} · ${new Date(h.closure.closed_at).toLocaleString()}. The handoff below is unchanged history.`, 'notice'));
     const next = section('Recommended next action', [h.recommended_next_action]); next.classList.add('next-action');
     const grid = el('div', undefined, 'handoff-grid'), files = section('Files changed', h.files_changed); files.classList.add('files');
     grid.append(section('Completed', h.completed), section('Remaining', h.remaining), section('Decisions', h.decisions), section('Risks', h.risks));

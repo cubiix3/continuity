@@ -21,9 +21,18 @@ beforeEach(async () => {
 afterEach(() => { host.close(); rmSync(root, { recursive: true, force: true }); });
 
 type Provider = 'claude' | 'codex';
-const run = (provider: Provider, event: 'tool-use' | 'stop' | 'session-start', input: unknown, env: NodeJS.ProcessEnv = {}, useHome = home) => {
+/**
+ * Hermetic hook environment: provider mode variables from the machine running the tests are removed. Lifecycle tests
+ * force autosave on; mode tests pass their own values (undefined deletes a variable).
+ */
+function hookEnv(extra: Record<string, string | undefined> = {}) {
+  const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^CLAUDE_CODE_|^CLAUDECODE$|^CONTINUITY_AUTOSAVE$/.test(k)));
+  for (const [k, v] of Object.entries({ CONTINUITY_AUTOSAVE: '1', ...extra })) { if (v === undefined) delete env[k]; else env[k] = v; }
+  return env;
+}
+const run = (provider: Provider, event: 'tool-use' | 'stop' | 'session-start', input: unknown, env: Record<string, string | undefined> = {}, useHome = home) => {
   const started = Date.now();
-  const result = spawnSync(process.execPath, ['--no-warnings', cli, '--home', useHome, 'integrate', provider, event], { input: typeof input === 'string' ? input : JSON.stringify(input), encoding: 'utf8', windowsHide: true, env: { ...process.env, ...env } });
+  const result = spawnSync(process.execPath, ['--no-warnings', cli, '--home', useHome, 'integrate', provider, event], { input: typeof input === 'string' ? input : JSON.stringify(input), encoding: 'utf8', windowsHide: true, env: hookEnv(env) });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr, ms: Date.now() - started };
 };
 const save = (value: unknown) => `Done.\n<continuity-save>${JSON.stringify(value)}</continuity-save>`;
@@ -164,7 +173,8 @@ test('hook input edge cases never block or exit 2; the kill switch keeps session
   }
   expect(host.project(a).memories()).toHaveLength(0);
   const off = session('claude', a, save({ memories: [{ key: 'k.k', kind: 'memory', text: 'Should not be saved while disabled.' }] }), 'off');
-  for (const env of [{ CONTINUITY_AUTOSAVE: '0' }, { CONTINUITY_AUTOSAVE: 'off' }]) {
+  // Only 1 and 0 are recognized; any other value falls back to the provider default (off without Claude attendance).
+  for (const env of [{ CONTINUITY_AUTOSAVE: '0', CLAUDE_CODE_SESSION_ATTENDED: '1' }, { CONTINUITY_AUTOSAVE: 'off' }, { CONTINUITY_AUTOSAVE: 'true' }]) {
     run('claude', 'tool-use', { session_id: 'off2', cwd: a }, env);
     expect(run('claude', 'stop', { session_id: 'off2', cwd: a, stop_hook_active: false }, env).stdout).toBe('');
   }
@@ -203,7 +213,7 @@ test('a locked database never blocks the stop; a lost save is reported, not sile
   expect(run('claude', 'stop', { session_id: id, cwd: a, stop_hook_active: false }).stdout).toContain('block');
   const lock = new DatabaseSync(join(home, 'continuity.db')); lock.exec('BEGIN IMMEDIATE');
   try {
-    const child = spawn(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', 'claude', 'stop'], { windowsHide: true });
+    const child = spawn(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', 'claude', 'stop'], { windowsHide: true, env: hookEnv() });
     let stdout = ''; child.stdout.on('data', chunk => { stdout += chunk; });
     child.stdin.end(JSON.stringify({ session_id: id, cwd: a, stop_hook_active: true, last_assistant_message: save({ memories: [{ key: 'k.lock', kind: 'experience', text: 'Written while the database was locked.' }] }) }));
     const started = Date.now(), code = await new Promise<number | null>(done => child.on('exit', done));
@@ -314,4 +324,79 @@ test('a secret straddling the list item length limit is still refused', () => {
   const { answer } = session('claude', a, save({ handoff: { goal: 'Long notes', status: 'in_progress', risks: [item], next: 'Continue.' } }));
   expect(JSON.parse(answer.stdout).systemMessage).toContain('looks like a secret');
   expect(host.project(a).latestHandoff()).toBeNull();
+});
+
+test('mode: attended interactive Claude sessions save by default; print, SDK, Codex and unknown sessions do not', () => {
+  const cases: [Provider, Record<string, string | undefined>, boolean][] = [
+    ['claude', { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_SESSION_ATTENDED: '1', CLAUDE_CODE_ENTRYPOINT: 'cli' }, true],
+    ['claude', { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_ENTRYPOINT: 'cli' }, true],
+    ['claude', { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_SESSION_ATTENDED: '0', CLAUDE_CODE_ENTRYPOINT: 'sdk-cli' }, false],
+    ['claude', { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_ENTRYPOINT: 'sdk-ts' }, false],
+    ['claude', { CONTINUITY_AUTOSAVE: undefined }, false],
+    ['claude', { CONTINUITY_AUTOSAVE: '0', CLAUDE_CODE_SESSION_ATTENDED: '1' }, false],
+    ['claude', { CONTINUITY_AUTOSAVE: '1', CLAUDE_CODE_SESSION_ATTENDED: '0', CLAUDE_CODE_ENTRYPOINT: 'sdk-cli' }, true],
+    ['codex', { CONTINUITY_AUTOSAVE: undefined }, false],
+    ['codex', { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_SESSION_ATTENDED: '1' }, false],
+    ['codex', { CONTINUITY_AUTOSAVE: '1' }, true],
+  ];
+  cases.forEach(([provider, env, expected], i) => {
+    const id = `mode-${i}`;
+    const edit = run(provider, 'tool-use', { session_id: id, cwd: a }, env);
+    const stop = run(provider, 'stop', { session_id: id, cwd: a, stop_hook_active: false, last_assistant_message: 'Final answer for the script.' }, env);
+    expect([edit.status, stop.status], JSON.stringify(env)).toEqual([0, 0]);
+    expect(stop.stdout.includes('"decision":"block"'), `${provider} ${JSON.stringify(env)}`).toBe(expected);
+    if (!expected) expect(stop.stdout, `${provider} ${JSON.stringify(env)}`).toBe('');
+  });
+  // Disabled sessions leave no flag files: only the four enabled cases wrote state.
+  expect(readdirSync(join(home, 'hooks', 'autosave'))).toHaveLength(4);
+});
+
+test('handoff closure: offered in the request, closed by the answer, history kept, next start shows no stale work', () => {
+  session('codex', a, save({ handoff: { goal: 'Migrate locale files to UTF-8', status: 'in_progress', remaining: ['de_DE', 'fr_FR'], next: 'Convert de_DE first.' } }));
+  const h1 = host.project(a).latestHandoff()!;
+  expect(renderBootstrap(host.bootstrap(a)!)).toContain('Migrate locale files to UTF-8');
+  // A later session edits; its save request names the open handoff by goal, never by id.
+  run('claude', 'tool-use', { session_id: 'finisher', cwd: a });
+  const request = JSON.parse(run('claude', 'stop', { session_id: 'finisher', cwd: a, stop_hook_active: false }).stdout);
+  expect(request.reason).toContain('Open handoff in this project: "Migrate locale files to UTF-8"'); expect(request.reason).not.toContain(h1.id);
+  const answer = run('claude', 'stop', { session_id: 'finisher', cwd: a, stop_hook_active: true, last_assistant_message: save({ memories: [{ key: 'locale.encoding', kind: 'decision', text: 'All locale files are stored as UTF-8 without BOM.' }], handoff: null, close_handoff: true }) });
+  expect(answer.stdout).toBe('');
+  expect(host.project(a).handoff(h1.id)).toMatchObject({ task: { goal: 'Migrate locale files to UTF-8', status: 'in_progress' }, remaining: ['de_DE', 'fr_FR'], closure: { status: 'done', closed_by: { agent: 'Claude Code', session: 'finisher' } } });
+  const next = renderBootstrap(host.bootstrap(a)!);
+  expect(next).not.toContain('Latest handoff'); expect(next).toContain('locale.encoding'); expect(next).toContain('1 older handoff');
+  // Double close is a quiet no-op that keeps the first closure.
+  expect(host.project(a).closeHandoff({ id: h1.id, from: { agent: 'Codex', session: 'late' } })).toMatchObject({ outcome: 'already_closed', handoff: { closure: { closed_by: { session: 'finisher' } } } });
+  const db = new DatabaseSync(join(home, 'continuity.db'), { readOnly: true });
+  try {
+    expect(db.prepare('SELECT count(*) AS n FROM handoff_closures').get()?.n).toBe(1);
+    expect(String(db.prepare('SELECT data FROM handoffs WHERE id = ?').get(h1.id)?.data)).not.toContain('closure');
+  } finally { db.close(); }
+  // The CLI shows the closed handoff as history, and closing again is a no-op there too.
+  const cliClose = spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, '--project', a, '--json', 'handoff', 'close', h1.id, '--agent', 'Maintainer', '--session', 'manual'], { encoding: 'utf8', windowsHide: true });
+  expect(JSON.parse(cliClose.stdout)).toMatchObject({ outcome: 'already_closed' });
+});
+
+test('handoff closure authorization: only the offered handoff, only in its own scope', () => {
+  session('claude', b, save({ handoff: { goal: 'Beta work', status: 'in_progress', next: 'Continue beta.' } }));
+  const beta = host.project(b).latestHandoff()!;
+  // Alpha has no open handoff: a close request is reported, and nothing in Beta changes.
+  const alpha = session('claude', a, save({ memories: [], close_handoff: true }));
+  expect(JSON.parse(alpha.answer.stdout).systemMessage).toContain('no open handoff was offered');
+  expect(host.project(b).handoff(beta.id).closure).toBeUndefined();
+  expect(() => host.project(a).closeHandoff({ id: beta.id, from: { agent: 'Claude Code', session: 's' } })).toThrow(/not found/);
+  // Newest open work wins; after it is closed, the older still-open handoff is shown again.
+  session('claude', b, save({ handoff: { goal: 'Beta follow-up', status: 'blocked', next: 'Wait for review.' } }));
+  expect(host.bootstrap(b)?.latest_handoff?.goal).toBe('Beta follow-up');
+  host.project(b).closeHandoff({ id: host.project(b).latestHandoff()!.id, from: { agent: 'Codex', session: 'x' } });
+  expect(host.bootstrap(b)?.latest_handoff?.goal).toBe('Beta work');
+});
+
+test('a sensitive open handoff is neither offered for closure nor replaced by an older one at start', () => {
+  const client = host.project(a), base = { completed: [], remaining: [], decisions: [], files_changed: [], risks: [] };
+  client.createHandoff({ ...base, from: { agent: 'Codex', session: 'x' }, task: { goal: 'Older open work', status: 'in_progress' }, recommended_next_action: 'Continue.' });
+  client.createHandoff({ ...base, from: { agent: 'Codex', session: 'y' }, task: { goal: 'Rotate keys', status: 'in_progress' }, recommended_next_action: 'Use api_key = "abcd1234efgh5678".' });
+  run('claude', 'tool-use', { session_id: 'sens', cwd: a });
+  const request = JSON.parse(run('claude', 'stop', { session_id: 'sens', cwd: a, stop_hook_active: false }).stdout);
+  expect(request.reason).not.toContain('Open handoff'); expect(request.reason).not.toContain('abcd1234');
+  const start = renderBootstrap(host.bootstrap(a)!); expect(start).not.toContain('Older open work'); expect(start).not.toContain('Rotate keys');
 });

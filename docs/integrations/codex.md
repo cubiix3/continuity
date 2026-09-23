@@ -47,3 +47,13 @@ not a reason to grant an agent arbitrary filesystem access. See the official
 
 Claude Code and Codex share the same adapter. No provider-specific logic is added
 to the Core. Command Code, Grok, and RIVET remain unverified.
+
+## Automatic startup context
+
+`continuity integrate codex install` adds one `SessionStart` hook to
+`~/.codex/hooks.json` (or `CODEX_HOME`). Codex runs hook commands through a shell:
+PowerShell on Windows (`commandWindows` with the `&` call operator and single-quoted
+paths), `sh` elsewhere. Plain stdout becomes developer context. Codex skips
+user hooks until they are trusted once in `/hooks`. Verified with Codex 0.156.1 on
+Windows using the installer's exact command strings (trust bypassed for the
+test run only). See [agent bootstrap](../agent-bootstrap.md).

@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
-import { join, relative } from 'node:path';
-import { ProjectClient, ProjectResolver } from '../../core/src/index.js';
+import { dirname, join, relative } from 'node:path';
+import { ProjectClient, ProjectResolver, canonicalRoot } from '../../core/src/index.js';
 import { SqliteStorage } from '../../storage-sqlite/src/index.js';
 import { FileSources, isWithin } from '../../source-files/src/index.js';
 import type { Project } from '../../core/src/contracts.js';
@@ -17,6 +17,8 @@ import { anchoredScope, readSourceScopes, sourceScopeSchema, writeSourceScope, S
 import type { SourceScope } from './source-scope.js';
 
 export const CONTINUITY_HOST_API_VERSION = 1;
+/** Bootstrap failed after the directory resolved to a registered project or workspace. */
+export class BootstrapUnavailableError extends Error { constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'BootstrapUnavailableError'; } }
 export interface HostOptions { sources?: { include?: readonly string[]; exclude?: readonly string[] } }
 
 /** Trusted composition root for local hosts. Do not pass this host into agent tools. */
@@ -130,6 +132,26 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       const source = sourceFor(project, root);
       const workspaceSource = { scan: () => { verifyWorkspace(project.root, root); return source.scan({ ...project, root }); } };
       return new ProjectClient(bound, workspaceSource, project, undefined, semantic, semantic ? config.mode : 'lexical', workspace);
+    },
+    /**
+     * Read-only agent startup index for the directory an agent runs in. Resolves the nearest registered project or
+     * workspace root without registering, syncing, or running git. Returns undefined for an unregistered directory.
+     */
+    bootstrap: (path: string, options: { budget?: number } = {}) => {
+      let current = canonicalRoot(path);
+      const projects = storage.projects(), workspaceRoots = new Map(projects.flatMap(p => storage.workspaces(p.project_id).map(w => [w.root, { project: p, workspace: w }] as const)));
+      for (;;) {
+        const scope = projects.find(p => p.root === current) ? { project: projects.find(p => p.root === current)! } : workspaceRoots.get(current);
+        if (scope) {
+          const store = boundStore('workspace' in scope ? scope.workspace.workspace_id : '');
+          const client = new ProjectClient(store, sourceFor(scope.project), scope.project, undefined, undefined, 'lexical', 'workspace' in scope ? scope.workspace : undefined);
+          try { return client.bootstrap(options); }
+          catch (error) { throw new BootstrapUnavailableError(error instanceof Error ? error.message : 'Bootstrap failed.', { cause: error }); }
+        }
+        const parent = dirname(current);
+        if (parent === current) return undefined;
+        current = parent;
+      }
     },
     project: (path: string) => {
       const project = resolver.resolve(path);

@@ -4,6 +4,7 @@ import type { ContextBundle, ContextItem, ContextRequest, Project, Resource, Sto
 import { passages } from './passages.js';
 import { rankPassages } from './ranking.js';
 import { NamespaceGuard } from '../security/namespace.js';
+import { memoryContextKind, sourceBackedCurrent } from './freshness.js';
 
 const memoryTokens = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 
@@ -20,8 +21,8 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
       const words = new Set(memoryTokens(`${m.key} ${m.text}`));
       if (!meaningful.some(t => words.has(t))) continue;
     } else if (!terms.some(t => m.text.toLowerCase().includes(t))) continue;
-    if (m.source_path && !sources.some(r => r.state === 'fresh' && r.path === m.source_path && r.hash === m.provenance.source_version)) continue;
-    candidates.push({ id: m.id, kind: m.kind === 'rule' ? 'memory' : m.kind, content: m.text, provenance: m.provenance, reasons: ['same project', m.status === 'accepted' ? 'human-reviewed claim; current sources take precedence' : m.source_path ? 'source-backed memory; source version still current' : 'agent-learned observation; not source truth or project policy', 'task term match'] });
+    if (!sourceBackedCurrent(m, sources)) continue;
+    candidates.push({ id: m.id, kind: memoryContextKind(m), content: m.text, provenance: m.provenance, reasons: ['same project', m.status === 'accepted' ? 'human-reviewed claim; current sources take precedence' : m.source_path ? 'source-backed memory; source version still current' : 'agent-learned observation; not source truth or project policy', 'task term match'] });
   }
   const handoff = storage.handoffs(project.project_id).find(h => h.provenance.workspace_id === workspaceId);
   if (handoff && terms.some(t => [handoff.task.goal, ...handoff.remaining, ...handoff.decisions, handoff.recommended_next_action].join(' ').toLowerCase().includes(t))) {

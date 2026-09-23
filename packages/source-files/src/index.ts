@@ -4,12 +4,11 @@ import { extname, isAbsolute, join, relative, sep } from 'node:path';
 import ignore from 'ignore';
 import type { Ignore } from 'ignore';
 import type { Project, Resource, SourcePort } from '../../core/src/contracts.js';
+import { looksSensitive } from '../../core/src/security/sensitive.js';
 
 const deniedName = /^(?:\.env(?:\..*)?|credentials.*|secrets.*|\.git|\.continuity|node_modules|dist|build|coverage|vendor|\.ssh|\.aws|\.venv|venv|\.next|\.cache)$|\.(?:pem|key|p12|pfx|db|sqlite|log)$/i;
 const allowedExtensions = new Set(['.md', '.mdx', '.txt', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rs', '.go', '.java', '.cs', '.c', '.h', '.cpp', '.toml', '.yaml', '.yml', '.json', '.sql', '.sh']);
-export function looksSensitive(text: string): boolean {
-  return /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[A-Z0-9]{16})|(?:password|secret|api[_-]?key|access[_-]?token)\s*[=:]\s*["']?[^\s"']{8,}/i.test(text);
-}
+export { looksSensitive };
 export function isWithin(root: string, path: string): boolean {
   const rel = relative(root, path);
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`));

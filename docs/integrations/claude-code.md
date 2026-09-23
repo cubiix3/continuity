@@ -58,3 +58,12 @@ Claude implemented the retry limit in the existing manager and recorded a decisi
 and handoff. The return session independently inspected Codex's handoff and code.
 See [the cross-agent report](cross-agent.md) for successful checks and the initial
 blocked Codex run; exit code zero alone is not treated as integration success.
+
+## Automatic startup context
+
+`continuity integrate claude install` adds one `SessionStart` hook to the user
+settings (exec form: absolute Node executable and CLI path, no shell). Fresh
+sessions in registered projects receive the [bootstrap index](../agent-bootstrap.md);
+other directories stay silent. Verified with Claude Code 2.1.280 on Windows: fresh
+`-p` sessions with all tools disabled described the project's in-progress handoff
+and memories with their trust labels, and did not mention the other fixture project.

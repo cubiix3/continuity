@@ -38,7 +38,7 @@ outer configuration key is host-specific; this is the common `mcpServers` shape,
 not a claim that every runtime accepts it. Project selection belongs in host
 configuration and must not be synthesized from tool arguments.
 
-Six tools are available:
+Seven tools are available:
 
 | Tool | Input |
 | --- | --- |
@@ -46,6 +46,7 @@ Six tools are available:
 | `continuity_search` | `query`, optional `mode` |
 | `continuity_memory_propose` | `key`, `text`, `kind`, optional `source_path`; `from.agent` and `from.session` for automatic agent-learned memory |
 | `continuity_handoff_create` | [handoff fields](handoffs.md) |
+| `continuity_bootstrap` | Empty object; read-only startup index ([agent bootstrap](agent-bootstrap.md)) |
 | `continuity_handoff_latest` | Empty object |
 | `continuity_observe` | `text`, `agent`, `session`; never auto-promoted to memory |
 

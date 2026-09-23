@@ -45,6 +45,8 @@ importers:
 
   packages/adapter-generic: {}
 
+  packages/adapter-hooks: {}
+
   packages/adapter-mcp: {}
 
   packages/cli: {}

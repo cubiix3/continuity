@@ -128,14 +128,18 @@ it('keeps HTTP diagnostics structured for missing and invalid roots with an unav
   }
 });
 
-it('exposes six scoped tools over a real MCP stdio connection', async () => {
+it('exposes seven scoped tools over a real MCP stdio connection', async () => {
   run('init');
   const transport = new StdioClientTransport({ command: process.execPath, args: [cli, '--home', home, '--project', path, 'mcp'], stderr: 'pipe' });
   const client = new Client({ name: 'continuity-test-agent', version: '1.0.0' });
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    expect(tools.tools).toHaveLength(6);
+    expect(tools.tools).toHaveLength(7);
+    const bootstrap = await client.callTool({ name: 'continuity_bootstrap', arguments: {} });
+    expect(bootstrap.isError).not.toBe(true);
+    expect(bootstrap.structuredContent).toMatchObject({ result: { bundle: { schema_version: 1, budget: { unit: 'utf8_bytes' } }, text: expect.stringContaining('Continuity · ') } });
+    expect((await client.callTool({ name: 'continuity_bootstrap', arguments: { project_id: 'foreign' } })).isError).toBe(true);
     const observed = await client.callTool({ name: 'continuity_observe', arguments: { text: 'Reconnect tests passed', agent: 'test', session: 'mcp-session' } });
     expect(observed.isError).not.toBe(true);
     expect(observed.structuredContent).toMatchObject({ result: { text: 'Reconnect tests passed', provenance: { trust: 'agent_observation', source_version: 'mcp-session' } } });

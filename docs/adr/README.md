@@ -11,3 +11,4 @@ These decisions describe implemented boundaries. Revisit them with evidence, not
 - [007 — Local Dashboard browser boundary](007-local-dashboard.md)
 - [009 — Automatic activation with agent-observation trust](009-automatic-memory.md)
 - [010: Local per-project source scope](010-local-source-scope.md)
+- [011: Agent auto-bootstrap](011-agent-auto-bootstrap.md)

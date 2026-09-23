@@ -130,13 +130,17 @@ continuity handoff latest
 
 The [runnable example](examples/README.md) covers memory and handoff inputs.
 
+To give every new agent session this context automatically, install a provider
+hook once (current `main`): `continuity integrate claude install` or
+`continuity integrate codex install`. See [agent bootstrap](docs/agent-bootstrap.md).
+
 ## Agent integrations
 
 | Integration | Status |
 | --- | --- |
-| Claude Code | Verified on Windows 2.1.278 · [setup](docs/integrations/claude-code.md) |
-| Codex | Verified on Windows CLI 0.155.1 · [setup and sandbox notes](docs/integrations/codex.md) |
-| MCP stdio | Six project-bound tools, tested with the official SDK client and real agents |
+| Claude Code | Verified on Windows 2.1.278; automatic startup context verified on 2.1.280 · [setup](docs/integrations/claude-code.md) |
+| Codex | Verified on Windows CLI 0.155.1; automatic startup context verified on 0.156.1 · [setup and sandbox notes](docs/integrations/codex.md) |
+| MCP stdio | Seven project-bound tools, tested with the official SDK client and real agents |
 | CLI and TypeScript host API | Implemented and integration-tested |
 | Local HTTP v1 | Loopback only; token, origin and scope boundaries tested |
 | RIVET | Experimental draft/shadow integration; RIVET's own state remains authoritative |
@@ -217,6 +221,8 @@ memory pending                Candidates awaiting review and unresolved conflict
 memory approve | reject <id>  Human review with --by <reviewer>
 handoff create --file <path>  Save structured JSON (use - for stdin)
 handoff latest | show <id>    Retrieve a handoff
+bootstrap                     Read-only startup index for agent sessions (main)
+integrate claude|codex        Provider SessionStart hook: install | status | remove (main)
 project list | status         Inspect local registrations
 project rebind <id>           Explicit move with --from and --to
 retention status              Retention classes and eligibility
@@ -232,7 +238,7 @@ Commands marked (main) are not in v0.1.0. Global flags: `--project <directory>`,
 ## Documentation
 
 - [Architecture](docs/architecture.md) and [decision records](docs/adr/README.md)
-- [Memory model](docs/memory-model.md) · [Handoffs](docs/handoffs.md) · [Source scope](docs/source-scope.md)
+- [Memory model](docs/memory-model.md) · [Handoffs](docs/handoffs.md) · [Agent bootstrap](docs/agent-bootstrap.md) · [Source scope](docs/source-scope.md)
 - [Dashboard](docs/dashboard.md) · [Adapters, MCP and HTTP](docs/adapters.md) · [Retrieval](docs/retrieval.md)
 - [Security model](docs/security.md) · [Operations](docs/operations.md) · [Product scope](docs/product-scope.md)
 - [Brand assets](docs/branding/README.md)

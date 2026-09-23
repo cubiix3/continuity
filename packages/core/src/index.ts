@@ -6,10 +6,13 @@ import { proposeMemory } from './memory/policy.js';
 import { NamespaceGuard } from './security/namespace.js';
 import { passages, PassageLimitError } from './context/passages.js';
 import { rankPassages } from './context/ranking.js';
+import { buildBootstrap } from './context/bootstrap.js';
 
 export * from './contracts.js';
 export * from './projects/resolver.js';
 export * from './security/namespace.js';
+export { BOOTSTRAP_BUDGET, renderBootstrap, relativeAge } from './context/bootstrap.js';
+export type { BootstrapBundle, BootstrapMemory, BootstrapHandoff } from './context/bootstrap.js';
 
 /** A host-created, project-bound capability. Adapters receive this, never storage. */
 export class ProjectClient {
@@ -168,6 +171,12 @@ export class ProjectClient {
       provenance: { project_id: this.project.project_id, ...(this.workspace ? { workspace_id: this.workspace.workspace_id } : {}), origin: `agent:${parsed.agent}`, captured_at: new Date().toISOString(), source_version: parsed.session, trust: 'agent_observation' as const } };
     this.storage.saveObservation(observation);
     return observation;
+  }
+  /** Read-only startup index from persisted state. No sync, no semantic backend, no writes. */
+  bootstrap(options: { budget?: number; now?: Date } = {}) {
+    this.assertBinding();
+    const sync = this.storage.syncState(this.project.project_id);
+    return buildBootstrap({ project: this.project, ...(this.workspace ? { workspace: this.workspace } : {}), memories: this.storage.memories(this.project.project_id), handoffs: this.storage.handoffs(this.project.project_id), sources: this.scopedResources(), ...(sync ? { sync } : {}), ...options });
   }
   latestHandoff() { this.assertBinding(); return this.storage.handoffs(this.project.project_id).find(h => h.provenance.workspace_id === this.workspace?.workspace_id) ?? null; }
   handoff(id: string) {

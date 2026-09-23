@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { ContextRequest, Handoff, Project, SourcePort, StoragePort, TokenEstimator, SemanticRetrievalPort, SemanticScope, SemanticHealth, RetrievalMode, SemanticCandidate, Workspace } from './contracts.js';
-import { handoffInputSchema, contextRequestSchema, memoryCandidateSchema, observationSchema } from './contracts.js';
+import type { ContextRequest, Handoff, HandoffClosure, MemoryProposal, Project, SourcePort, StoragePort, TokenEstimator, SemanticRetrievalPort, SemanticScope, SemanticHealth, RetrievalMode, SemanticCandidate, Workspace } from './contracts.js';
+import { handoffActive, handoffCloseSchema, openHandoff, handoffInputSchema, contextRequestSchema, memoryCandidateSchema, observationSchema } from './contracts.js';
 import { contextBroker } from './context/broker.js';
 import { proposeMemory } from './memory/policy.js';
 import { NamespaceGuard } from './security/namespace.js';
@@ -144,6 +144,16 @@ export class ProjectClient {
     this.refresh();
     return this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id), this.workspace?.workspace_id));
   }
+  /** Several proposals against one source snapshot: one refresh, each proposal in its own transaction; an invalid item fails alone. */
+  proposeAll(inputs: readonly unknown[]): (MemoryProposal | Error)[] {
+    this.refresh();
+    return inputs.map(input => {
+      try {
+        memoryCandidateSchema.parse(input);
+        return this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id), this.workspace?.workspace_id));
+      } catch (error) { return error instanceof Error ? error : new Error('Proposal failed.'); }
+    });
+  }
   memories() { this.assertBinding(); return this.storage.memories(this.project.project_id); }
   memory(id: string) {
     const memory = this.memories().find(m => m.id === id);
@@ -164,6 +174,24 @@ export class ProjectClient {
     this.storage.saveHandoff(handoff);
     return handoff;
   }
+  /**
+   * Records that a handoff's work is finished, in this client's project and workspace only. The handoff itself stays
+   * unchanged history; closing a finished or already closed handoff is a no-op.
+   */
+  closeHandoff(input: unknown): { handoff: Handoff; outcome: 'closed' | 'already_closed' } {
+    this.assertBinding();
+    const { id, from, replaced_by } = handoffCloseSchema.parse(input);
+    const find = (handoffId = id) => this.storage.handoffs(this.project.project_id).find(h => h.id === handoffId && h.provenance.workspace_id === this.workspace?.workspace_id);
+    const handoff = find();
+    if (!handoff) throw new Error('Handoff not found in this workspace.');
+    // A replacement must be another handoff of the same workspace.
+    if (replaced_by !== undefined && (replaced_by === id || !find(replaced_by))) throw new Error('Replacement handoff not found in this workspace.');
+    if (!handoffActive(handoff)) return { handoff, outcome: 'already_closed' };
+    const closure: HandoffClosure = { status: 'done', closed_at: new Date().toISOString(), closed_by: from, ...(replaced_by ? { replaced_by } : {}) };
+    return this.storage.closeHandoff(this.project.project_id, id, closure) ? { handoff: { ...handoff, closure }, outcome: 'closed' } : { handoff: find()!, outcome: 'already_closed' };
+  }
+  /** Latest handoff in this workspace that still asks for continuation, if any. */
+  activeHandoff() { this.assertBinding(); return openHandoff(this.storage.handoffs(this.project.project_id).filter(h => h.provenance.workspace_id === this.workspace?.workspace_id)) ?? null; }
   observe(input: unknown) {
     this.assertBinding();
     const parsed = observationSchema.parse(input);

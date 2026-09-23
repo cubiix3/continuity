@@ -38,10 +38,7 @@ and `continuity_handoff_latest` returns the full handoff.
 - Generate `CLAUDE.md`/`AGENTS.md` files: writes repositories and goes stale.
 - Per-project hook configuration: fragile; one global hook resolves the directory.
 
-## Session end (follow-up)
+## Session end
 
-Claude Code `Stop` hooks can ask the model to continue, which could let an agent
-decide on 0–N memory proposals and an optional handoff before finishing.
-`SessionEnd` cannot involve the model. Transcript mining is rejected: it would
-bypass the conservative memory policy. A model-aware save step is a separate
-decision; it is not part of this change.
+Decided in [ADR 012](012-agent-session-autosave.md): a gated, model-aware `Stop`
+save step. `SessionEnd` cannot involve the model. Transcript mining stays rejected.

@@ -58,11 +58,30 @@ export const handoffInputSchema = z.object({
   recommended_next_action: shortText,
 }).strict().refine(value => Buffer.byteLength(JSON.stringify(value)) <= 60000, 'Handoff exceeds 60,000 UTF-8 bytes.');
 export type HandoffInput = z.infer<typeof handoffInputSchema>;
+export const handoffCloseSchema = z.object({
+  id: z.string().min(1).max(200),
+  from: z.object({ agent: z.string().trim().min(1).max(100), session: z.string().trim().min(1).max(100) }).strict(),
+  replaced_by: z.string().min(1).max(200).optional(),
+}).strict();
+/** Lifecycle metadata recorded next to an immutable handoff: its work is finished. */
+export interface HandoffClosure { status: 'done'; closed_at: string; closed_by: { agent: string; session: string }; replaced_by?: string }
 export interface Handoff extends HandoffInput {
   schema_version: 1;
   id: string;
   project_id: string;
   provenance: Provenance;
+  /** Attached on read when the handoff was closed; never part of the stored record. */
+  closure?: HandoffClosure;
+}
+/** Work a handoff asks someone to continue: not created as done and not closed since. */
+export const handoffActive = (handoff: Handoff) => handoff.task.status !== 'done' && !handoff.closure;
+/**
+ * The handoff to continue, from handoffs ordered newest first. Closed handoffs are skipped, so an older one that is still
+ * open is found; a newest unclosed handoff created as done says the work is finished, so nothing older is resurrected.
+ */
+export function openHandoff<T extends Handoff>(handoffs: readonly T[]): T | undefined {
+  const current = handoffs.find(h => !h.closure);
+  return current && current.task.status !== 'done' ? current : undefined;
 }
 export const contextRequestSchema = z.object({
   task: z.string().trim().min(1).max(2000),
@@ -114,6 +133,8 @@ export interface StoragePort {
   saveMemory(memory: Memory): void;
   handoffs(projectId: string): Handoff[];
   saveHandoff(handoff: Handoff): void;
+  /** Records a closure once; returns false when the handoff was already closed. */
+  closeHandoff(projectId: string, handoffId: string, closure: HandoffClosure): boolean;
   saveObservation(observation: Observation): void;
   saveContext(bundle: ContextBundle, selection?: SelectionAudit): void;
   selection(projectId: string, id: string): SelectionAudit | undefined;

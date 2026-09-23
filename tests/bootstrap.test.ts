@@ -165,11 +165,11 @@ test('Claude settings install is additive, idempotent, repairable and removes on
   // A foreign hook that merely ends with the same words is not Continuity's and is never touched.
   const lookalike = { type: 'command', command: 'node', args: ['tools/other.js', 'integrate', 'claude', 'session-start'] };
   const withLookalike = JSON.parse(readFileSync(settings, 'utf8')); withLookalike.hooks.SessionStart[0].hooks.push(lookalike); writeFileSync(settings, JSON.stringify(withLookalike));
-  expect(hookIntegrationStatus(target)).toMatchObject({ state: 'installed', entries: 1 });
-  expect(installHookIntegration(target)).toMatchObject({ changed: false, entries: 1 });
+  expect(hookIntegrationStatus(target)).toMatchObject({ state: 'installed', entries: 3 });
+  expect(installHookIntegration(target)).toMatchObject({ changed: false, entries: 3 });
   const moved = claudeHookTarget(process.execPath, join(root, 'moved', 'cli', 'src', 'index.js'), home, env);
   expect(hookIntegrationStatus(moved)).toMatchObject({ state: 'stale', cli_available: false });
-  installHookIntegration(target); expect(hookIntegrationStatus(target)).toMatchObject({ state: 'installed', entries: 1 });
+  installHookIntegration(target); expect(hookIntegrationStatus(target)).toMatchObject({ state: 'installed', entries: 3 });
   removeHookIntegration(target);
   const removed = JSON.parse(readFileSync(settings, 'utf8'));
   expect(removed.hooks.SessionStart).toEqual([{ matcher: 'startup', hooks: [foreign, lookalike] }, { matcher: 'resume', hooks: [] }]); expect(removed.model).toBe('opus');
@@ -186,7 +186,7 @@ test('Codex hooks.json install quotes paths literally and restores the original 
   const hook = JSON.parse(readFileSync(target.file, 'utf8')).hooks.SessionStart[0].hooks[0];
   expect(hook.commandWindows).toBe(`& '${process.execPath}' --no-warnings '${odd.replace(/'/g, "''")}' --home '${home}' integrate codex session-start`);
   expect(hook.command).toBe(`'${process.execPath}' --no-warnings '${odd.replace(/'/g, "'\\''")}' --home '${home}' integrate codex session-start`);
-  expect(installHookIntegration(target)).toMatchObject({ entries: 1 }); expect(JSON.parse(readFileSync(target.file, 'utf8')).hooks.SessionStart).toHaveLength(1);
+  expect(installHookIntegration(target)).toMatchObject({ entries: 3 }); expect(JSON.parse(readFileSync(target.file, 'utf8')).hooks.SessionStart).toHaveLength(1);
   expect(hookIntegrationStatus(target)).toMatchObject({ state: 'stale', current: true, cli_available: false });
   removeHookIntegration(target); expect(JSON.parse(readFileSync(target.file, 'utf8'))).toEqual({ hooks: {} });
 });

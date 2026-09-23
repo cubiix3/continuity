@@ -44,6 +44,8 @@ ALTER TABLE sync_state RENAME TO sync_state_v3;
 CREATE TABLE sync_state (project_id TEXT NOT NULL REFERENCES projects(project_id), workspace_id TEXT NOT NULL DEFAULT '', data TEXT NOT NULL, PRIMARY KEY(project_id, workspace_id));
 INSERT INTO sync_state SELECT project_id, '', data FROM sync_state_v3;
 DROP TABLE sync_state_v3;
+`, String.raw`
+CREATE TABLE handoff_closures (handoff_id TEXT PRIMARY KEY REFERENCES handoffs(id), project_id TEXT NOT NULL REFERENCES projects(project_id), data TEXT NOT NULL);
 `];
 
 export function migrate(db: DatabaseSync): void {

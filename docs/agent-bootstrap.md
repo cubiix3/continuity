@@ -43,9 +43,10 @@ continuity integrate codex install    # Codex: ~/.codex/hooks.json (or CODEX_HOM
 ```
 
 From then on, `cd project` and `claude` (or `codex`) is enough. `status` reports
-`installed`, `missing`, `stale` (another command, home or a missing executable) or
-`invalid_config`. `install` repairs a stale entry. `remove` deletes only
-Continuity's entry. `--home` or `CONTINUITY_HOME` selects the Continuity state that
+`installed`, `partial` (startup context without the [autosave](agent-lifecycle.md)
+hooks), `missing`, `stale` (another command, home or a missing executable) or
+`invalid_config`. `install` repairs a stale or partial install; `--no-autosave`
+keeps startup context only. `remove` deletes only Continuity's entries. `--home` or `CONTINUITY_HOME` selects the Continuity state that
 the hook reads; the resolved home, Node executable and CLI path are written into
 the hook. Run `install` again after upgrading Continuity or moving Node (for
 example with a version manager); `status` reports `stale` until then, and a stale
@@ -65,7 +66,7 @@ Continuity hook in `/hooks`. Codex skips untrusted hooks and warns at startup.
 | --- | --- |
 | Project name, workspace label, sync age, source count | Absolute paths, internal IDs in the text output |
 | Conflict count and up to three conflict keys | Either side of a conflict as memory |
-| Latest handoff in this workspace: agent, status, goal, next action, up to three remaining items | Full handoffs, transcripts, chat history |
+| Latest open handoff in this workspace (not done, not closed): agent, status, goal, next action, up to three remaining items | Full handoffs, transcripts, chat history |
 | Up to eight durable memories: key, kind, trust label, first 160 characters | Full memory bodies, source passages, Git history |
 | Counts of further memories and older handoffs | Records that look like secrets (withheld and counted) |
 
@@ -126,5 +127,5 @@ with 100 available memories.
 
 The matcher covers `startup`, `resume`, `clear` and `compact`, so context
 returns after compaction. Hook timeout is 15 seconds; a run takes about 0.2 s,
-almost all Node start-up. Session end is not automated; see
-[ADR 011](adr/011-agent-auto-bootstrap.md).
+almost all Node start-up. The same install adds the session-end save step; see
+[agent lifecycle](agent-lifecycle.md).

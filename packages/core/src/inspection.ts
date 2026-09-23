@@ -24,7 +24,7 @@ export class Inspection {
     return { ...page, items: page.items.map(({ record, ...meta }) => {
       if ('context_id' in record) return { ...meta, record: { context_id: record.context_id, project_id: record.project_id, role: record.role, budget: record.budget, retrieval: record.retrieval, item_count: record.items.length } };
       if ('content' in record) { const { content, ...rest } = record; return { ...meta, record: { ...rest, bytes: Buffer.byteLength(content), passage_count: record.state === 'fresh' ? passages([record]).length : 0 } }; }
-      if ('task' in record) return { ...meta, record: { id: record.id, project_id: record.project_id, from: record.from, task: record.task, recommended_next_action: record.recommended_next_action, provenance: record.provenance } };
+      if ('task' in record) return { ...meta, record: { id: record.id, project_id: record.project_id, from: record.from, task: record.task, recommended_next_action: record.recommended_next_action, provenance: record.provenance, ...(record.closure ? { closure: record.closure } : {}) } };
       return { ...meta, record };
     }) };
   }

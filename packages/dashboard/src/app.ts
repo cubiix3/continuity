@@ -41,9 +41,29 @@ function workspaceName() { return workspaceId ? workspaces.find(w => w.workspace
 function route() { return location.hash.slice(2).split('?')[0]!.split('/'); }
 function go(page: string) { location.hash = `/${page}`; }
 function scopedQuery(values: Record<string, string> = {}) { return new URLSearchParams({ project: projectId, workspace: workspaceId, ...values }).toString(); }
+class ApiError extends Error { constructor(message: string, readonly status: number) { super(message); } }
 async function api<T>(path: string, values?: Record<string, string>, body?: unknown): Promise<T> {
   const response = await fetch(`/dashboard-api/${path}${values ? `?${scopedQuery(values)}` : ''}`, { headers: { 'X-Continuity-Token': token, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) });
-  const data = await response.json() as T & { error?: string }; if (!response.ok) throw new Error(data.error ?? `Request failed (${response.status}).`); return data;
+  const data = await response.json() as T & { error?: string }; if (!response.ok) throw new ApiError(data.error ?? `Request failed (${response.status}).`, response.status); return data;
+}
+/**
+ * A scope from the URL is untrusted navigation state (e.g. a bookmark from another Continuity home).
+ * The server decides whether it exists; on rejection fall back to Primary, then to the first listed project.
+ */
+async function restoreScope(requestedProject: string, requestedWorkspace: string, current: () => boolean = () => true) {
+  // Probe with explicit values; the shared scope changes only once the server has confirmed it.
+  for (const workspace of requestedWorkspace ? [requestedWorkspace, ''] : ['']) {
+    try {
+      const registration = await api<{ project: Project }>('workspaces', { project: requestedProject, workspace });
+      if (!current()) return; // A newer navigation owns the scope.
+      projectId = requestedProject; workspaceId = workspace;
+      if (!projects.some(p => p.project_id === projectId)) projects.push(registration.project);
+      return;
+    } catch (error) { if (!(error instanceof ApiError) || ![400, 409].includes(error.status)) throw error; }
+  }
+  if (!current()) return;
+  projectId = projects[0]?.project_id ?? ''; workspaceId = '';
+  if (!projectId) history.replaceState(null, '', location.hash.split('?')[0] || '#/overview');
 }
 function heading(title: string, subtitle: string) { const header = el('header', undefined, 'page-header'); header.append(el('h1', title), el('p', subtitle, 'subtitle')); main.append(header); }
 function empty(title: string, description: string) { const block = el('div', undefined, 'empty'); block.append(el('strong', title), el('p', description, 'muted')); main.append(block); }
@@ -291,11 +311,7 @@ async function start() {
   token = ((await response.json()) as { capability: string }).capability;
   const data = await api<{ projects: Project[]; next: number | null }>('projects'); projects = data.projects; nextProjects = data.next; projectId = projects[0]?.project_id ?? '';
   const savedScope = new URLSearchParams(location.hash.split('?')[1] ?? '');
-  if (savedScope.get('project')) {
-    projectId = savedScope.get('project')!; workspaceId = savedScope.get('workspace') ?? '';
-    const registration = await api<{ project: Project }>('workspaces', {});
-    if (!projects.some(p => p.project_id === projectId)) projects.push(registration.project);
-  }
+  if (savedScope.get('project')) await restoreScope(savedScope.get('project')!, savedScope.get('workspace') ?? '');
   for (const [name, pages] of pageGroups) { const group = el('div', undefined, 'nav-group'); group.append(el('span', name, 'nav-label')); for (const page of pages) group.append(link(page, `#/${slug(page)}`)); nav.append(group); }
   await selectors(); if (!location.hash) location.hash = '/overview'; else await render();
 }
@@ -303,8 +319,9 @@ window.addEventListener('hashchange', () => {
   const saved = new URLSearchParams(location.hash.split('?')[1] ?? '');
   const requested = saved.get('project');
   if (requested && (requested !== projectId || (saved.get('workspace') ?? '') !== workspaceId)) {
-    generation++; projectId = requested; workspaceId = saved.get('workspace') ?? '';
-    void selectors().then(render).catch(showError);
+    const navigation = ++generation;
+    // Only the latest navigation may apply its restored scope.
+    void restoreScope(requested, saved.get('workspace') ?? '', () => navigation === generation).then(async () => { if (navigation !== generation) return; await selectors(); if (navigation === generation) await render(); }).catch(showError);
   } else void render();
 });
 void start().catch(showError);

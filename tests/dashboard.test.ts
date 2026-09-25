@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openContinuity } from '../packages/sdk/src/index.js';
@@ -207,4 +208,24 @@ it('keeps the Overview health route read-only, authenticated and free of paths',
   expect(JSON.parse(body)).toMatchObject({ problems: [] });
   expect(await (await get(`health?project=${id}`)).json()).toMatchObject({ problems: [] });
   expect((await (await get('diagnostics')).json() as { problems: string[] }).problems.some(p => p.startsWith('inaccessible/stale registration'))).toBe(true);
+});
+
+it('reports the server-side workspace total on every selector page, whatever the number of registered workspaces', async () => {
+  // Count contract only, so the workspaces are registered in storage without Git. Git membership of real worktrees
+  // is covered in workspaces.test.ts, doctor-git-bound.test.ts and the Dashboard browser tests.
+  const storage = new SqliteStorage(join(root, 'state', 'continuity.db'));
+  try {
+    for (let i = 0; i < 56; i++) {
+      const dir = join(root, `registered-${String(i).padStart(2, '0')}`); mkdirSync(dir); const real = realpathSync.native(dir);
+      storage.registerWorkspace({ workspace_id: `ws_${randomUUID()}`, project_id: id, root: process.platform === 'win32' ? real.toLowerCase() : real });
+    }
+  } finally { storage.close(); }
+  const registered = host.inspection.workspaces(id).map(w => w.workspace_id), total = 1 + registered.length;
+  expect(registered).toHaveLength(56);
+  const first = await (await get(`workspaces?project=${id}&workspace=&limit=50`)).json() as { workspaces: { workspace_id: string }[]; next: number | null };
+  const second = await (await get(`workspaces?project=${id}&workspace=&after=${first.next}&limit=50`)).json() as { workspaces: { workspace_id: string }[]; next: number | null };
+  expect(first.workspaces).toHaveLength(50); expect(first.next).toBe(50); expect(second.next).toBeNull();
+  expect([...first.workspaces, ...second.workspaces].map(w => w.workspace_id)).toEqual(registered);
+  // The total never comes from a selector page: the project scope and a workspace beyond the first page agree.
+  for (const workspace of ['', registered.at(-1)!]) expect((await (await get(`stats?project=${id}&workspace=${workspace}`)).json() as { workspaces: number }).workspaces).toBe(total);
 });

@@ -87,9 +87,12 @@ ranking) may be admitted before lower-ranked source passages:
   not fit, no memory of lower trust uses the share. An agent observation therefore
   never takes the share while a related human-reviewed or source-backed memory
   misses out.
-- All or nothing: such a weaker higher-trust memory keeps its early place only if a
-  strong lower-trust memory was admitted with it. If none was, it is withdrawn and
-  the bundle is the one without the strong memory.
+- All or nothing: the share is first tried for the least trusted tier that has a
+  strong match. If no strong memory of that tier gets in, the attempt is undone and
+  the share is tried for the next more-trusted tier with a strong match. A weaker
+  higher-trust memory therefore keeps its early place only next to a strong
+  lower-trust memory that got in, and a strong memory that is not admitted at all
+  leaves the bundle exactly as it would be without it.
 - "Shares a term" is an exact token match without stemming ("worktrees" does not
   match "worktree"). A higher-trust memory without such a term never takes the
   share, and like any memory outside the share it is admitted after the sources only

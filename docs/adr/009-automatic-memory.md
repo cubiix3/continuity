@@ -25,9 +25,10 @@ terms may be admitted before lower-ranked source passages, within 25% of the bud
 Without this, a crowded source context dropped every memory, however relevant.
 
 - Trust order holds inside the share: every related higher-trust memory is offered it
-  first, and once one does not fit, no lower-trust memory uses it. A weaker
-  higher-trust memory keeps its early place only if a strong lower-trust memory
-  was admitted with it; otherwise the bundle is the one without the strong memory.
+  first, and once one does not fit, no lower-trust memory uses it. The share is
+  tried for the least trusted tier with a strong match first. If none of that tier
+  gets in, the attempt is undone and the next more-trusted tier is tried, so a
+  strong memory that is not admitted leaves the bundle as it would be without it.
 - Presentation order is unchanged, and without such a memory the bundle is identical.
 - The share competes with source passages for admission only, not for rank or
   authority. In a budget that fits the rules and just one of the top-ranked passage

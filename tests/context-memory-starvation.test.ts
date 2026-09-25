@@ -156,6 +156,34 @@ test('C. a strong lesson that is not admitted changes nothing: higher-trust memo
   expect(admitted, 'the lesson is admitted once the budget can hold it').toBeGreaterThan(0);
 }, 60_000);
 
+test('C. with three trust tiers, a strong lesson that is not admitted still changes nothing', async () => {
+  // Found in review: a weak source-backed memory offered for the lesson took the bytes a strong source-backed memory
+  // needed, and was then withdrawn. The share is now retried for the next more-trusted strong tier.
+  const THREE = { 'AGENTS.md': '# Rules\n\n- Keep changes small.\n', 'docs/build.md': '# Build\n\nWindows release builds are signed on the build machine before upload.\n',
+    'docs/removal.md': `# Removal\n\nRemoving an old pnpm worktree on Windows needs long path support in Git. Remove an old pnpm worktree on Windows with fs.rmSync after enabling long paths. ${'Worktree removal notes and background. '.repeat(24)}\n` };
+  let setup: { dir: string; weak: { id: string; status: string }; strongNote: { id: string; status: string } } | undefined;
+  // The reviewed case needs the weak memory to be offered first, i.e. to sort before the strong one within its tier.
+  for (let n = 0; n < 30 && !setup; n++) {
+    const dir = project(`tiers-${n}`, THREE);
+    const weak = client(dir).propose({ key: 'build.notes', kind: 'decision', text: 'Windows release builds are signed on the build machine before upload.', source_path: 'docs/build.md' });
+    const strongNote = client(dir).propose({ key: 'removal.note', kind: 'decision', text: 'Remove an old pnpm worktree on Windows with fs.rmSync after enabling long paths.', source_path: 'docs/removal.md' });
+    if (weak.id.localeCompare(strongNote.id) < 0) setup = { dir, weak, strongNote };
+  }
+  const { dir, weak, strongNote } = setup!;
+  expect([weak.status, strongNote.status]).toEqual(['persist', 'persist']);
+  const budgets = Array.from({ length: 51 }, (_, i) => 1500 + i * 50);
+  const without = new Map<number, string[]>();
+  for (const budget of budgets) without.set(budget, ids(await client(dir).context({ task: TASK, budget })));
+  expect([...without.values()].some(list => list.includes(strongNote.id)), 'the strong source-backed memory uses the share without the lesson').toBe(true);
+  const lesson = client(dir).propose({ key: 'win.rm', kind: 'experience', text: `Remove a pnpm worktree on Windows with fs.rmSync. ${'It avoids long path and junction failures in node_modules trees. '.repeat(19)}`, from: FROM });
+  let outside = 0;
+  for (const budget of budgets) {
+    const got = ids(await client(dir).context({ task: TASK, budget }));
+    if (!got.includes(lesson.id)) { outside++; expect(got, `budget ${budget}`).toEqual(without.get(budget)); }
+  }
+  expect(outside, 'the lesson stays out at the smaller budgets').toBeGreaterThan(10);
+}, 60_000);
+
 test('C. a key stuffed with task terms does not make a memory strong: only its text counts', async () => {
   const baseline = await context(6000);
   const stuffed = client().propose({ key: 'remove-old-pnpm-worktree-windows', kind: 'experience', text: 'The dashboard table renders with a narrow monospace font.', from: FROM });

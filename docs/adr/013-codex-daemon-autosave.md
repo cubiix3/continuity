@@ -25,8 +25,12 @@ It recorded no content.
 - Only daemon-hosted hooks carry `CODEX_DAEMON_SHUTDOWN_SOCKET`. `codex exec` has no
   daemon mode and runs hooks in-process without it.
 - Commands that Codex runs as tools inherit that variable, so a nested `codex exec`
-  sees it. Those commands, and only they, also carry `CODEX_CI`, `CODEX_THREAD_ID`
-  and `CODEX_SESSION_ID`.
+  sees it. Those commands also carry `CODEX_CI`, `CODEX_THREAD_ID` and
+  `CODEX_SESSION_ID`, which none of the traced hooks (TUI, exec, sub-agents) had.
+- Other processes the daemon starts pass the marker on without the tool markers, for
+  example a user's own hook or `notify` program.
+- A sub-agent's edit reaches `PostToolUse` with the parent's `session_id` plus
+  `agent_id`/`agent_type`. A sub-agent ends with `SubagentStop`, not `Stop`.
 - `codex --no-daemon` (and the embedded fallback server) run hooks in-process with
   no marker. They are indistinguishable from `codex exec`.
 
@@ -61,12 +65,24 @@ unchanged.
 ## Consequences
 
 - Plain interactive `codex` saves with no setting, like interactive Claude Code.
-- `codex exec` output is unchanged, including an exec run by an agent inside an
-  interactive session.
+  Sub-agent edits count toward the parent session. Sub-agents are never asked, because
+  `SubagentStop` is not installed.
+- `codex exec` output is unchanged when it is run from a terminal, a script, Claude
+  Code, or by an agent as a command.
+- Exception: a `codex exec` started by a user's own hook or `notify` program inside an
+  interactive session inherits the daemon's environment and counts as interactive.
+  Set `CONTINUITY_AUTOSAVE=0` for such a command.
 - `--no-daemon` sessions and app-server hosts without the daemon marker stay off.
   `CONTINUITY_AUTOSAVE=1` still works for them, because their hooks inherit the
   launch environment.
-- The markers are verified with 0.157.0 but undocumented. If Codex renames them,
-  Codex autosave turns off rather than touching `exec` output. If a future `codex exec`
-  ran inside the daemon, this decision must be revisited.
+- The daemon keeps the environment of the launch that started it. A
+  `CONTINUITY_AUTOSAVE=1` that was set up for ADR 012, for example in a terminal
+  profile, is captured by the daemon and forces autosave for every command's
+  `codex exec` too. Remove it; interactive Codex needs nothing now.
+- The markers are verified with 0.157.0 but undocumented:
+  - If Codex stops setting the daemon marker, Codex autosave turns off.
+  - If Codex stopped setting all three tool markers, execs run by agents would count
+    as interactive.
+  - If a future `codex exec` ran inside the daemon, this decision would no longer hold.
+  - Re-verify with a Codex version that changes the daemon or the hook environment.
 - Shell-only edits remain a documented gap for both providers.

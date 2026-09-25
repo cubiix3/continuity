@@ -30,6 +30,7 @@ provider reports as interactive:
 | Interactive `codex` (shared app-server daemon, the default) | on | `CODEX_DAEMON_SHUTDOWN_SOCKET`, and none of `CODEX_CI`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID` |
 | `codex exec`, and a `codex exec` an agent runs as a command | off | no daemon marker, or Codex's tool-command markers |
 | `codex --no-daemon`, embedded fallback server | off | none: indistinguishable from `codex exec` |
+| `codex exec` started by your own Codex hook or `notify` program | on (set `CONTINUITY_AUTOSAVE=0` there) | inherits the daemon marker without tool markers |
 
 Claude Code sets both variables for its hooks (verified with 2.1.280 in interactive
 and print sessions). They are not part of the documented hook contract, so an unknown
@@ -42,14 +43,20 @@ app-server daemon, and their hooks run in that daemon's process tree. `codex exe
 has no daemon mode and runs its hooks in its own process. The daemon's processes
 carry `CODEX_DAEMON_SHUTDOWN_SOCKET`. Commands that Codex runs as tools inherit it
 as well, so a `codex exec` started by an agent sees it too. Codex also gives those
-commands `CODEX_CI`, `CODEX_THREAD_ID` and `CODEX_SESSION_ID`, which its hooks never
-get. These variables are verified with 0.157.0 but undocumented. If Codex changes
-them, Codex autosave turns off; it never takes over a `codex exec` answer.
+commands `CODEX_CI`, `CODEX_THREAD_ID` and `CODEX_SESSION_ID`, which none of the traced
+hooks had. These variables are verified with 0.157.0 but undocumented. If Codex stops
+setting the daemon marker, Codex autosave turns off. If it stopped setting all three
+tool markers, a `codex exec` run by an agent would count as interactive. Re-verify
+with each Codex version that changes the daemon or the hook environment.
+
+A Codex sub-agent's edit reaches `PostToolUse` with the parent's `session_id` (plus
+`agent_id`), so it counts toward the parent session. A sub-agent ends with
+`SubagentStop`, which Continuity does not install, so only the parent is asked.
 
 Codex documents that the daemon shares the environment it started with across all
-of its sessions. A variable set when you launch `codex` therefore does not reach the
-hooks of a daemon-hosted session. Parsing the parent process's command line was
-rejected as brittle.
+of its sessions. A variable set when you launch `codex` reaches daemon-hosted hooks
+only if that launch starts the daemon, and then for every session until the daemon
+restarts. Parsing the parent process's command line was rejected as brittle.
 
 Precedence, from strongest:
 
@@ -61,7 +68,10 @@ Precedence, from strongest:
    variable was set when the daemon started.
 3. **The provider default** above.
 
-Interactive Codex needs no setting. To autosave in a `--no-daemon` Codex session,
+Interactive Codex needs no setting. If you added `CONTINUITY_AUTOSAVE=1` for Codex
+before Codex 0.157 support, remove it. A daemon started from that environment would
+also force autosave for every `codex exec` that an agent runs. To autosave in a
+`--no-daemon` Codex session,
 start it with `CONTINUITY_AUTOSAVE=1`. Every provider started from that environment
 inherits the variable, including `codex exec` and `claude -p`, whose final answers
 then become save answers. Scripts there should set `CONTINUITY_AUTOSAVE=0`. A forced
@@ -244,8 +254,9 @@ Autosave does not archive chats:
   are never read.
 - The only text read is `last_assistant_message` on the stop that answers
   Continuity's request.
-- Autosave adds no tables, event logs or telemetry. A saved handoff records its
-  author session (id, agent, time) like any other handoff.
+- Autosave adds no tables, event logs or telemetry. Saved memories and handoffs
+  record their author (agent and session id) like any attributed write, and a
+  handoff's author session is also a row in the existing `sessions` table.
 
 Per session, the hook keeps one small file under `<continuity home>/hooks/autosave/`,
 named by a hash of provider and session id. It contains
@@ -349,7 +360,9 @@ nested `tools.apply_patch` calls reached the `apply_patch` hook.
 | `codex exec` | Read-only and edit runs printed exactly `memory` and `DONE`; no request, no state file |
 
 A `codex exec` that the interactive agent ran as a command printed exactly its answer.
-Its hooks saw the daemon marker and Codex's tool-command markers.
+Its hooks saw the daemon marker and Codex's tool-command markers. A traced sub-agent's
+`apply_patch` arrived under the parent's session id. The sub-agent ended with
+`SubagentStop`, and only the parent's `Stop` followed.
 
 **Earlier runs.**
 

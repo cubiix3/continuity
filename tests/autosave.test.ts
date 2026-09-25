@@ -259,7 +259,7 @@ test('Codex install: Stop and apply_patch hooks, PowerShell-safe commands, real 
   expect(JSON.parse(cmd('install', '--no-autosave').stdout)).toMatchObject({ state: 'installed', autosave: false });
   const partial = cmd('status'); expect(partial.status).toBe(1); expect(JSON.parse(partial.stdout).state).toBe('partial');
   expect(cmd('status', '--no-autosave').status).toBe(0);
-  expect(JSON.parse(cmd('install').stdout)).toMatchObject({ state: 'installed', autosave: true, entries: 3 });
+  expect(JSON.parse(cmd('install').stdout)).toMatchObject({ state: 'installed', autosave: true, entries: 3, message: expect.stringContaining('interactive sessions (the shared app-server, not codex exec or --no-daemon)') });
   expect(cmd('status').status).toBe(0);
   expect(JSON.parse(cmd('remove').stdout)).toMatchObject({ state: 'missing', changed: true });
   expect(JSON.parse(readFileSync(join(env.CODEX_HOME, 'hooks.json'), 'utf8'))).toEqual({ hooks: {} });
@@ -346,6 +346,10 @@ test('mode: interactive Claude and daemon-hosted Codex sessions save by default;
     // A codex exec that an agent started as a tool command inherits the daemon marker, but also Codex's tool markers.
     ['codex', { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_CI: '1', CODEX_THREAD_ID: 'thr', CODEX_SESSION_ID: 'ses' }, false],
     ['codex', { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_THREAD_ID: 'thr' }, false],
+    ['codex', { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_CI: '1' }, false],
+    ['codex', { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_SESSION_ID: 'ses' }, false],
+    // An explicit force-on still wins, as documented for forced headless runs.
+    ['codex', { CONTINUITY_AUTOSAVE: '1', CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_CI: '1', CODEX_THREAD_ID: 'thr' }, true],
   ];
   cases.forEach(([provider, env, expected], i) => {
     const id = `mode-${i}`;
@@ -355,8 +359,8 @@ test('mode: interactive Claude and daemon-hosted Codex sessions save by default;
     expect(stop.stdout.includes('"decision":"block"'), `${provider} ${JSON.stringify(env)}`).toBe(expected);
     if (!expected) expect(stop.stdout, `${provider} ${JSON.stringify(env)}`).toBe('');
   });
-  // Disabled sessions leave no flag files: only the five enabled cases wrote state.
-  expect(readdirSync(join(home, 'hooks', 'autosave'))).toHaveLength(5);
+  // Disabled sessions leave no flag files: only the six enabled cases wrote state.
+  expect(readdirSync(join(home, 'hooks', 'autosave'))).toHaveLength(6);
 });
 
 const CODEX_TUI = { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1' };
@@ -394,6 +398,14 @@ test('attribution: only the session whose own edit tool ran is asked, never anot
   expect(run('codex', 'stop', { session_id: 'writer', cwd: a, stop_hook_active: false }, CODEX_TUI).stdout).toContain('"decision":"block"');
   // Only edit tools reach the flag: Codex reports shell commands as Bash, which the installed matcher never routes.
   expect(codexHookTarget(process.execPath, cli, home).entries.find(e => e.event === 'PostToolUse')?.matcher).toBe('apply_patch');
+});
+
+test('Codex sub-agents: their edits arrive under the parent session and only the parent is asked', () => {
+  // Codex 0.157 reports a sub-agent's edit with the parent's session_id plus agent_id/agent_type. A sub-agent ends with
+  // SubagentStop, which Continuity does not install, so it never gets a save request and its result reaches the parent.
+  expect(run('codex', 'tool-use', { ...codexEdit('parent', a), agent_id: 'agent-1', agent_type: 'default', turn_id: 'sub-turn' }, CODEX_TUI).stdout).toBe('');
+  expect(codexHookTarget(process.execPath, cli, home).entries.map(e => e.event)).toEqual(['SessionStart', 'PostToolUse', 'Stop']);
+  expect(run('codex', 'stop', { session_id: 'parent', cwd: a, turn_id: 'parent-turn', stop_hook_active: false, last_assistant_message: 'The sub-agent added the function.' }, CODEX_TUI).stdout).toContain('"decision":"block"');
 });
 
 test('session flags stay content-free and abandoned ones are removed after a week', () => {

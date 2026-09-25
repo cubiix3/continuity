@@ -113,7 +113,7 @@ and dropped before storage.
 
 A handoff close applies only to the open handoff the host offered in that session's
 request. It is bound to the same project and workspace, and it never rewrites the
-handoff. Autosave runs by default only in attended interactive sessions, so headless
+handoff. Autosave runs by default only in interactive sessions, so headless
 runs keep their final output. The mode comes from the hook's environment: Claude Code's
 session variables, and for Codex the app-server daemon marker without Codex's
 tool-command markers. Whoever controls that environment can switch autosave, as with

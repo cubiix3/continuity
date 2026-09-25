@@ -34,6 +34,14 @@ Without this, a crowded source context dropped every memory, however relevant.
   authority. In a budget that fits the rules and just one of the top-ranked passage
   and a strong memory, the memory is admitted if it fits the share.
 
+Maintainer decision (2026-09-25): in tight context budgets, a strongly relevant
+memory may displace a top-ranked source passage within the documented 25% share.
+This is intended. It is not a change of trust or authority:
+
+- rules stay first;
+- trust, freshness and conflict rules are unchanged;
+- sources remain more authoritative than agent observations.
+
 ## Compatibility and trust
 
 No migration, new tables, bulk activation, provider hook or LLM summary. Existing

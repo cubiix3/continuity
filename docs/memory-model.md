@@ -111,7 +111,10 @@ authority. When the budget fits the rules plus either the top-ranked source pass
 or a strong memory, but not both, the memory is admitted if it fits the share;
 otherwise the source passage is, as before. Protecting the top-ranked passage
 instead would keep a strong lesson out of the default 6 KB context whenever rules
-take most of it.
+take most of it. This is a confirmed maintainer decision, recorded in
+[ADR 009](adr/009-automatic-memory.md). It changes admission only: rules stay
+first, trust, freshness and conflict rules are unchanged, and sources remain more
+authoritative than agent observations.
 
 Only `persist` and `accepted` are eligible. Quarantined, rejected, forgotten and
 superseded rows are excluded. A source-bound memory must still match the current

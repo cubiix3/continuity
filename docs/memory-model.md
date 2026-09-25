@@ -71,6 +71,51 @@ not source truth or project policy. Memory records categorized as `rule` are del
 as memories; only actual source rules occupy the project-rule context kind. The stored
 category remains intact. No source retrieval/ranking policy is changed.
 
+The byte budget admits items in that order, first fit, with one bounded exception.
+Once current rules are in, a memory whose text covers at least half of the
+meaningful task terms (the ratio that separates a strong from a weak match in source
+ranking) may be admitted before lower-ranked source passages:
+
+- Such memories use at most 25% of the budget. A typical memory item is about
+  700 bytes with its provenance, so 25% of the 6,000-byte default holds one or two,
+  while rules and sources keep at least 75%. A 10% share would not hold one memory
+  at the default budget. The longest allowed memory (2,000 ASCII characters, about
+  2.5 KB) fits the share from about 10 KB; multibyte text is larger.
+- Trust order is kept. The share goes through memories in their usual order (trust,
+  then id). Every memory of higher trust that shares a meaningful task term with the
+  task is offered the share before a strong lower-trust memory. If one of them does
+  not fit, no memory of lower trust uses the share. An agent observation therefore
+  never takes the share while a related human-reviewed or source-backed memory
+  misses out.
+- All or nothing: the share is first tried for the least trusted tier that has a
+  strong match. If no strong memory of that tier gets in, the attempt is undone and
+  the share is tried for the next more-trusted tier with a strong match. A weaker
+  higher-trust memory therefore keeps its early place only next to a strong
+  lower-trust memory that got in, and a strong memory that is not admitted at all
+  leaves the bundle exactly as it would be without it.
+- "Shares a term" is an exact token match without stemming ("worktrees" does not
+  match "worktree"). A higher-trust memory without such a term never takes the
+  share, and like any memory outside the share it is admitted after the sources only
+  if the remaining budget fits it.
+- Strength counts the delivered text only, never the key.
+- A memory admitted through the share is still presented after the sources, with
+  the reason `strong task match: n/m terms; bounded memory share` or
+  `bounded memory share: higher trust than a strong match`. A memory that does not
+  fit the share gets no such reason and competes for the remaining budget as before.
+- Rules are never displaced. Stale source-backed memories stay excluded, and
+  quarantined conflicts are never candidates.
+- Without a strong match the bundle is unchanged.
+
+The share does compete with current source passages for admission, not for rank or
+authority. When the budget fits the rules plus either the top-ranked source passage
+or a strong memory, but not both, the memory is admitted if it fits the share;
+otherwise the source passage is, as before. Protecting the top-ranked passage
+instead would keep a strong lesson out of the default 6 KB context whenever rules
+take most of it. This is a confirmed maintainer decision, recorded in
+[ADR 009](adr/009-automatic-memory.md). It changes admission only: rules stay
+first, trust, freshness and conflict rules are unchanged, and sources remain more
+authoritative than agent observations.
+
 Only `persist` and `accepted` are eligible. Quarantined, rejected, forgotten and
 superseded rows are excluded. A source-bound memory must still match the current
 source path/hash even after human approval. An active **stored status** is not a

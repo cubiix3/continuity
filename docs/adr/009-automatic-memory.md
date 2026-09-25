@@ -19,6 +19,29 @@ source-backed and agent-learned memories. Agent lessons require meaningful token
 overlap; they are explicitly observations, including when their kind is `rule`.
 All source-backed memories retain source-hash freshness checks.
 
+Admission to the byte budget follows the same order. There is one bounded exception:
+after current rules, a memory whose text covers at least half of the meaningful task
+terms may be admitted before lower-ranked source passages, within 25% of the budget.
+Without this, a crowded source context dropped every memory, however relevant.
+
+- Trust order holds inside the share: every related higher-trust memory is offered it
+  first, and once one does not fit, no lower-trust memory uses it. The share is
+  tried for the least trusted tier with a strong match first. If none of that tier
+  gets in, the attempt is undone and the next more-trusted tier is tried, so a
+  strong memory that is not admitted leaves the bundle as it would be without it.
+- Presentation order is unchanged, and without such a memory the bundle is identical.
+- The share competes with source passages for admission only, not for rank or
+  authority. In a budget that fits the rules and just one of the top-ranked passage
+  and a strong memory, the memory is admitted if it fits the share.
+
+Maintainer decision (2026-09-25): in tight context budgets, a strongly relevant
+memory may displace a top-ranked source passage within the documented 25% share.
+This is intended. It is not a change of trust or authority:
+
+- rules stay first;
+- trust, freshness and conflict rules are unchanged;
+- sources remain more authoritative than agent observations.
+
 ## Compatibility and trust
 
 No migration, new tables, bulk activation, provider hook or LLM summary. Existing

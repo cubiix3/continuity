@@ -7,6 +7,14 @@ import { NamespaceGuard } from '../security/namespace.js';
 import { memoryContextKind, sourceBackedCurrent } from './freshness.js';
 
 const memoryTokens = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+/**
+ * Memories follow every source passage in rank order, so a crowded source context used to drop them all. A memory whose
+ * text covers at least half of the meaningful task terms (the ratio that separates a strong from a weak OR match in
+ * ranking) may be selected ahead of lower-ranked source passages, within this share of the byte budget. A typical memory
+ * item is about 700 bytes, so a quarter of the 6,000-byte default holds one or two, while rules and ranked sources keep
+ * at least three quarters of every budget.
+ */
+const MEMORY_SHARE = 0.25;
 
 export function contextBroker(storage: StoragePort, project: Project, request: ContextRequest, sources: Resource[], estimator?: TokenEstimator, ranked?: { items: ContextItem[]; retrieval: NonNullable<ContextBundle['retrieval']> }, workspaceId?: string): ContextBundle {
   const { task, role, budget, provider_model_hint } = contextRequestSchema.parse(request);
@@ -15,6 +23,7 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
   const terms = task.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
   const meaningful = memoryTokens(task).filter(t => t.length > 2 && !['the', 'and', 'for', 'with', 'this', 'that', 'from', 'are', 'was', 'into', 'how', 'can', 'should', 'project'].includes(t));
   const memoryPriority = (m: ReturnType<StoragePort['memories']>[number]) => m.status === 'accepted' ? 0 : m.source_path ? 1 : 2;
+  const wanted = new Set(meaningful), memories: { item: ContextItem; tier: number; matched: number }[] = [];
   for (const m of storage.memories(project.project_id).sort((a, b) => memoryPriority(a) - memoryPriority(b) || a.id.localeCompare(b.id))) {
     if (!['persist', 'accepted'].includes(m.status)) continue;
     if (m.provenance.trust === 'agent_observation' && m.status !== 'accepted') {
@@ -22,7 +31,11 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
       if (!meaningful.some(t => words.has(t))) continue;
     } else if (!terms.some(t => m.text.toLowerCase().includes(t))) continue;
     if (!sourceBackedCurrent(m, sources)) continue;
-    candidates.push({ id: m.id, kind: memoryContextKind(m), content: m.text, provenance: m.provenance, reasons: ['same project', m.status === 'accepted' ? 'human-reviewed claim; current sources take precedence' : m.source_path ? 'source-backed memory; source version still current' : 'agent-learned observation; not source truth or project policy', 'task term match'] });
+    const item: ContextItem = { id: m.id, kind: memoryContextKind(m), content: m.text, provenance: m.provenance, reasons: ['same project', m.status === 'accepted' ? 'human-reviewed claim; current sources take precedence' : m.source_path ? 'source-backed memory; source version still current' : 'agent-learned observation; not source truth or project policy', 'task term match'] };
+    // Strength counts only the delivered text, never the key.
+    const said = new Set(memoryTokens(m.text));
+    memories.push({ item, tier: memoryPriority(m), matched: [...wanted].filter(t => said.has(t)).length });
+    candidates.push(item);
   }
   const handoff = storage.handoffs(project.project_id).find(h => h.provenance.workspace_id === workspaceId);
   if (handoff && terms.some(t => [handoff.task.goal, ...handoff.remaining, ...handoff.decisions, handoff.recommended_next_action].join(' ').toLowerCase().includes(t))) {
@@ -43,22 +56,52 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
     if (!Number.isSafeInteger(value) || value < 0) throw new Error('Token estimator returned an invalid estimate.');
     bundle.budget.estimated_tokens = value;
   };
-  const seen = new Set<string>();
-  const selection: SelectionAudit = { candidates: candidates.length, entries: [] };
-  const record = (item: ContextItem, outcome: SelectionAudit['entries'][number]['outcome']) => {
-    if (selection.entries.length < 500) selection.entries.push({ id: item.id, source: item.provenance.origin, outcome, reasons: item.reasons });
-  };
+  const seen = new Set<string>(), duplicate = new Set<ContextItem>();
   for (const item of candidates) {
     guard.assert(item.provenance.project_id);
-    if (seen.has(item.content)) { record(item, 'duplicate'); continue; }
-    seen.add(item.content);
-    bundle.items.push(item);
-    estimate();
-    bundle.budget.used = budget; // Reserve maximum digit width while measuring.
-    if (size() > budget) { bundle.items.pop(); estimate(); record(item, 'budget'); }
-    else record(item, 'included');
+    if (seen.has(item.content)) duplicate.add(item); else seen.add(item.content);
   }
-  bundle.budget.used = budget;
+  const rank = new Map(candidates.map((item, i) => [item, i])), included = new Set<ContextItem>();
+  bundle.budget.used = budget; // Reserve maximum digit width while measuring.
+  /**
+   * Inserts at the item's rank position, so the bundle is always measured in final order. With a limit, the item must
+   * also add no more than `limit` bytes; returns the bytes it added (measured only then: one serialization otherwise).
+   */
+  const add = (item: ContextItem, limit?: number) => {
+    if (duplicate.has(item) || included.has(item)) return 0;
+    const before = limit === undefined ? 0 : size(), at = bundle.items.findIndex(i => rank.get(i)! > rank.get(item)!);
+    bundle.items.splice(at < 0 ? bundle.items.length : at, 0, item);
+    estimate();
+    const after = size();
+    if (after > budget || (limit !== undefined && after - before > limit)) { bundle.items.splice(bundle.items.indexOf(item), 1); estimate(); return 0; }
+    included.add(item);
+    return limit === undefined ? 0 : after - before;
+  };
+  // Current rules first (ranking puts them at the front, so this is the old prefix). Then, within a bounded share, strongly
+  // matching memories in their usual order. Trust is kept: every related memory of higher trust is offered the share
+  // first, and once one of them does not fit, no memory of lower trust may use it. Then every candidate in rank order,
+  // first fit, as before. Without a strong memory the result is unchanged.
+  for (const item of candidates) if (item.kind === 'rule') add(item);
+  const strong = (m: { matched: number }) => m.matched > 0 && m.matched * 2 >= wanted.size;
+  // The share is tried for the least trusted tier with a strong match first. If no strong memory of that tier gets in,
+  // the attempt is undone (so it changes nothing) and the next more-trusted tier with a strong match is tried.
+  for (const lowest of [...new Set(memories.filter(strong).map(m => m.tier))].sort((a, b) => b - a)) {
+    let share = Math.floor(budget * MEMORY_SHARE), blocked = Infinity;
+    const shared: typeof memories = [];
+    for (const m of memories) {
+      if (m.tier > lowest || !m.matched || (m.tier === lowest && !strong(m))) continue;
+      if (m.tier > blocked) break;
+      m.item.reasons.push(strong(m) ? `strong task match: ${m.matched}/${wanted.size} terms; bounded memory share` : 'bounded memory share: higher trust than a strong match');
+      const added = add(m.item, share);
+      if (added) { share -= added; shared.push(m); }
+      else { m.item.reasons.pop(); if (!duplicate.has(m.item)) blocked = Math.min(blocked, m.tier); }
+    }
+    if (shared.some(m => m.tier === lowest)) break;
+    for (const m of shared) { bundle.items.splice(bundle.items.indexOf(m.item), 1); included.delete(m.item); m.item.reasons.pop(); }
+    estimate();
+  }
+  for (const item of candidates) add(item);
+  const selection: SelectionAudit = { candidates: candidates.length, entries: candidates.slice(0, 500).map(item => ({ id: item.id, source: item.provenance.origin, outcome: duplicate.has(item) ? 'duplicate' : included.has(item) ? 'included' : 'budget', reasons: item.reasons })) };
   for (let n = 0; n < 4; n++) bundle.budget.used = size();
   if (size() > budget) throw new Error('Context metadata exceeds byte budget.');
   storage.saveContext(bundle, selection);

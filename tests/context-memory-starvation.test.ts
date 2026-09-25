@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { openContinuity } from '../packages/sdk/src/index.js';
-import type { ContextBundle, ContextItem } from '../packages/core/src/contracts.js';
+import type { ContextBundle, ContextItem, Memory, Project, StoragePort, TokenEstimator, Trust } from '../packages/core/src/contracts.js';
+import { contextBroker } from '../packages/core/src/context/broker.js';
 
 // A crowded project: three current rule files and many small documents that mention Windows, pnpm, worktrees and
 // removal in passing. Small passages leave no budget gap large enough for a memory once sources have filled it.
@@ -113,16 +114,37 @@ test('C. trust order holds among strong memories; an agent lesson never takes th
   expectRankOrder(large.bundle, large.audit);
 });
 
-test('C. a weakly matching higher-trust memory keeps the outcome it had without the lesson', async () => {
+test('C. a related higher-trust memory is offered the share before a strong agent lesson', async () => {
   const weakHuman = human(path, { key: 'terminal.policy', kind: 'decision', text: 'The Windows terminal is the supported shell for release checks.' });
-  const before = await context(6000);
   const lesson = client().propose(AGENT);
-  const after = await context(6000);
-  // The share is for strong matches only; a weak memory of any trust keeps its previous (after-sources) admission.
-  expect(after.outcome(weakHuman.id)).toBe(before.outcome(weakHuman.id));
-  expect(after.outcome(lesson.id)).toBe('included');
-  const order = after.bundle.items.filter(i => !isSource(i)).map(i => i.id);
-  expect(order.indexOf(weakHuman.id), 'a human-reviewed memory is still presented first').toBeLessThan(order.indexOf(lesson.id));
+  const { bundle, outcome } = await context(6000);
+  expect([outcome(weakHuman.id), outcome(lesson.id)]).toEqual(['included', 'included']);
+  const order = bundle.items.filter(i => !isSource(i));
+  expect(order.map(i => i.id)).toEqual([weakHuman.id, lesson.id]);
+  expect(order[0]!.reasons).toContain('bounded memory share: higher trust than a strong match');
+});
+
+test('C. an agent lesson is never admitted while a related human-reviewed memory is left out, at any budget', async () => {
+  // Found in review: the lesson used to take the share first and push this weaker human-reviewed memory out.
+  const dir = project('trust', EDGE);
+  const weakHuman = human(dir, { key: 'term.policy', kind: 'decision', text: 'The Windows terminal is the supported shell for release checks and demos.' });
+  const lesson = client(dir).propose({ key: 'win.rm', kind: 'experience', text: 'Remove a pnpm worktree on Windows with fs.rmSync.', from: FROM });
+  const all = await context(32000, dir);
+  expect(all.bundle.items.map(i => i.kind)).toEqual(['rule', 'source', 'decision', 'experience']);
+  const floor = bytes({ ...all.bundle, items: all.bundle.items.slice(0, 2) });
+  for (let budget = all.bundle.budget.used; budget >= floor; budget -= 7) {
+    const { outcome } = await context(budget, dir);
+    expect(outcome(lesson.id) === 'included' && outcome(weakHuman.id) !== 'included', `budget ${budget}`).toBe(false);
+  }
+});
+
+test('C. a key stuffed with task terms does not make a memory strong: only its text counts', async () => {
+  const baseline = await context(6000);
+  const stuffed = client().propose({ key: 'remove-old-pnpm-worktree-windows', kind: 'experience', text: 'The dashboard table renders with a narrow monospace font.', from: FROM });
+  expect(stuffed.status).toBe('persist');
+  const { bundle, audit } = await context(6000);
+  expect(ids(bundle)).toEqual(ids(baseline.bundle));
+  expect(audit.entries.find(e => e.id === stuffed.id)?.reasons.some(r => r.includes('bounded memory share'))).toBe(false);
 });
 
 test('D. a stale source-backed memory stays excluded however strongly it matches', async () => {
@@ -157,25 +179,32 @@ async function edge(name: string, text: string) {
   const all = await context(32000, dir);
   expect(all.bundle.items.map(i => i.kind)).toEqual(['rule', 'source', 'experience']);
   const [, source, lesson] = all.bundle.items.map(i => bytes(i) + 1);
+  // At 32 KB the memory entered through the share and carries its reason; without the share it is that much smaller.
+  const reason = all.bundle.items[2]!.reasons.find(r => r.includes('bounded memory share'));
+  const viaShare = all.bundle.budget.used, withoutShare = viaShare - (reason ? bytes(reason) + 1 : 0);
   // One byte short of everything: rules + source fits, rules + memory fits, all three do not. The bundle states its
   // requested budget, so a shorter number shrinks the bundle as well.
-  const full = all.bundle.budget.used, tight = full - 1 - (String(32000).length - String(full - 1).length);
+  const short = (full: number) => full - 1 - (String(32000).length - String(full - 1).length);
   expect(Math.max(source!, lesson!)).toBeLessThan(source! + lesson!);
-  return { dir, memory, lesson: lesson!, tight, result: await context(tight, dir) };
+  return { dir, memory, lesson: lesson!, fits: short(viaShare), falls: short(withoutShare) };
 }
 
 test('F. budget edge, memory within its share: rules plus either item fit, not both, and the strong memory is admitted', async () => {
-  const { memory, lesson, tight, result } = await edge('edge-fit', 'Remove a pnpm worktree on Windows with fs.rmSync.');
+  const { dir, memory, lesson, fits: tight } = await edge('edge-fit', 'Remove a pnpm worktree on Windows with fs.rmSync.');
+  const result = await context(tight, dir);
   expect(lesson).toBeLessThanOrEqual(Math.floor(tight * SHARE));
   expect(result.bundle.items.map(i => i.kind)).toEqual(['rule', 'experience']);
   expect(result.outcome(memory.id)).toBe('included');
 });
 
 test('F. budget edge, memory larger than its share: the ranked source is admitted as before', async () => {
-  const { memory, lesson, tight, result } = await edge('edge-large', `Remove a pnpm worktree on Windows with fs.rmSync. ${'It avoids long path and junction failures. '.repeat(14)}`);
+  const { dir, memory, lesson, falls: tight } = await edge('edge-large', `Remove a pnpm worktree on Windows with fs.rmSync. ${'It avoids long path and junction failures. '.repeat(14)}`);
+  const result = await context(tight, dir);
   expect(lesson).toBeGreaterThan(Math.floor(tight * SHARE));
   expect(result.bundle.items.map(i => i.kind)).toEqual(['rule', 'source']);
   expect(result.outcome(memory.id)).toBe('budget');
+  // The share reason is only attached when the share admitted the memory.
+  expect(result.audit.entries.find(e => e.id === memory.id)!.reasons.some(r => r.includes('bounded memory share'))).toBe(false);
 });
 
 test('F. the smallest budget stays valid and never exceeds the request', async () => {
@@ -250,4 +279,41 @@ test('the real CLI context path includes the lesson', () => {
   const bundle = JSON.parse(run.stdout) as ContextBundle;
   expect(bundle.items.some(i => i.content === AGENT.text)).toBe(true);
   expect(bundle.budget.used).toBeLessThanOrEqual(6000);
+});
+
+test('reference: without a strong memory, selection equals the previous single first-fit pass, with and without an estimator', () => {
+  const project: Project = { project_id: 'prj_reference', name: 'Reference', identity_version: 1, root: 'reference' };
+  const provenance = (origin: string, trust: Trust = 'authoritative') => ({ project_id: project.project_id, origin, captured_at: '2026-01-01T00:00:00.000Z', source_version: 'v'.repeat(64), trust });
+  const passage = (i: number, kind: 'rule' | 'source', words: number): ContextItem => ({ id: `psg_${String(i).padStart(4, '0')}`, kind, content: `${kind} ${i} ${'worktree windows notes '.repeat(words)}`, provenance: provenance(`docs/${i}.md`), passage: { path: `docs/${i}.md`, start_line: 1, end_line: 3 }, reasons: ['same project', 'authoritative current source'] });
+  const ranked = [...[0, 1, 2].map(i => passage(i, 'rule', 3 + i * 4)), ...Array.from({ length: 40 }, (_, i) => passage(10 + i, 'source', 2 + (i * 7) % 23))];
+  ranked.push({ ...ranked[5]!, id: 'psg_duplicate' });
+  const memory = (id: string, text: string, status: Memory['status'], trust: Trust): Memory => ({ id, key: id, text, kind: 'experience', status, reason: 'fixture', project_id: project.project_id, provenance: provenance('agent:Fixture', trust) });
+  // All weak: each covers one of the five meaningful task terms.
+  const memories = [memory('mem_a', 'The Windows terminal renders the table with a narrow font.', 'persist', 'agent_observation'),
+    memory('mem_b', 'Releases on Windows are cut every second Thursday after review.', 'accepted', 'verified'), memory('mem_c', 'Worktree names stay short.', 'persist', 'agent_observation')];
+  const storage = { memories: () => memories.map(m => ({ ...m })), handoffs: () => [], saveContext: () => undefined, search: () => [] } as unknown as StoragePort;
+  const estimator: TokenEstimator = { estimate: (text: string) => Math.ceil(text.length / 3) };
+  const broker = (budget: number, est?: TokenEstimator) => contextBroker(storage, project, { task: TASK, budget }, [], est, { items: ranked.map(i => ({ ...i, reasons: [...i.reasons] })), retrieval: { requested: 'lexical', effective: 'lexical', status: 'fixture' } });
+  /** The previous selection loop, verbatim in behaviour, over the same candidates and bundle skeleton. */
+  const previous = (skeleton: ContextBundle, candidates: ContextItem[], budget: number, est?: TokenEstimator) => {
+    const bundle: ContextBundle = { ...skeleton, items: [], budget: { ...skeleton.budget, ...(est ? { estimated_tokens: 0 } : {}) } };
+    const size = () => Buffer.byteLength(JSON.stringify(bundle)), estimate = () => { if (est) bundle.budget.estimated_tokens = est.estimate(JSON.stringify(bundle.items)); };
+    for (const item of candidates) {
+      bundle.items.push(item); estimate(); bundle.budget.used = budget;
+      if (size() > budget) { bundle.items.pop(); estimate(); }
+    }
+    bundle.budget.used = budget;
+    for (let n = 0; n < 4; n++) bundle.budget.used = size();
+    return bundle;
+  };
+  for (const est of [undefined, estimator]) {
+    const everything = broker(32000, est);
+    expect(everything.items).toHaveLength(ranked.length - 1 + memories.length);
+    expect(everything.items.flatMap(i => i.reasons).some(r => r.includes('bounded memory share'))).toBe(false);
+    for (let budget = 512; budget <= 32000; budget += 499) {
+      const actual = broker(budget, est), expected = previous(actual, everything.items, budget, est);
+      expect(actual.items.map(i => i.id), `budget ${budget}`).toEqual(expected.items.map(i => i.id));
+      expect(actual.budget).toEqual(expected.budget);
+    }
+  }
 });

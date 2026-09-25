@@ -72,29 +72,36 @@ as memories; only actual source rules occupy the project-rule context kind. The 
 category remains intact. No source retrieval/ranking policy is changed.
 
 The byte budget admits items in that order, first fit, with one bounded exception.
-Once current rules are in, a relevant memory that covers at least half of the
-meaningful task terms (the bar between a strong and a weak match in source ranking)
-may be admitted before lower-ranked source passages:
+Once current rules are in, a memory whose text covers at least half of the
+meaningful task terms (the ratio that separates a strong from a weak match in source
+ranking) may be admitted before lower-ranked source passages:
 
-- such memories use at most 25% of the budget, in their usual order (trust, then
-  id). A typical memory item is about 700 bytes with its provenance, so 25% of the
-  6,000-byte default holds one or two, while rules and sources keep at least 75%.
-  A 10% share would not hold one memory at the default budget. The longest allowed
-  memory (2,000 characters, about 2.5 KB) fits the share from about 10 KB;
-- the memory is still presented after the sources, with the reason
-  `strong task match: n/m terms; bounded memory share`;
-- a memory that does not fit the share competes for the remaining budget as before;
-- rules are never displaced;
-- stale source-backed memories stay excluded, and quarantined conflicts are never
-  candidates;
-- without a strong match, the bundle is unchanged;
-- a weakly matching memory of any trust never uses the share. It is admitted after
-  the sources, as before, only if the remaining budget still fits it. The trust order
-  above therefore holds among memories of the same relevance tier.
+- Such memories use at most 25% of the budget. A typical memory item is about
+  700 bytes with its provenance, so 25% of the 6,000-byte default holds one or two,
+  while rules and sources keep at least 75%. A 10% share would not hold one memory
+  at the default budget. The longest allowed memory (2,000 ASCII characters, about
+  2.5 KB) fits the share from about 10 KB; multibyte text is larger.
+- Trust order is kept. The share goes through memories in their usual order (trust,
+  then id). Every memory of higher trust that shares a meaningful task term with the
+  task is offered the share before a strong lower-trust memory. If one of them does
+  not fit, no memory of lower trust uses the share. An agent observation therefore
+  never takes the share while a related human-reviewed or source-backed memory
+  misses out.
+- Strength counts the delivered text only, never the key.
+- A memory admitted through the share is still presented after the sources, with
+  the reason `strong task match: n/m terms; bounded memory share` or
+  `bounded memory share: higher trust than a strong match`. A memory that does not
+  fit the share gets no such reason and competes for the remaining budget as before.
+- Rules are never displaced. Stale source-backed memories stay excluded, and
+  quarantined conflicts are never candidates.
+- Without a strong match the bundle is unchanged.
 
-When the budget fits the rules plus either the top-ranked source passage or a strong
-memory, but not both, the strong memory is admitted if it fits the share. Otherwise
-the source passage is, as before.
+The share does compete with current source passages for admission, not for rank or
+authority. When the budget fits the rules plus either the top-ranked source passage
+or a strong memory, but not both, the memory is admitted if it fits the share;
+otherwise the source passage is, as before. Protecting the top-ranked passage
+instead would keep a strong lesson out of the default 6 KB context whenever rules
+take most of it.
 
 Only `persist` and `accepted` are eligible. Quarantined, rejected, forgotten and
 superseded rows are excluded. A source-bound memory must still match the current

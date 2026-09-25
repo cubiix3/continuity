@@ -61,8 +61,8 @@ changes. Git remains responsible for durable source history.
 
 The broker ranks project rules before FTS5 matches, then relevant source-backed
 memories. Ties use path and ID. Deduplication is by exact selected text. After the
-rules, memories that match at least half of the meaningful task terms may use up
-to 25% of the budget before lower-ranked passages; see the
+rules, memories whose text matches at least half of the meaningful task terms may
+use up to 25% of the budget before lower-ranked passages, in trust order; see the
 [memory model](memory-model.md#context-and-trust). Large
 sources contribute a bounded excerpt around the first matching line; explanations
 mark the excerpt. Roles are validated and recorded; v0.1 has no role-specific

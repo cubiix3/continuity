@@ -8,8 +8,8 @@ import { memoryContextKind, sourceBackedCurrent } from './freshness.js';
 
 const memoryTokens = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 /**
- * Memories follow every source passage in rank order, so a crowded source context used to drop them all. A memory that
- * covers at least half of the meaningful task terms (the same bar that separates a strong from a weak OR match in
+ * Memories follow every source passage in rank order, so a crowded source context used to drop them all. A memory whose
+ * text covers at least half of the meaningful task terms (the ratio that separates a strong from a weak OR match in
  * ranking) may be selected ahead of lower-ranked source passages, within this share of the byte budget. A typical memory
  * item is about 700 bytes, so a quarter of the 6,000-byte default holds one or two, while rules and ranked sources keep
  * at least three quarters of every budget.
@@ -23,17 +23,18 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
   const terms = task.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
   const meaningful = memoryTokens(task).filter(t => t.length > 2 && !['the', 'and', 'for', 'with', 'this', 'that', 'from', 'are', 'was', 'into', 'how', 'can', 'should', 'project'].includes(t));
   const memoryPriority = (m: ReturnType<StoragePort['memories']>[number]) => m.status === 'accepted' ? 0 : m.source_path ? 1 : 2;
-  const wanted = new Set(meaningful), strong: ContextItem[] = [];
+  const wanted = new Set(meaningful), memories: { item: ContextItem; tier: number; matched: number }[] = [];
   for (const m of storage.memories(project.project_id).sort((a, b) => memoryPriority(a) - memoryPriority(b) || a.id.localeCompare(b.id))) {
     if (!['persist', 'accepted'].includes(m.status)) continue;
-    const words = new Set(memoryTokens(`${m.key} ${m.text}`));
     if (m.provenance.trust === 'agent_observation' && m.status !== 'accepted') {
+      const words = new Set(memoryTokens(`${m.key} ${m.text}`));
       if (!meaningful.some(t => words.has(t))) continue;
     } else if (!terms.some(t => m.text.toLowerCase().includes(t))) continue;
     if (!sourceBackedCurrent(m, sources)) continue;
-    const matched = [...wanted].filter(t => words.has(t)).length;
     const item: ContextItem = { id: m.id, kind: memoryContextKind(m), content: m.text, provenance: m.provenance, reasons: ['same project', m.status === 'accepted' ? 'human-reviewed claim; current sources take precedence' : m.source_path ? 'source-backed memory; source version still current' : 'agent-learned observation; not source truth or project policy', 'task term match'] };
-    if (matched && matched * 2 >= wanted.size) { item.reasons.push(`strong task match: ${matched}/${wanted.size} terms; bounded memory share`); strong.push(item); }
+    // Strength counts only the delivered text, never the key.
+    const said = new Set(memoryTokens(m.text));
+    memories.push({ item, tier: memoryPriority(m), matched: [...wanted].filter(t => said.has(t)).length });
     candidates.push(item);
   }
   const handoff = storage.handoffs(project.project_id).find(h => h.provenance.workspace_id === workspaceId);
@@ -76,11 +77,22 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
     included.add(item);
     return limit === undefined ? 0 : after - before;
   };
-  // Current rules first. Then strongly matching memories, in their usual order, within a bounded share. Then every
-  // candidate in rank order, first fit, as before. Without a strong memory the result is unchanged.
+  // Current rules first (ranking puts them at the front, so this is the old prefix). Then, within a bounded share, strongly
+  // matching memories in their usual order. Trust is kept: every related memory of higher trust is offered the share
+  // first, and once one of them does not fit, no memory of lower trust may use it. Then every candidate in rank order,
+  // first fit, as before. Without a strong memory the result is unchanged.
   for (const item of candidates) if (item.kind === 'rule') add(item);
-  let share = Math.floor(budget * MEMORY_SHARE);
-  for (const item of strong) share -= add(item, share);
+  const strong = (m: { matched: number }) => m.matched > 0 && m.matched * 2 >= wanted.size;
+  const lowest = Math.max(-1, ...memories.filter(strong).map(m => m.tier));
+  let share = Math.floor(budget * MEMORY_SHARE), blocked = Infinity;
+  for (const m of memories) {
+    if (m.tier > lowest || !m.matched || (m.tier === lowest && !strong(m))) continue;
+    if (m.tier > blocked) break;
+    m.item.reasons.push(strong(m) ? `strong task match: ${m.matched}/${wanted.size} terms; bounded memory share` : 'bounded memory share: higher trust than a strong match');
+    const added = add(m.item, share);
+    if (added) share -= added;
+    else { m.item.reasons.pop(); if (!duplicate.has(m.item)) blocked = Math.min(blocked, m.tier); }
+  }
   for (const item of candidates) add(item);
   const selection: SelectionAudit = { candidates: candidates.length, entries: candidates.slice(0, 500).map(item => ({ id: item.id, source: item.provenance.origin, outcome: duplicate.has(item) ? 'duplicate' : included.has(item) ? 'included' : 'budget', reasons: item.reasons })) };
   for (let n = 0; n < 4; n++) bundle.budget.used = size();

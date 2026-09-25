@@ -136,7 +136,25 @@ test('C. an agent lesson is never admitted while a related human-reviewed memory
     const { outcome } = await context(budget, dir);
     expect(outcome(lesson.id) === 'included' && outcome(weakHuman.id) !== 'included', `budget ${budget}`).toBe(false);
   }
-});
+}, 60_000);
+
+test('C. a strong lesson that is not admitted changes nothing: higher-trust memories only ride along with it', async () => {
+  // Found in review: a weak human-reviewed memory entered the share for a lesson too large to follow, and evicted the
+  // only matching source. Wherever the lesson stays out, the bundle must equal the bundle without the lesson.
+  const dir = project('ride', EDGE);
+  const weakHuman = human(dir, { key: 'term.policy', kind: 'decision', text: 'The Windows terminal is the supported shell for release checks and demos.' });
+  const budgets = Array.from({ length: 161 }, (_, i) => 1500 + i * 50);
+  const without = new Map<number, string[]>();
+  for (const budget of budgets) without.set(budget, ids(await client(dir).context({ task: TASK, budget })));
+  const lesson = client(dir).propose({ key: 'win.rm', kind: 'experience', text: `Remove a pnpm worktree on Windows with fs.rmSync. ${'It avoids long path and junction failures in node_modules trees. '.repeat(19)}`, from: FROM });
+  let admitted = 0;
+  for (const budget of budgets) {
+    const bundle = await client(dir).context({ task: TASK, budget });
+    if (ids(bundle).includes(lesson.id)) { admitted++; expect(ids(bundle), `budget ${budget}`).toContain(weakHuman.id); }
+    else expect(ids(bundle), `budget ${budget}`).toEqual(without.get(budget));
+  }
+  expect(admitted, 'the lesson is admitted once the budget can hold it').toBeGreaterThan(0);
+}, 60_000);
 
 test('C. a key stuffed with task terms does not make a memory strong: only its text counts', async () => {
   const baseline = await context(6000);

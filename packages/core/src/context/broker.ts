@@ -85,13 +85,20 @@ export function contextBroker(storage: StoragePort, project: Project, request: C
   const strong = (m: { matched: number }) => m.matched > 0 && m.matched * 2 >= wanted.size;
   const lowest = Math.max(-1, ...memories.filter(strong).map(m => m.tier));
   let share = Math.floor(budget * MEMORY_SHARE), blocked = Infinity;
+  const shared: typeof memories = [];
   for (const m of memories) {
     if (m.tier > lowest || !m.matched || (m.tier === lowest && !strong(m))) continue;
     if (m.tier > blocked) break;
     m.item.reasons.push(strong(m) ? `strong task match: ${m.matched}/${wanted.size} terms; bounded memory share` : 'bounded memory share: higher trust than a strong match');
     const added = add(m.item, share);
-    if (added) share -= added;
+    if (added) { share -= added; shared.push(m); }
     else { m.item.reasons.pop(); if (!duplicate.has(m.item)) blocked = Math.min(blocked, m.tier); }
+  }
+  // All or nothing: a weaker higher-trust memory keeps its early place only next to a strong lower-trust memory that got
+  // in. Otherwise it is withdrawn, and selection continues exactly as without the share.
+  for (const m of shared) {
+    if (strong(m) || shared.some(s => strong(s) && s.tier > m.tier)) continue;
+    bundle.items.splice(bundle.items.indexOf(m.item), 1); included.delete(m.item); m.item.reasons.pop(); estimate();
   }
   for (const item of candidates) add(item);
   const selection: SelectionAudit = { candidates: candidates.length, entries: candidates.slice(0, 500).map(item => ({ id: item.id, source: item.provenance.origin, outcome: duplicate.has(item) ? 'duplicate' : included.has(item) ? 'included' : 'budget', reasons: item.reasons })) };

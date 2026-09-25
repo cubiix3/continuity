@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
@@ -26,7 +26,7 @@ type Provider = 'claude' | 'codex';
  * force autosave on; mode tests pass their own values (undefined deletes a variable).
  */
 function hookEnv(extra: Record<string, string | undefined> = {}) {
-  const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^CLAUDE_CODE_|^CLAUDECODE$|^CONTINUITY_AUTOSAVE$/.test(k)));
+  const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^CLAUDE_CODE_|^CLAUDECODE$|^CONTINUITY_AUTOSAVE$|^CODEX_(DAEMON_SHUTDOWN_SOCKET|CI|THREAD_ID|SESSION_ID)$/.test(k)));
   for (const [k, v] of Object.entries({ CONTINUITY_AUTOSAVE: '1', ...extra })) { if (v === undefined) delete env[k]; else env[k] = v; }
   return env;
 }
@@ -259,7 +259,7 @@ test('Codex install: Stop and apply_patch hooks, PowerShell-safe commands, real 
   expect(JSON.parse(cmd('install', '--no-autosave').stdout)).toMatchObject({ state: 'installed', autosave: false });
   const partial = cmd('status'); expect(partial.status).toBe(1); expect(JSON.parse(partial.stdout).state).toBe('partial');
   expect(cmd('status', '--no-autosave').status).toBe(0);
-  expect(JSON.parse(cmd('install').stdout)).toMatchObject({ state: 'installed', autosave: true, entries: 3 });
+  expect(JSON.parse(cmd('install').stdout)).toMatchObject({ state: 'installed', autosave: true, entries: 3, message: expect.stringContaining('interactive sessions (the shared app-server, not codex exec or --no-daemon)') });
   expect(cmd('status').status).toBe(0);
   expect(JSON.parse(cmd('remove').stdout)).toMatchObject({ state: 'missing', changed: true });
   expect(JSON.parse(readFileSync(join(env.CODEX_HOME, 'hooks.json'), 'utf8'))).toEqual({ hooks: {} });
@@ -326,7 +326,7 @@ test('a secret straddling the list item length limit is still refused', () => {
   expect(host.project(a).latestHandoff()).toBeNull();
 });
 
-test('mode: attended interactive Claude sessions save by default; print, SDK, Codex and unknown sessions do not', () => {
+test('mode: interactive Claude and daemon-hosted Codex sessions save by default; print, SDK, exec and unknown sessions do not', () => {
   const cases: [Provider, Record<string, string | undefined>, boolean][] = [
     ['claude', { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_SESSION_ATTENDED: '1', CLAUDE_CODE_ENTRYPOINT: 'cli' }, true],
     ['claude', { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_ENTRYPOINT: 'cli' }, true],
@@ -335,9 +335,21 @@ test('mode: attended interactive Claude sessions save by default; print, SDK, Co
     ['claude', { CONTINUITY_AUTOSAVE: undefined }, false],
     ['claude', { CONTINUITY_AUTOSAVE: '0', CLAUDE_CODE_SESSION_ATTENDED: '1' }, false],
     ['claude', { CONTINUITY_AUTOSAVE: '1', CLAUDE_CODE_SESSION_ATTENDED: '0', CLAUDE_CODE_ENTRYPOINT: 'sdk-cli' }, true],
+    // codex exec and --no-daemon: hooks run in-process, without the daemon marker.
     ['codex', { CONTINUITY_AUTOSAVE: undefined }, false],
     ['codex', { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_SESSION_ATTENDED: '1' }, false],
     ['codex', { CONTINUITY_AUTOSAVE: '1' }, true],
+    // Interactive TUI: hooks run in the shared app-server daemon.
+    ['codex', { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1' }, true],
+    ['codex', { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '' }, false],
+    ['codex', { CONTINUITY_AUTOSAVE: '0', CODEX_DAEMON_SHUTDOWN_SOCKET: '1' }, false],
+    // A codex exec that an agent started as a tool command inherits the daemon marker, but also Codex's tool markers.
+    ['codex', { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_CI: '1', CODEX_THREAD_ID: 'thr', CODEX_SESSION_ID: 'ses' }, false],
+    ['codex', { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_THREAD_ID: 'thr' }, false],
+    ['codex', { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_CI: '1' }, false],
+    ['codex', { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_SESSION_ID: 'ses' }, false],
+    // An explicit force-on still wins, as documented for forced headless runs.
+    ['codex', { CONTINUITY_AUTOSAVE: '1', CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_CI: '1', CODEX_THREAD_ID: 'thr' }, true],
   ];
   cases.forEach(([provider, env, expected], i) => {
     const id = `mode-${i}`;
@@ -347,8 +359,65 @@ test('mode: attended interactive Claude sessions save by default; print, SDK, Co
     expect(stop.stdout.includes('"decision":"block"'), `${provider} ${JSON.stringify(env)}`).toBe(expected);
     if (!expected) expect(stop.stdout, `${provider} ${JSON.stringify(env)}`).toBe('');
   });
-  // Disabled sessions leave no flag files: only the four enabled cases wrote state.
-  expect(readdirSync(join(home, 'hooks', 'autosave'))).toHaveLength(4);
+  // Disabled sessions leave no flag files: only the six enabled cases wrote state.
+  expect(readdirSync(join(home, 'hooks', 'autosave'))).toHaveLength(6);
+});
+
+const CODEX_TUI = { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1' };
+/** Codex 0.157 PostToolUse input for an edit; code mode reports a nested `tools.apply_patch(...)` the same way. */
+const codexEdit = (session_id: string, cwd: string) => ({ session_id, cwd, hook_event_name: 'PostToolUse', tool_name: 'apply_patch', tool_use_id: `call-${session_id}`, turn_id: 'turn-1',
+  tool_input: { command: '*** Begin Patch\n*** Update File: README.md\n@@\n-# Alpha\n+# Alpha loader\n*** End Patch\n' }, tool_response: 'Success. Updated the following files:\nM README.md', permission_mode: 'bypassPermissions', model: 'gpt', transcript_path: null });
+const flagCount = () => existsSync(join(home, 'hooks', 'autosave')) ? readdirSync(join(home, 'hooks', 'autosave')).length : 0;
+
+test('Codex 0.157: an interactive session saves with no override; codex exec and a nested exec keep their answer and write nothing', () => {
+  expect(run('codex', 'tool-use', codexEdit('tui', a), CODEX_TUI)).toMatchObject({ status: 0, stdout: '' });
+  const request = run('codex', 'stop', { session_id: 'tui', cwd: a, hook_event_name: 'Stop', turn_id: 'turn-1', stop_hook_active: false, last_assistant_message: 'Renamed the heading.' }, CODEX_TUI);
+  expect(JSON.parse(request.stdout)).toEqual({ decision: 'block', reason: SAVE_INSTRUCTION });
+  const answer = run('codex', 'stop', { session_id: 'tui', cwd: a, stop_hook_active: true, last_assistant_message: save({ memories: [{ key: 'readme.heading', kind: 'decision', text: 'The README heading names the loader, not the product.' }] }) }, CODEX_TUI);
+  expect(answer).toMatchObject({ status: 0, stdout: '' });
+  expect(active()).toMatchObject([{ key: 'readme.heading', from: { agent: 'Codex', session: 'tui' }, provenance: { trust: 'agent_observation' } }]);
+  const flags = flagCount();
+  // codex exec runs hooks in-process; an exec started by an agent's tool command inherits the daemon marker too.
+  for (const [i, env] of [{ CONTINUITY_AUTOSAVE: undefined }, { ...CODEX_TUI, CODEX_CI: '1', CODEX_THREAD_ID: 'thr', CODEX_SESSION_ID: 'ses' }].entries()) {
+    expect(run('codex', 'tool-use', codexEdit(`exec-${i}`, a), env)).toMatchObject({ status: 0, stdout: '' });
+    expect(run('codex', 'stop', { session_id: `exec-${i}`, cwd: a, stop_hook_active: false, last_assistant_message: 'DONE' }, env)).toMatchObject({ status: 0, stdout: '', stderr: '' });
+  }
+  expect(flagCount()).toBe(flags);
+  expect(active()).toHaveLength(1);
+});
+
+test('attribution: only the session whose own edit tool ran is asked, never another session, provider or an outside change', () => {
+  run('codex', 'tool-use', codexEdit('writer', a), CODEX_TUI);
+  // A second Codex session in the same workspace only read.
+  expect(run('codex', 'stop', { session_id: 'reader', cwd: a, stop_hook_active: false }, CODEX_TUI).stdout).toBe('');
+  // A Claude session is a different session even if the provider ids collide.
+  expect(run('claude', 'stop', { session_id: 'writer', cwd: a, stop_hook_active: false }, { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_SESSION_ATTENDED: '1' }).stdout).toBe('');
+  // A file changed by an editor, a build or another agent is not an edit event of this session.
+  writeFileSync(join(a, 'README.md'), '# Alpha\nChanged outside any agent.\n');
+  expect(run('codex', 'stop', { session_id: 'reader', cwd: a, stop_hook_active: false }, CODEX_TUI).stdout).toBe('');
+  expect(run('codex', 'stop', { session_id: 'writer', cwd: a, stop_hook_active: false }, CODEX_TUI).stdout).toContain('"decision":"block"');
+  // Only edit tools reach the flag: Codex reports shell commands as Bash, which the installed matcher never routes.
+  expect(codexHookTarget(process.execPath, cli, home).entries.find(e => e.event === 'PostToolUse')?.matcher).toBe('apply_patch');
+});
+
+test('Codex sub-agents: their edits arrive under the parent session and only the parent is asked', () => {
+  // Codex 0.157 reports a sub-agent's edit with the parent's session_id plus agent_id/agent_type. A sub-agent ends with
+  // SubagentStop, which Continuity does not install, so it never gets a save request and its result reaches the parent.
+  expect(run('codex', 'tool-use', { ...codexEdit('parent', a), agent_id: 'agent-1', agent_type: 'default', turn_id: 'sub-turn' }, CODEX_TUI).stdout).toBe('');
+  expect(codexHookTarget(process.execPath, cli, home).entries.map(e => e.event)).toEqual(['SessionStart', 'PostToolUse', 'Stop']);
+  expect(run('codex', 'stop', { session_id: 'parent', cwd: a, turn_id: 'parent-turn', stop_hook_active: false, last_assistant_message: 'The sub-agent added the function.' }, CODEX_TUI).stdout).toContain('"decision":"block"');
+});
+
+test('session flags stay content-free and abandoned ones are removed after a week', () => {
+  const dir = join(home, 'hooks', 'autosave'); mkdirSync(dir, { recursive: true });
+  const stale = join(dir, `${'0'.repeat(40)}.json`); writeFileSync(stale, '{"dirty":true,"pending":false}');
+  const eightDays = (Date.now() - 8 * 24 * 60 * 60 * 1000) / 1000; utimesSync(stale, eightDays, eightDays);
+  run('codex', 'tool-use', codexEdit('fresh', a), CODEX_TUI);
+  const files = readdirSync(dir);
+  expect(files).toHaveLength(1); expect(existsSync(stale)).toBe(false);
+  const flag = readFileSync(join(dir, files[0]!), 'utf8');
+  expect(flag).toMatch(/^\{"dirty":true,"pending":false,"scope":"[0-9a-f]{24}"\}$/);
+  for (const content of ['README.md', 'Begin Patch', 'fresh', 'Alpha']) expect(flag).not.toContain(content);
 });
 
 test('handoff closure: offered in the request, closed by the answer, history kept, next start shows no stale work', () => {

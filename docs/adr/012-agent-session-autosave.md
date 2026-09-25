@@ -51,7 +51,9 @@ unknown value means off.
 
 Codex gives hooks no signal that separates `exec` from the TUI, so Codex autosave
 is opt-in. `CONTINUITY_AUTOSAVE=1` forces autosave on, and any other non-empty value forces it off. `--no-autosave`
-outranks everything, because the hooks are then absent.
+outranks everything, because the hooks are then absent. (Superseded for Codex 0.157
+by [ADR 013](013-codex-daemon-autosave.md): daemon-hosted interactive sessions save by
+default.)
 
 ### Handoff closure
 
@@ -99,6 +101,7 @@ the host recorded. There is no new MCP tool; people close handoffs through
   (`CONTINUITY_AUTOSAVE=1`) ends with the save answer.
 - Interactive Codex users opt in with `CONTINUITY_AUTOSAVE=1`. Headless runs of either
   provider started from that environment inherit it and should set `CONTINUITY_AUTOSAVE=0`.
+  Since Codex 0.157, see ADR 013.
 - Schema version 5 adds `handoff_closures`. Older Continuity versions refuse the
   upgraded database, as with every schema change.
 - Saving is best effort. Interruptions and crashes can skip it.

@@ -138,16 +138,17 @@ The [runnable example](examples/README.md) covers memory and handoff inputs.
 To give every new agent session this context automatically, install a provider
 hook once (current `main`): `continuity integrate claude install` or
 `continuity integrate codex install`. See [agent bootstrap](docs/agent-bootstrap.md).
-In interactive Claude Code sessions, the same hooks ask the agent, after a turn that
-edited files, whether anything is worth keeping or a handoff is finished; it never
-reads chats. See [agent lifecycle](docs/agent-lifecycle.md).
+In interactive Claude Code and Codex sessions, the same hooks ask the agent, after a
+turn that edited files, whether anything is worth keeping or a handoff is finished; it
+never reads chats. Scripted `claude -p` and `codex exec` answers stay unchanged. See
+[agent lifecycle](docs/agent-lifecycle.md).
 
 ## Agent integrations
 
 | Integration | Status |
 | --- | --- |
 | Claude Code | Verified on Windows 2.1.278; automatic startup context verified on 2.1.280 · [setup](docs/integrations/claude-code.md) |
-| Codex | Verified on Windows CLI 0.155.1; automatic startup context verified on 0.156.1 · [setup and sandbox notes](docs/integrations/codex.md) |
+| Codex | Verified on Windows CLI 0.155.1; automatic startup context verified on 0.156.1; interactive autosave verified on 0.157.0 · [setup and sandbox notes](docs/integrations/codex.md) |
 | MCP stdio | Seven project-bound tools, tested with the official SDK client and real agents |
 | CLI and TypeScript host API | Implemented and integration-tested |
 | Local HTTP v1 | Loopback only; token, origin and scope boundaries tested |

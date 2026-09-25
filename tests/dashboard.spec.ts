@@ -4,7 +4,7 @@ import { join, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { openContinuity } from '../packages/sdk/src/index.js';
+import { openContinuity, CONTINUITY_HOST_API_VERSION } from '../packages/sdk/src/index.js';
 import { createDashboardServer } from '../packages/server/src/dashboard.js';
 import { SqliteStorage } from '../packages/storage-sqlite/src/index.js';
 
@@ -256,8 +256,12 @@ test('overview workspace total comes from the server, not the paginated workspac
   await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${outside}`); await page.reload();
   await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(outside);
   await expect(workspacesRow).toHaveText(String(total), settled);
-  await expect(page.locator('.project-hero')).toContainText('Healthy');
+  await expect(page.locator('.project-hero .status')).toHaveText('Ready'); await expect(page.locator('.project-hero .status')).toHaveAttribute('data-state', 'healthy');
   expect(diagnostics).toEqual([]);
+});
+test('the sidebar names the current Host API version', async ({ page }) => {
+  await page.goto(`${base}/#/overview`);
+  await expect(page.locator('.sidebar footer')).toHaveText(`Local · v0.1.0 · Host API ${CONTINUITY_HOST_API_VERSION}`);
 });
 test('real Git worktrees: Overview stays cheap while Diagnostics verifies each one with Git', async ({ page }) => {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: primary, stdio: 'pipe' });
@@ -267,11 +271,11 @@ test('real Git worktrees: Overview stays cheap while Diagnostics verifies each o
   const diagnostics: string[] = []; page.on('request', request => { if (new URL(request.url()).pathname === '/dashboard-api/diagnostics') diagnostics.push(request.url()); });
   await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=`);
   await expect(page.locator('.state-list dt').filter({ hasText: /^Workspaces$/ }).locator('+ dd')).toHaveText('4');
-  await expect(page.locator('.project-hero')).toContainText('Healthy');
+  await expect(page.locator('.project-hero .status')).toHaveText('Ready'); await expect(page.locator('.project-hero .status')).toHaveAttribute('data-state', 'healthy');
   // A selected real worktree is verified with Git by its own Overview routes.
   await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${real[1]!.workspace_id}`); await page.reload();
   await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(real[1]!.workspace_id);
-  await expect(page.locator('.project-hero')).toContainText('Healthy');
+  await expect(page.locator('.project-hero .status')).toHaveText('Ready'); await expect(page.locator('.project-hero .status')).toHaveAttribute('data-state', 'healthy');
   expect(diagnostics).toEqual([]);
   // Diagnostics is the full doctor: every registered worktree is checked with Git, once per visit.
   await page.getByRole('link', { name: 'Diagnostics', exact: true }).click();

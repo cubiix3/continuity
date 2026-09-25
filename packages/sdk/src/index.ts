@@ -18,7 +18,8 @@ import { continuityHome, coordinatedSync } from './local-ipc.js';
 import { anchoredScope, readSourceScopes, sourceScopeSchema, writeSourceScope, SourceScopeError } from './source-scope.js';
 import type { SourceScope } from './source-scope.js';
 
-export const CONTINUITY_HOST_API_VERSION = 1;
+/** Host API compatibility boundary. 2: host.doctor() returns a Promise (Host API 1, v0.1.0, returned the report synchronously). */
+export const CONTINUITY_HOST_API_VERSION = 2;
 /** Workspaces verified at once by doctor. Each verification runs up to five short Git processes in sequence. */
 export const DOCTOR_WORKSPACE_CONCURRENCY = 4;
 /** Workspaces whose Git link files the cheap Overview health reads at once. */

@@ -115,7 +115,8 @@ async function overview(stamp: number) {
   // Cheap project health: known problems only. Integrity and Git membership are checked on Diagnostics.
   const healthy = health.fts5 && !health.problems.length, sync = snapshot.sync as { at?: string; files?: number } | undefined;
   const project = projects.find(p => p.project_id === projectId)!, header = el('header', undefined, 'page-header'), hero = el('div', undefined, 'project-hero');
-  hero.append(el('span', project.name, 'project-name'), status(healthy ? 'healthy' : 'degraded'));
+  // Ready, not Healthy: the Overview runs only the cheap checks. Healthy is reserved for Diagnostics (the full doctor).
+  hero.append(el('span', project.name, 'project-name'), status(healthy ? 'healthy' : 'degraded', healthy ? 'Ready' : undefined));
   header.append(el('h1', 'Overview', 'eyebrow'), hero, metaLine(sync?.at ? `Last synced ${date(sync.at).toLowerCase()}` : 'Not synced yet', sync?.files !== undefined ? `${sync.files.toLocaleString()} sources` : undefined, workspaceName()));
   main.append(header);
   const attention = el('section', undefined, counts.conflicts || !healthy ? 'attention' : 'attention clear'); attention.append(el('h2', 'Needs attention'));

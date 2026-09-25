@@ -28,7 +28,7 @@ beforeEach(() => {
 afterEach(() => { host.close(); rmSync(root, { recursive: true, force: true }); });
 
 it('keeps concurrent worktree sources separate while sharing reviewed project memories', async () => {
-  expect(CONTINUITY_HOST_API_VERSION).toBe(1);
+  expect(CONTINUITY_HOST_API_VERSION).toBe(2);
   const a = host.project(primary); const b = host.workspace(primary, feature);
   const memory = a.propose({ key: 'retry', kind: 'experience', text: 'Reconnect recovery preserves request identifiers.' });
   host.review(primary, memory.id, 'accepted', 'fixture-human');
@@ -333,4 +333,13 @@ it('Overview health agrees with the full doctor for a project registered at a li
   git(primary, 'worktree', 'remove', '--force', sibling); mkdirSync(sibling); git(sibling, 'init', '-q');
   expect((await host.doctor()).problems).toEqual([`inaccessible/stale workspace: ${id}`]);
   expect((await host.health(projectId)).problems).toEqual([`inaccessible/stale workspace: ${id}`]);
+});
+
+it('Host API 2: doctor returns a Promise that resolves to the unchanged diagnostics report', async () => {
+  expect(CONTINUITY_HOST_API_VERSION).toBe(2);
+  const pending = host.doctor();
+  expect(pending).toBeInstanceOf(Promise);
+  const report = await pending;
+  expect(report).toMatchObject({ integrity: 'ok', fts5: true, schema_version: 5, problems: [], version: '0.1.0', workspaces: [], adapters: { generic: true, 'http-loopback': true } });
+  expect(report.roots).toEqual(host.projects().map(p => ({ project_id: p.project_id, accessible: true })));
 });

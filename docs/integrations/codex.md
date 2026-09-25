@@ -57,3 +57,26 @@ paths), `sh` elsewhere. Plain stdout becomes developer context. Codex skips
 user hooks until they are trusted once in `/hooks`. Verified with Codex 0.156.1 on
 Windows using the installer's exact command strings (trust bypassed for the
 test run only). See [agent bootstrap](../agent-bootstrap.md).
+
+## Session autosave (Codex 0.157)
+
+The same install adds the `PostToolUse` (`apply_patch`) and `Stop` hooks. Interactive
+`codex` saves by default; nothing needs to be set:
+
+- Codex 0.157 runs interactive sessions in a shared app-server daemon, and their hooks
+  run there. `codex exec` runs its hooks in its own process. Continuity asks for a
+  save only in the daemon, so scripted `codex exec` answers stay unchanged.
+- Code mode (`exec` tool) edits are reported to hooks as `apply_patch`.
+- `codex --no-daemon` looks exactly like `codex exec` to hooks and does not autosave
+  unless started with `CONTINUITY_AUTOSAVE=1`.
+- Because the daemon keeps the environment it started with, `CONTINUITY_AUTOSAVE`
+  set when launching `codex` does not reach daemon-hosted hooks. Use
+  `install --no-autosave` to turn autosave off for interactive Codex.
+
+Verified live on Windows with Codex 0.157.0: an edit session saved a decision,
+an unfinished task saved a handoff, Claude Code started with both, and `codex exec`
+answers stayed exact. See [agent lifecycle](../agent-lifecycle.md) and
+[ADR 013](../adr/013-codex-daemon-autosave.md).
+
+ORCA launches Codex with its own `CODEX_HOME`. ORCA copies the `~/.codex/hooks.json`
+entries into that home and trusts them itself, so no second install is needed.

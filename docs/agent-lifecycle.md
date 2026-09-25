@@ -20,40 +20,53 @@ install all three hooks. Use `--no-autosave` to keep startup context only.
 
 The save turn becomes the provider's final answer, so it must not run in scripts
 that read that answer. Autosave therefore runs by default only in sessions the
-provider reports as attended and interactive:
+provider reports as interactive:
 
-| Session | Default | Signal |
+| Session | Default | Signal in the hook's environment |
 | --- | --- | --- |
 | Interactive `claude` | on | `CLAUDE_CODE_SESSION_ATTENDED=1` (or, without it, `CLAUDE_CODE_ENTRYPOINT=cli`) |
 | `claude -p`, Agent SDK | off | `CLAUDE_CODE_SESSION_ATTENDED=0`, `CLAUDE_CODE_ENTRYPOINT=sdk-*` |
 | Claude Code without either variable | off | — |
-| Interactive `codex` and `codex exec` | off | none available |
+| Interactive `codex` (shared app-server daemon, the default) | on | `CODEX_DAEMON_SHUTDOWN_SOCKET`, and none of `CODEX_CI`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID` |
+| `codex exec`, and a `codex exec` an agent runs as a command | off | no daemon marker, or Codex's tool-command markers |
+| `codex --no-daemon`, embedded fallback server | off | none: indistinguishable from `codex exec` |
 
 Claude Code sets both variables for its hooks (verified with 2.1.280 in interactive
 and print sessions). They are not part of the documented hook contract, so an unknown
 or missing value means off.
 
-Codex 0.156.1 passes identical hook input and environment to `codex exec` and the
-interactive TUI. `permission_mode` is `bypassPermissions` in both with
-`approval_policy = "never"`, and `exec --approve-for-me` reports `default`. There is
-no reliable signal, so Codex autosave is opt-in. Parsing the parent process's
-command line was rejected as brittle.
+Codex hook input is identical in `codex exec` and the interactive TUI (verified with
+0.156.1 and 0.157.0): no field names the mode, and `permission_mode` follows the
+approval policy, not the mode. Since 0.157 the TUI runs its sessions in a shared
+app-server daemon, and their hooks run in that daemon's process tree. `codex exec`
+has no daemon mode and runs its hooks in its own process. The daemon's processes
+carry `CODEX_DAEMON_SHUTDOWN_SOCKET`. Commands that Codex runs as tools inherit it
+as well, so a `codex exec` started by an agent sees it too. Codex also gives those
+commands `CODEX_CI`, `CODEX_THREAD_ID` and `CODEX_SESSION_ID`, which its hooks never
+get. These variables are verified with 0.157.0 but undocumented. If Codex changes
+them, Codex autosave turns off; it never takes over a `codex exec` answer.
+
+Codex documents that the daemon shares the environment it started with across all
+of its sessions. A variable set when you launch `codex` therefore does not reach the
+hooks of a daemon-hosted session. Parsing the parent process's command line was
+rejected as brittle.
 
 Precedence, from strongest:
 
 1. **Installed hooks.** `install --no-autosave` removes the autosave hooks, and
    nothing can turn autosave on.
 2. **`CONTINUITY_AUTOSAVE`.** `1` forces autosave on. `0`, or any other non-empty
-   value such as `off` or `true`, forces it off.
+   value such as `off` or `true`, forces it off. It applies where the hook inherits
+   it: Claude Code, `codex exec`, `codex --no-daemon`, and a Codex daemon only if the
+   variable was set when the daemon started.
 3. **The provider default** above.
 
-To use autosave with interactive Codex, start it with `CONTINUITY_AUTOSAVE=1`, for
-example from a terminal profile. Every provider started from that environment
-inherits the variable. That includes `codex exec` and `claude -p`, whose final
-answers then become save answers, so scripts there should set `CONTINUITY_AUTOSAVE=0`.
-Scoping the variable to the interactive Codex launcher avoids this.
-A forced headless run (`CONTINUITY_AUTOSAVE=1 claude -p …`) ends with the save
-answer as its final message.
+Interactive Codex needs no setting. To autosave in a `--no-daemon` Codex session,
+start it with `CONTINUITY_AUTOSAVE=1`. Every provider started from that environment
+inherits the variable, including `codex exec` and `claude -p`, whose final answers
+then become save answers. Scripts there should set `CONTINUITY_AUTOSAVE=0`. A forced
+headless run (`CONTINUITY_AUTOSAVE=1 claude -p …`) ends with the save answer as its
+final message.
 
 With autosave off, both hooks exit right after dispatch. This costs about 5 ms over
 starting the CLI, and they write no files.
@@ -61,7 +74,10 @@ starting the CLI, and they write no files.
 ## Why `Stop`
 
 Only one official hook in each provider can still involve the model at the end of
-work. This was verified against Claude Code 2.1.280 and Codex 0.156.1.
+work. This was verified against Claude Code 2.1.280, and Codex 0.156.1 and 0.157.0.
+Codex 0.157's `Stop` output offers `decision`, `continue`, `stopReason`,
+`suppressOutput` and `systemMessage`; none of them gives the model a turn without a
+visible continuation.
 
 | Hook | Model-aware | Use |
 | --- | --- | --- |
@@ -73,7 +89,9 @@ work. This was verified against Claude Code 2.1.280 and Codex 0.156.1.
 `Stop` fires after every turn, so the request is gated:
 
 - only after file-edit tools ran in this session since the last request (Claude Code:
-  `Edit|Write|MultiEdit|NotebookEdit`; Codex reports edits as `apply_patch`);
+  `Edit|Write|MultiEdit|NotebookEdit`; Codex reports edits as `apply_patch`, including
+  `tools.apply_patch(…)` calls from code mode's `exec` tool, which Codex 0.157 reports
+  under the nested tool's name);
 - only when the stop binds to the same project or workspace as the edits (a session that
   edited several, or moved elsewhere with `cd`, is not asked);
 - at most once per 15 minutes per session;
@@ -212,8 +230,11 @@ still answering, or crashed may end without a save.
 Edits made only through shell commands (for example `Move-Item`, `sed -i`) do not flag
 the session. Neither provider reports file mutations for shell commands: Claude Code's
 `FileChanged` watches named files only, and `PostToolUse` for `Bash` carries no
-modified-file field. Treating every shell command as an edit, or running Git on every
-stop, was rejected. This remains a follow-up.
+modified-file field. Codex 0.157 reports shell commands, including those run from code
+mode, as `Bash` with no mutation data. Treating every shell command as an edit, parsing
+commands, running Git on every stop, or watching the project directory during a
+session was rejected. A watcher cannot tell whether an agent, an editor, a build or
+another session changed a file. This remains a follow-up.
 
 ## Privacy and state
 
@@ -223,7 +244,8 @@ Autosave does not archive chats:
   are never read.
 - The only text read is `last_assistant_message` on the stop that answers
   Continuity's request.
-- There are no session tables, event logs or telemetry.
+- Autosave adds no tables, event logs or telemetry. A saved handoff records its
+  author session (id, agent, time) like any other handoff.
 
 Per session, the hook keeps one small file under `<continuity home>/hooks/autosave/`,
 named by a hash of provider and session id. It contains
@@ -251,7 +273,10 @@ changes.
 Entries are recognized by their fixed marker
 (`integrate <provider> session-start|tool-use|stop`) and the Continuity CLI path, and
 compared exactly. Any change shows as `stale` until `install` runs again. Codex
-requires trusting the new hooks once in `/hooks`.
+requires trusting the new hooks once in `/hooks`; `status` cannot see that trust.
+ORCA runs Codex with its own `CODEX_HOME`. It copies the hooks from `~/.codex/hooks.json`
+into that home and trusts them itself (observed with ORCA's Codex runtime home on
+2026-09-25). No second install is needed there.
 
 ## Measurements
 
@@ -273,10 +298,23 @@ model is involved.
 
 With an open handoff offered, the save request is about 1.1 KB at most.
 
+Codex paths, Windows, Node 24, 132-source project, 7 runs each, medians (max):
+
+| Path | Runtime stopped | Runtime running |
+| --- | --- | --- |
+| Interactive (daemon): `PostToolUse` edit flag | 202 ms (206) | 205 ms (211) |
+| Interactive: `Stop`, save request | 206 ms (209) | 202 ms (218) |
+| Interactive: `Stop`, apply 2 memories + handoff | 285 ms (300) | 274 ms (286) |
+| `codex exec`: edit hook, autosave off | 198 ms (206) | 195 ms (200) |
+| `codex exec`: `Stop`, autosave off | 198 ms (202) | 195 ms (203) |
+| `continuity --version` (baseline) | 192 ms (210) | 190 ms (197) |
+
+The mode check reads only environment variables.
+
 ## Live evidence
 
-Opt-in runs, not CI, with Claude Code 2.1.280 and Codex 0.156.1. None of the prompts
-mentioned Continuity.
+Opt-in runs, not CI, with Claude Code 2.1.280, and Codex 0.156.1 and 0.157.0. None of
+the prompts mentioned Continuity.
 
 **Headless default.** A `claude -p` and a `codex exec` session each edited a file and
 were asked to reply `DONE-EDIT`:
@@ -285,7 +323,7 @@ were asked to reply `DONE-EDIT`:
 - Forced with `CONTINUITY_AUTOSAVE=1`, both final answers were the save block, as
   documented.
 
-**Full lifecycle.** Scripted, with autosave forced on:
+**Full lifecycle (Codex 0.156.1).** Scripted, with autosave forced on:
 
 | Session | What happened |
 | --- | --- |
@@ -293,6 +331,25 @@ were asked to reply `DONE-EDIT`:
 | Codex B | Started with that lesson; did half of a two-file task, as asked; saved a handoff for the deferred file |
 | Claude Code C | Told only "Please finish the unfinished work in this project"; finished the work and answered with `close_handoff` and no new handoff; the handoff was closed |
 | Codex D | Reported the lesson and no unfinished work; bootstrap had no open handoff |
+
+**Codex 0.157.0, interactive, no override.** Plain `codex` in a fixture, hooks trusted
+once in `/hooks`, no `CONTINUITY_AUTOSAVE` anywhere. A tracer confirmed that every hook
+ran in the app-server daemon without that variable. The model used code mode, and its
+nested `tools.apply_patch` calls reached the `apply_patch` hook.
+
+| Session | What happened |
+| --- | --- |
+| Codex A | Merged two config files; asked automatically; answered with no memory and no handoff |
+| Codex A2 | Applied a header convention the user had decided; saved it as a decision attributed to Codex |
+| Claude Code B | Asked "What should I know before continuing?"; started with the Codex decision |
+| Codex C | Did part 1 of a two-part task, as asked; saved a lesson and a handoff for part 2 |
+| Claude Code D | Asked "What should I continue?"; started with the Codex handoff, finished it and closed it |
+| Codex E | Renamed one label; asked; saved nothing |
+| Codex F | Read-only question; no request, no state file |
+| `codex exec` | Read-only and edit runs printed exactly `memory` and `DONE`; no request, no state file |
+
+A `codex exec` that the interactive agent ran as a command printed exactly its answer.
+Its hooks saw the daemon marker and Codex's tool-command markers.
 
 **Earlier runs.**
 

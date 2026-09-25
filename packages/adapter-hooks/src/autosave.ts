@@ -33,16 +33,25 @@ export function saveInstruction(openHandoffGoal?: string) {
 }
 
 /**
+ * Codex 0.157 hosts interactive TUI sessions in a shared app-server daemon, and their hooks run in that daemon's
+ * process tree, which carries this variable. `codex exec` has no daemon mode and runs its hooks in-process without it.
+ */
+export const CODEX_DAEMON_MARKER = 'CODEX_DAEMON_SHUTDOWN_SOCKET';
+/** Set by Codex for commands it runs as tools. A `codex exec` started from such a command inherits the daemon marker. */
+export const CODEX_TOOL_MARKERS = ['CODEX_CI', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID'] as const;
+
+/**
  * Autosave replaces the provider's final answer with a save turn, so it runs by default only in sessions the provider
- * reports as attended and interactive. CONTINUITY_AUTOSAVE=1 forces it on; any other non-empty value forces it off.
+ * reports as interactive. CONTINUITY_AUTOSAVE=1 forces it on; any other non-empty value forces it off.
  * Claude Code sets CLAUDE_CODE_SESSION_ATTENDED (1 interactive, 0 for -p/SDK) and CLAUDE_CODE_ENTRYPOINT (cli vs
- * sdk-*) for its hooks. Codex exposes no such signal to hooks, so Codex autosave needs CONTINUITY_AUTOSAVE=1.
+ * sdk-*) for its hooks. Codex hook input is identical in the TUI and `codex exec`; only the daemon host differs.
+ * Every signal is verified but undocumented, so anything unknown means off.
  */
 export function autosaveEnabled(provider: HookProviderName, env: NodeJS.ProcessEnv = process.env): boolean {
   // Only the documented 1 enables; 0 and anything unrecognized (off, false, true, ...) fail safe to off.
   if (env.CONTINUITY_AUTOSAVE === '1') return true;
   if (env.CONTINUITY_AUTOSAVE !== undefined && env.CONTINUITY_AUTOSAVE !== '') return false;
-  if (provider !== 'claude') return false;
+  if (provider === 'codex') return !!env[CODEX_DAEMON_MARKER] && !CODEX_TOOL_MARKERS.some(name => env[name]);
   const attended = env.CLAUDE_CODE_SESSION_ATTENDED;
   return attended === '1' || (attended === undefined && env.CLAUDE_CODE_ENTRYPOINT === 'cli');
 }

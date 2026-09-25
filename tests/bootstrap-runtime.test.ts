@@ -71,7 +71,7 @@ test('parallel session starts during runtime syncs succeed without blocking or c
   writing = false; await churn;
   for (const [i, r] of results.entries()) { expect(r.status).toBe(0); expect(r.stdout).toContain(i % 2 ? 'Continuity · Alpha' : 'Continuity · Beta'); }
   expect(Math.max(...results.map(r => r.ms))).toBeLessThan(10_000);
-  expect(host.doctor().integrity).toBe('ok');
+  expect((await host.doctor()).integrity).toBe('ok');
 }, 60_000);
 
 test('a database locked longer than the busy timeout leaves the session start silent and exit 0', { timeout: 60_000 }, async () => {

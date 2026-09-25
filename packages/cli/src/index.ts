@@ -48,7 +48,7 @@ function contextOutput(bundle: ContextBundle): void {
 program.command('init').description('Register this canonical project directory locally').option('--name <name>').action((options: { name?: string }) => output(runtime().init(program.opts<{ project: string }>().project, options.name)));
 program.command('status').description('Show project identity and last sync').action(() => output(client().status()));
 program.command('doctor').description('Check storage, registrations and runtime').action(async () => {
-  const health = runtime().doctor();
+  const health = await runtime().doctor();
   let retrieval: { status: string; reason: string };
   try { retrieval = await client().retrievalHealth(); }
   catch (error) { retrieval = { status: 'unavailable', reason: error instanceof Error ? error.message : 'Project binding cannot be inspected' }; }

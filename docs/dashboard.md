@@ -15,13 +15,13 @@ Stop with Ctrl+C. There is no automatic browser launch, login, telemetry or clou
 
 ## Inspect and review
 
-- **Overview:** indexed-source, active-memory, quarantined-conflict and workspace-handoff counts. Active is a stored policy state; context still revalidates source-backed evidence.
+- **Overview:** indexed-source, active-memory, quarantined-conflict and workspace-handoff counts. Active is a stored policy state; context still revalidates source-backed evidence. Its Ready/Degraded state is a cheap check of the selected project: storage capabilities, source-scope configuration, the project root and each workspace's Git link files, read asynchronously and at most sixteen workspaces at a time. It starts no Git process and runs no integrity check, so its cost is a few small file reads per workspace rather than Git runs. The full check lives on Diagnostics, which alone reports Healthy: Ready means no known problem, not a verified one.
 - **Projects / Workspaces:** registered identities and canonical roots. Memory is project-wide; sources, handoffs and context audit are workspace-scoped. Sync uses the existing source and optional semantic pipeline.
 - **Handoffs:** newest-first structured state, agent/session, completed work, remaining work, decisions, risks and next action. No transcripts.
 - **Memories:** bounded origin/status filters, agent/session, source evidence, policy reason and revision history. Normal attributed lessons activate automatically at lower trust. Optional approve/reject requires a reviewer name and confirmation. Forget requires confirmation and retains history. Rebind/prune stay in the CLI.
 - **Sources:** last-indexed metadata; opening a preview revalidates current source through the existing scanner. Removed, excluded or inaccessible files are not served as current. Source content is text, never Dashboard instructions.
 - **Context Audit:** historical full bundles and bounded selection audits. The current contract does not retain the original task, so the UI says so rather than inventing it. PR #7 compact delivery is not required.
-- **Diagnostics:** the same storage, runtime and registration checks as `doctor`. Disabled semantic retrieval is a healthy FTS-only configuration.
+- **Diagnostics:** the same storage, runtime and registration checks as `doctor`, including Git membership of every registered workspace. The Git checks run asynchronously, four workspaces at a time, and overlapping Diagnostics requests share one run, so other Dashboard requests are answered during the Git phase. The storage scan before it is synchronous and grows with the size of the database, not with worktrees; resolving each workspace path and matching it against Git's worktree list is also synchronous file-system work, small next to the Git processes. Disabled semantic retrieval is a healthy FTS-only configuration.
 
 Activity, Settings and interactive search are deferred; CLI/API search remains available.
 No source editor or filesystem browser is provided.
@@ -56,7 +56,8 @@ the agent `StoragePort` contract or database schema.
 
 `GET /dashboard-api/session` requires `X-Continuity-Dashboard: 1`. Its capability is
 required as `X-Continuity-Token` for data routes: `projects`, `workspaces`, `status`,
-`stats`, `records`, `selection`, `diagnostics`, `retrieval`. Record lists accept a
+`stats`, `health`, `records`, `selection`, `diagnostics`, `retrieval`. `health` is the
+read-only Overview check for one project; it is display state, never authorization. Record lists accept a
 registered project/workspace, a fixed collection kind, `limit` (1–50), and `after`
 cursor. Memory status filtering happens before pagination. IDs are never authorization.
 Only `/review`, `/forget` and `/sync` support POST; no GET mutates memory or initiates sync.

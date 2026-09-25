@@ -84,7 +84,7 @@ test('current exact source resolves quarantined agent claims and supersedes them
   expect(m.superseded_ids?.sort()).toEqual([first.id, second.id].sort());
   for (const old of [first, second]) expect(client().memory(old.id)).toMatchObject({ status: 'superseded', superseded_by: m.id });
   expect(revisions(first.id)).toHaveLength(3); expect(revisions(m.id)).toHaveLength(1);
-  expect(host.doctor().integrity).toBe('ok');
+  expect((await host.doctor()).integrity).toBe('ok');
 });
 
 test('a lower-trust observation cannot replace current source or human reviewed data', () => {
@@ -127,7 +127,7 @@ test('existing accepted and persisted records survive; old proposed rows never b
   host.close(); host = openContinuity(home);
   const ids = (await client().context({ task: 'Reconnect' })).items.map(i => i.id);
   expect(ids).toContain('mem_old-accepted'); expect(ids).toContain('mem_old-persist'); expect(ids).not.toContain('mem_old-proposed'); expect(client().memory('mem_old-proposed').status).toBe('proposed');
-  client().propose(lesson); expect(client().memory('mem_old-proposed').status).toBe('proposed'); expect(host.doctor().schema_version).toBe(5);
+  client().propose(lesson); expect(client().memory('mem_old-proposed').status).toBe('proposed'); expect((await host.doctor()).schema_version).toBe(5);
 });
 
 test('inspection counts and origin filters distinguish active, quarantined and legacy records', () => {

@@ -1,12 +1,14 @@
 import { test, expect } from '@playwright/test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync, realpathSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { openContinuity } from '../packages/sdk/src/index.js';
+import { openContinuity, CONTINUITY_HOST_API_VERSION } from '../packages/sdk/src/index.js';
 import { createDashboardServer } from '../packages/server/src/dashboard.js';
 import { SqliteStorage } from '../packages/storage-sqlite/src/index.js';
 
+const canonical = (path: string) => { const real = realpathSync.native(path); return process.platform === 'win32' ? real.toLowerCase() : real; };
 let root: string, primary: string, base: string, host: ReturnType<typeof openContinuity>, server: ReturnType<typeof createDashboardServer>;
 const malicious = '<script>window.DASHBOARD_XSS = true</script>';
 test.beforeEach(async () => {
@@ -49,7 +51,7 @@ test('agent-learned memories are active without approval and can be explicitly f
   await page.getByRole('link', { name: m.key, exact: true }).click();
   await expect(page.getByText('generic / automatic-session', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Forget', exact: true }).click(); const dialog = page.getByRole('dialog'); await expect(dialog).toHaveAccessibleName('Forget this memory?'); await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
-  await dialog.getByRole('button', { name: 'Forget memory' }).click(); expect(client.memory(m.id).status).toBe('forgotten');
+  await dialog.getByRole('button', { name: 'Forget memory' }).click(); await expect.poll(() => client.memory(m.id).status).toBe('forgotten');
   await expect(page.getByRole('heading', { name: 'Revision history' })).toBeVisible();
 });
 
@@ -97,6 +99,15 @@ test('diagnostics distinguishes optional disabled semantic from degraded registr
   await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' }); await page.getByRole('link', { name: 'Diagnostics', exact: true }).click(); await expect(page.getByText('Disabled · FTS5 active', { exact: true })).toBeVisible();
   rmSync(join(root, 'other'), { recursive: true, force: true });
   await page.reload(); await expect(page.getByText('Degraded · review the findings below')).toBeVisible();
+});
+test('overview reports a stale workspace from cheap health and leaves full checks to diagnostics', async ({ page }) => {
+  const project = host.projects().find(p => p.name === 'Demo · Relay')!;
+  rmSync(join(root, 'worker-reconnect'), { recursive: true, force: true });
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=`);
+  await expect(page.locator('.project-hero')).toContainText('Degraded');
+  await page.getByRole('link', { name: 'Inspect registration and storage findings' }).click();
+  await expect(page.getByText('Degraded · review the findings below')).toBeVisible();
+  await expect(page.getByText(/inaccessible\/stale workspace: ws_/)).toBeVisible();
 });
 test('empty installation provides an actionable first run', async ({ page }) => {
   const emptyHost = openContinuity(join(root, 'empty-state')); const emptyServer = createDashboardServer(emptyHost, new URL('../dist/packages/dashboard/', import.meta.url));
@@ -213,25 +224,65 @@ test('long scope paths and memory text stay accessible with keyboard-safe confir
 });
 
 test('overview workspace total comes from the server, not the paginated workspace selector', async ({ page }) => {
-  // 55 real Git worktrees are slow to create on Windows CI runners.
-  test.setTimeout(360_000);
+  // The total and the selector's pagination need many registrations, not many Git processes. 53 workspaces are
+  // registered in storage with only the Git link files the Overview's cheap health reads. The workspace opened beyond
+  // the selector's first page, whose Overview verifies it with Git, and one more are real worktrees (sorted last).
   const git = (...args: string[]) => execFileSync('git', args, { cwd: primary, stdio: 'pipe' });
-  for (let i = 0; i < 55; i++) { const worktree = join(root, `ws-${String(i).padStart(2, '0')}`); git('worktree', 'add', '-q', '-b', `ws-${i}`, worktree); host.workspace(primary, worktree); }
-  const project = host.projects().find(p => p.name === 'Demo · Relay')!, total = 1 + 1 + 55, registered = host.inspection.workspaces(project.project_id).map(w => w.workspace_id);
+  const project = host.projects().find(p => p.name === 'Demo · Relay')!;
+  const storage = new SqliteStorage(join(root, 'state', 'continuity.db'));
+  try {
+    for (let i = 0; i < 53; i++) {
+      const name = String(i).padStart(2, '0'), dir = join(root, `registered-${name}`), metadata = join(root, 'registered-git', name);
+      mkdirSync(dir); mkdirSync(metadata, { recursive: true });
+      writeFileSync(join(metadata, 'commondir'), `${relative(metadata, join(primary, '.git'))}\n`); writeFileSync(join(dir, '.git'), `gitdir: ${metadata}\n`);
+      storage.registerWorkspace({ workspace_id: `ws_${randomUUID()}`, project_id: project.project_id, root: canonical(dir) });
+    }
+  } finally { storage.close(); }
+  for (const name of ['zz-real-a', 'zz-real-b']) { const worktree = join(root, name); git('worktree', 'add', '-q', '-b', name, worktree); host.workspace(primary, worktree); }
+  const total = 1 + 1 + 53 + 2, workspaces = host.inspection.workspaces(project.project_id), registered = workspaces.map(w => w.workspace_id);
   expect(registered).toHaveLength(56);
   expect(host.inspection.stats(project.project_id, '').workspaces).toBe(total);
   const workspacesRow = page.locator('.state-list dt').filter({ hasText: /^Workspaces$/ }).locator('+ dd');
-  // Overview health runs doctor synchronously, verifying every registered worktree with git; allow for slow Windows runners.
-  const settled = { timeout: 120_000 };
-  // Open the scoped Overview directly so only one doctor pass runs per assertion.
+  // Overview health must not scale with registered worktrees: it never runs the full doctor (issue #16). The bound
+  // still catches the former minute-long Overview on slow runners without depending on runner speed.
+  const settled = { timeout: 15_000 };
+  const diagnostics: string[] = []; page.on('request', request => { if (new URL(request.url()).pathname === '/dashboard-api/diagnostics') diagnostics.push(request.url()); });
   await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=`);
   await expect(workspacesRow).toHaveText(String(total), settled);
   expect(await page.getByLabel('Workspace', { exact: true }).locator('option').count()).toBeLessThan(total);
   // A workspace beyond the selector's first page must not change the project total.
-  const outside = registered.at(-1)!; expect(host.inspection.stats(project.project_id, outside).workspaces).toBe(total);
-  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${outside}`);
+  const outside = registered.at(-1)!; expect(workspaces.at(-1)!.root.endsWith('zz-real-b')).toBe(true);
+  expect(host.inspection.stats(project.project_id, outside).workspaces).toBe(total);
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${outside}`); await page.reload();
   await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(outside);
   await expect(workspacesRow).toHaveText(String(total), settled);
+  await expect(page.locator('.project-hero .status')).toHaveText('Ready'); await expect(page.locator('.project-hero .status')).toHaveAttribute('data-state', 'healthy');
+  expect(diagnostics).toEqual([]);
+});
+test('the sidebar names the current Host API version', async ({ page }) => {
+  await page.goto(`${base}/#/overview`);
+  await expect(page.locator('.sidebar footer')).toHaveText(`Local · v0.1.0 · Host API ${CONTINUITY_HOST_API_VERSION}`);
+});
+test('real Git worktrees: Overview stays cheap while Diagnostics verifies each one with Git', async ({ page }) => {
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: primary, stdio: 'pipe' });
+  for (const name of ['real-a', 'real-b']) { const worktree = join(root, name); git('worktree', 'add', '-q', '-b', name, worktree); host.workspace(primary, worktree); }
+  const project = host.projects().find(p => p.name === 'Demo · Relay')!, real = host.inspection.workspaces(project.project_id);
+  expect(real).toHaveLength(3);
+  const diagnostics: string[] = []; page.on('request', request => { if (new URL(request.url()).pathname === '/dashboard-api/diagnostics') diagnostics.push(request.url()); });
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=`);
+  await expect(page.locator('.state-list dt').filter({ hasText: /^Workspaces$/ }).locator('+ dd')).toHaveText('4');
+  await expect(page.locator('.project-hero .status')).toHaveText('Ready'); await expect(page.locator('.project-hero .status')).toHaveAttribute('data-state', 'healthy');
+  // A selected real worktree is verified with Git by its own Overview routes.
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=${real[1]!.workspace_id}`); await page.reload();
+  await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(real[1]!.workspace_id);
+  await expect(page.locator('.project-hero .status')).toHaveText('Ready'); await expect(page.locator('.project-hero .status')).toHaveAttribute('data-state', 'healthy');
+  expect(diagnostics).toEqual([]);
+  // Diagnostics is the full doctor: every registered worktree is checked with Git, once per visit.
+  await page.getByRole('link', { name: 'Diagnostics', exact: true }).click();
+  await expect(page.getByText('Healthy · local storage and registrations')).toBeVisible();
+  expect(diagnostics).toHaveLength(1);
+  const report = await host.doctor();
+  expect(report.workspaces.filter(w => w.project_id === project.project_id).map(w => [w.workspace_id, w.accessible])).toEqual(real.map(w => [w.workspace_id, true]));
 });
 
 const staleProject = 'prj_00000000-0000-4000-8000-000000000000';

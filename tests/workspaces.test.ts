@@ -3,7 +3,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { openContinuity, CONTINUITY_HOST_API_VERSION } from '../packages/sdk/src/index.js';
+import { openContinuity, CONTINUITY_HOST_API_VERSION, DOCTOR_WORKSPACE_CONCURRENCY } from '../packages/sdk/src/index.js';
+import { mapBounded, runFile, verifyWorkspace, verifyWorkspaceAsync } from '../packages/sdk/src/workspaces.js';
 import { SqliteStorage } from '../packages/storage-sqlite/src/index.js';
 import { passages } from '../packages/core/src/context/passages.js';
 import { ProjectClient } from '../packages/core/src/index.js';
@@ -27,7 +28,7 @@ beforeEach(() => {
 afterEach(() => { host.close(); rmSync(root, { recursive: true, force: true }); });
 
 it('keeps concurrent worktree sources separate while sharing reviewed project memories', async () => {
-  expect(CONTINUITY_HOST_API_VERSION).toBe(1);
+  expect(CONTINUITY_HOST_API_VERSION).toBe(2);
   const a = host.project(primary); const b = host.workspace(primary, feature);
   const memory = a.propose({ key: 'retry', kind: 'experience', text: 'Reconnect recovery preserves request identifiers.' });
   host.review(primary, memory.id, 'accepted', 'fixture-human');
@@ -41,7 +42,7 @@ it('keeps concurrent worktree sources separate while sharing reviewed project me
   expect(Buffer.byteLength(JSON.stringify(work))).toBe(work.budget.used);
   expect(() => a.inspect(work.context_id)).toThrow('workspace');
   expect(() => b.inspect(main.context_id)).toThrow('workspace');
-  expect(host.doctor().problems).toEqual([]);
+  expect((await host.doctor()).problems).toEqual([]);
 });
 
 it('shares learned project conventions without promoting them to workspace source rules', async () => {
@@ -209,13 +210,16 @@ it('preserves nested project boundaries across all attached checkouts and late r
   expect(JSON.stringify(await a.context({ task: 'reconnect' }))).not.toContain('REVERSE_CANARY');
 });
 
-it('diagnoses missing and invalid registered workspaces without claiming healthy roots', () => {
-  const client = host.workspace(primary, feature); const id = client.status().workspace!.workspace_id;
-  expect(host.doctor().workspaces).toContainEqual({ project_id: client.status().project_id, workspace_id: id, accessible: true });
+it('diagnoses missing and invalid registered workspaces without claiming healthy roots', async () => {
+  const client = host.workspace(primary, feature); const id = client.status().workspace!.workspace_id; const projectId = client.status().project_id;
+  expect((await host.doctor()).workspaces).toContainEqual({ project_id: projectId, workspace_id: id, accessible: true });
+  expect((await host.health(projectId)).problems).toEqual([]);
   rmSync(join(feature, '.git'));
-  expect(host.doctor().problems).toContain(`inaccessible/stale workspace: ${id}`);
+  expect((await host.doctor()).problems).toContain(`inaccessible/stale workspace: ${id}`);
+  expect((await host.health(projectId)).problems).toContain(`inaccessible/stale workspace: ${id}`);
   rmSync(feature, { recursive: true, force: true });
-  expect(host.doctor().workspaces.some(w => w.workspace_id === id && !w.accessible)).toBe(true);
+  expect((await host.doctor()).workspaces.some(w => w.workspace_id === id && !w.accessible)).toBe(true);
+  expect((await host.health(projectId)).problems).toContain(`inaccessible/stale workspace: ${id}`);
 });
 
 
@@ -234,3 +238,108 @@ it('prunes unrelated trees before traversal limits while preserving include sema
   host.close(); host = openContinuity(home, { sources: { include: ['README.md'] } });
   expect(JSON.stringify(await host.project(primary).context({ task: 'reconnect' }))).toContain('NESTED_BASENAME');
 }, 60000);
+
+const settle = async (run: () => unknown) => { try { return { ok: true, value: await run() }; } catch { return { ok: false }; } };
+it('verifies workspaces asynchronously with the same verdicts as the synchronous check', async () => {
+  const copied = join(root, 'copied'); mkdirSync(copied); cpSync(join(feature, '.git'), join(copied, '.git'));
+  const reused = join(root, 'reused'); git(primary, 'worktree', 'add', '-b', 'reused', reused); rmSync(reused, { recursive: true, force: true }); mkdirSync(reused); git(reused, 'init', '-q');
+  const cases = [[primary, feature], [primary, primary], [primary, foreign], [primary, copied], [primary, reused], [primary, join(root, 'missing')], [foreign, feature]] as const;
+  const verdicts = [];
+  for (const [project, workspace] of cases) {
+    const sync = await settle(() => verifyWorkspace(project, workspace)), async = await settle(() => verifyWorkspaceAsync(project, workspace));
+    expect(async).toEqual(sync); verdicts.push(sync.ok);
+  }
+  expect(verdicts).toEqual([true, true, false, false, false, false, false]);
+});
+
+it('verifies worktrees at paths with spaces and non-ASCII characters', async () => {
+  const unusual = join(root, 'wörk tree ü'); git(primary, 'worktree', 'add', '-b', 'unusual', unusual);
+  const client = host.workspace(primary, unusual); const id = client.status().workspace!.workspace_id;
+  expect(await verifyWorkspaceAsync(primary, unusual)).toBe(verifyWorkspace(primary, unusual));
+  expect((await host.doctor()).workspaces).toContainEqual({ project_id: client.status().project_id, workspace_id: id, accessible: true });
+});
+
+it('runs Git without a shell and bounds time, output and failures', async () => {
+  const literal = '$(echo injected) & echo x; `id` | more';
+  expect(await runFile(process.execPath, ['-e', 'process.stdout.write(process.argv[1])', literal], { timeout: 5000, maxBuffer: 1024 })).toBe(literal);
+  const started = Date.now();
+  await expect(runFile(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { timeout: 300, maxBuffer: 1024 })).rejects.toMatchObject({ killed: true });
+  expect(Date.now() - started).toBeLessThan(10000);
+  await expect(runFile(process.execPath, ['-e', 'process.stderr.write("git failed"); process.exit(3)'], { timeout: 5000, maxBuffer: 1024 })).rejects.toMatchObject({ code: 3, message: expect.stringContaining('git failed') });
+  await expect(runFile(process.execPath, ['-e', 'process.stdout.write("x".repeat(4096))'], { timeout: 5000, maxBuffer: 1024 })).rejects.toMatchObject({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' });
+  await expect(runFile('continuity-missing-executable', [], { timeout: 5000, maxBuffer: 1024 })).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('bounds concurrent verifications and keeps results in input order', async () => {
+  let active = 0, peak = 0; const finished: number[] = [];
+  const delays = Array.from({ length: 20 }, (_, i) => [30, 5, 15][i % 3]!);
+  const results = await mapBounded(delays, DOCTOR_WORKSPACE_CONCURRENCY, async (delay, index) => {
+    active++; peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    active--; finished.push(index); return index;
+  });
+  expect(results).toEqual(delays.map((_, i) => i));
+  expect(peak).toBe(DOCTOR_WORKSPACE_CONCURRENCY);
+  expect(finished).not.toEqual(results);
+  expect(await mapBounded([], 4, async () => 1)).toEqual([]);
+  expect(await mapBounded([1, 2, 3], Number.NaN, async value => value * 2)).toEqual([2, 4, 6]);
+});
+
+it('keeps doctor findings in registration order and isolates a failing workspace', async () => {
+  const roots = ['a', 'b', 'c'].map(name => { const path = join(root, `order-${name}`); git(primary, 'worktree', 'add', '-b', `order-${name}`, path); return path; });
+  const ids = roots.map(path => host.workspace(primary, path).status().workspace!.workspace_id);
+  rmSync(roots[1]!, { recursive: true, force: true });
+  const report = await host.doctor();
+  const own = report.workspaces.filter(w => ids.includes(w.workspace_id));
+  expect(own.map(w => [w.workspace_id, w.accessible])).toEqual([[ids[0], true], [ids[1], false], [ids[2], true]]);
+  expect(report.problems).toEqual([`inaccessible/stale workspace: ${ids[1]}`]);
+  expect(await host.doctor()).toEqual(report);
+});
+
+it('runs doctor Git checks without blocking the event loop', async () => {
+  for (const name of ['loop-a', 'loop-b']) { const path = join(root, name); git(primary, 'worktree', 'add', '-b', name, path); host.workspace(primary, path); }
+  let ticks = 0; const timer = setInterval(() => { ticks++; }, 1);
+  try { expect((await host.doctor()).problems).toEqual([]); } finally { clearInterval(timer); }
+  expect(ticks).toBeGreaterThan(0);
+});
+
+it('keeps Overview health cheap, project-scoped and free of Git processes', async () => {
+  const projectId = host.workspace(primary, feature).status().project_id;
+  rmSync(foreign, { recursive: true, force: true });
+  const path = process.env.PATH;
+  process.env.PATH = '';
+  try {
+    // Without Git on PATH, full verification fails while the cheap check still reads the worktree link files.
+    expect(await host.health(projectId)).toMatchObject({ project_id: projectId, fts5: true, problems: [] });
+    expect((await host.doctor()).problems.some(problem => problem.startsWith('inaccessible/stale workspace'))).toBe(true);
+  } finally { process.env.PATH = path; }
+  expect((await host.doctor()).problems.some(problem => problem.startsWith('inaccessible/stale registration'))).toBe(true);
+  await expect(host.health('prj_00000000-0000-4000-8000-000000000000')).rejects.toThrow();
+  // A reused worktree path (an unrelated repository at the registered root) is flagged, as in the full check.
+  const reused = join(root, 'health-reused'); git(primary, 'worktree', 'add', '-b', 'health-reused', reused);
+  const reusedId = host.workspace(primary, reused).status().workspace!.workspace_id;
+  rmSync(reused, { recursive: true, force: true }); mkdirSync(reused); git(reused, 'init', '-q');
+  expect((await host.health(projectId)).problems).toEqual([`inaccessible/stale workspace: ${reusedId}`]);
+});
+
+it('Overview health agrees with the full doctor for a project registered at a linked worktree', async () => {
+  // A project can itself be a linked worktree: its common Git directory is the main checkout's, not its own admin dir.
+  const linked = join(root, 'linked-project'), sibling = join(root, 'linked-sibling');
+  git(primary, 'worktree', 'add', '-b', 'linked-project', linked); git(primary, 'worktree', 'add', '-b', 'linked-sibling', sibling);
+  const projectId = host.init(linked, 'Linked').project_id; const id = host.workspace(linked, sibling).status().workspace!.workspace_id;
+  expect((await host.doctor()).problems).toEqual([]);
+  expect((await host.health(projectId)).problems).toEqual([]);
+  // A workspace that no longer belongs to the repository is still reported by both.
+  git(primary, 'worktree', 'remove', '--force', sibling); mkdirSync(sibling); git(sibling, 'init', '-q');
+  expect((await host.doctor()).problems).toEqual([`inaccessible/stale workspace: ${id}`]);
+  expect((await host.health(projectId)).problems).toEqual([`inaccessible/stale workspace: ${id}`]);
+});
+
+it('Host API 2: doctor returns a Promise that resolves to the unchanged diagnostics report', async () => {
+  expect(CONTINUITY_HOST_API_VERSION).toBe(2);
+  const pending = host.doctor();
+  expect(pending).toBeInstanceOf(Promise);
+  const report = await pending;
+  expect(report).toMatchObject({ integrity: 'ok', fts5: true, schema_version: 5, problems: [], version: '0.1.0', workspaces: [], adapters: { generic: true, 'http-loopback': true } });
+  expect(report.roots).toEqual(host.projects().map(p => ({ project_id: p.project_id, accessible: true })));
+});

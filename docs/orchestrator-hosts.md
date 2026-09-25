@@ -2,12 +2,12 @@
 
 The SDK composition root is privileged. Keep it inside the host process; pass
 only its bound `ProjectClient` to an agent adapter. Host API version is exposed as
-`CONTINUITY_HOST_API_VERSION` (currently 1). Context schema version remains 1.
+`CONTINUITY_HOST_API_VERSION` (currently 2; v0.1.0 shipped Host API 1). Context schema version remains 1.
 
 ```ts
 import { openContinuity, CONTINUITY_HOST_API_VERSION } from 'continuity-local';
 
-if (CONTINUITY_HOST_API_VERSION !== 1) throw new Error('Unsupported host API');
+if (CONTINUITY_HOST_API_VERSION !== 2) throw new Error('Unsupported host API');
 const host = openContinuity(privateStateDirectory, {
   sources: {
     include: ['AGENTS.md', 'README.md', 'docs/', 'src/', 'tests/'],
@@ -45,6 +45,9 @@ accounts, credentials, raw logs or chat transcripts as memory or handoff content
 Nested project registrations remain boundaries in every checkout of the parent
 project, including registrations created after a client was bound. Diagnostics
 validate every registered workspace against both its canonical root and Git
-membership. Include patterns with a provable root prefix prune unrelated trees;
+membership. Host API 2: `host.doctor()` returns a Promise and must be awaited; Git
+runs asynchronously so a host's event loop stays responsive. Its findings are the
+same as in Host API 1, where it returned the report synchronously. `host.health(projectId)` is a cheap, display-only
+project check without Git or integrity checks; never use it to authorize access. Include patterns with a provable root prefix prune unrelated trees;
 unanchored basename patterns still require traversal because they can match at
 any depth. Traversal and content limits remain enforced.

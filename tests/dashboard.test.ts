@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openContinuity } from '../packages/sdk/src/index.js';
@@ -141,4 +142,90 @@ it('inspects a current semantic cache without replacing resource IDs or sync sta
     writeFileSync(join(project, 'README.md'), '# Changed\nNew current implementation.');
     expect(await semanticHost.inspectionRetrievalHealth(id, '')).toMatchObject({ status: 'incomplete' }); expect(client.status().sync).toEqual(before);
   } finally { semanticHost.close(); backend.closeAllConnections(); await new Promise<void>(resolve => backend.close(() => resolve())); }
+});
+
+// The request set the Overview page issues (packages/dashboard/src/app.ts overview()).
+const overviewRequests = (project: string) => ['records?kind=handoffs&limit=5', 'stats', 'status', 'health', 'retrieval'].map(path => `${path}${path.includes('?') ? '&' : '?'}project=${project}&workspace=`);
+const serve = async (dashboardHost: typeof host) => {
+  const dashboard = createDashboardServer(dashboardHost, new URL('../dist/packages/dashboard/', import.meta.url));
+  const arrived = new Map<string, number>();
+  dashboard.prependListener('request', (req: { url?: string }) => { const path = new URL(req.url ?? '/', 'http://local').pathname; arrived.set(path, (arrived.get(path) ?? 0) + 1); });
+  await new Promise<void>(resolve => dashboard.listen(0, '127.0.0.1', resolve)); const address = dashboard.address(); if (!address || typeof address === 'string') throw new Error('Missing address');
+  const origin = `http://127.0.0.1:${address.port}`;
+  const capability = (await (await fetch(`${origin}/dashboard-api/session`, { headers: { 'X-Continuity-Dashboard': '1' } })).json() as { capability: string }).capability;
+  const call = async (path: string) => { const response = await fetch(`${origin}/dashboard-api/${path}`, { headers: { 'X-Continuity-Token': capability } }); return { status: response.status, body: await response.json() as Record<string, unknown>, at: performance.now() }; };
+  return { call, arrived: (path: string) => arrived.get(`/dashboard-api/${path}`) ?? 0, close: () => new Promise<void>(resolve => { dashboard.closeAllConnections(); dashboard.close(() => resolve()); }) };
+};
+
+it('serves Overview health without running the full doctor, even for overlapping loads', async () => {
+  let doctorRuns = 0;
+  const dashboard = await serve({ ...host, doctor: () => { doctorRuns++; return host.doctor(); } });
+  try {
+    const loads = await Promise.all([0, 1].map(() => Promise.all(overviewRequests(id).map(dashboard.call))));
+    for (const load of loads) expect(load.map(r => r.status)).toEqual([200, 200, 200, 200, 200]);
+    expect(loads[0]![3]!.body).toEqual({ project_id: id, schema_version: expect.any(Number), fts5: true, problems: [] });
+    expect(doctorRuns).toBe(0);
+    expect((await dashboard.call('diagnostics')).status).toBe(200);
+    expect(doctorRuns).toBe(1);
+  } finally { await dashboard.close(); }
+});
+
+it('keeps answering Dashboard requests while full diagnostics are still running', async () => {
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  const dashboard = await serve({ ...host, doctor: async () => { await gate; return host.doctor(); } });
+  try {
+    const full = dashboard.call('diagnostics');
+    const cheap = await Promise.all(overviewRequests(id).map(dashboard.call));
+    expect(cheap.map(r => r.status)).toEqual([200, 200, 200, 200, 200]);
+    const finished = cheap.at(-1)!.at; release();
+    const diagnostics = await full;
+    expect(diagnostics.status).toBe(200); expect(diagnostics.at).toBeGreaterThan(finished);
+    expect(diagnostics.body).toMatchObject({ integrity: 'ok', fts5: true });
+  } finally { release(); await dashboard.close(); }
+});
+
+it('shares one full doctor run between overlapping Diagnostics requests', async () => {
+  let runs = 0, release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  const dashboard = await serve({ ...host, doctor: async () => { runs++; await gate; return host.doctor(); } });
+  try {
+    const overlapping = [dashboard.call('diagnostics'), dashboard.call('diagnostics'), dashboard.call('diagnostics')];
+    // Release only after all three requests reached the server, so they overlap by construction.
+    await vi.waitFor(() => expect(dashboard.arrived('diagnostics')).toBe(3), { timeout: 10_000 }); release();
+    const results = await Promise.all(overlapping);
+    expect(results.map(r => r.status)).toEqual([200, 200, 200]); expect(runs).toBe(1);
+    expect((await dashboard.call('diagnostics')).status).toBe(200); expect(runs).toBe(2);
+  } finally { release(); await dashboard.close(); }
+});
+
+it('keeps the Overview health route read-only, authenticated and free of paths', async () => {
+  expect((await get(`health?project=${id}`, { 'X-Continuity-Token': '' })).status).toBe(403);
+  expect((await write('health', { project: id })).status).toBe(404);
+  expect((await get('health?project=prj_00000000-0000-4000-8000-000000000000')).status).toBe(409);
+  const body = await (await get(`health?project=${id}`)).text();
+  expect(body).not.toContain(project.replaceAll('\\', '\\\\')); expect(body).not.toContain('Current implementation');
+  rmSync(other, { recursive: true, force: true });
+  // Overview health is scoped to the selected project; the full doctor still reports every registration.
+  expect(JSON.parse(body)).toMatchObject({ problems: [] });
+  expect(await (await get(`health?project=${id}`)).json()).toMatchObject({ problems: [] });
+  expect((await (await get('diagnostics')).json() as { problems: string[] }).problems.some(p => p.startsWith('inaccessible/stale registration'))).toBe(true);
+});
+
+it('reports the server-side workspace total on every selector page, whatever the number of registered workspaces', async () => {
+  // Count contract only, so the workspaces are registered in storage without Git. Git membership of real worktrees
+  // is covered in workspaces.test.ts, doctor-git-bound.test.ts and the Dashboard browser tests.
+  const storage = new SqliteStorage(join(root, 'state', 'continuity.db'));
+  try {
+    for (let i = 0; i < 56; i++) {
+      const dir = join(root, `registered-${String(i).padStart(2, '0')}`); mkdirSync(dir); const real = realpathSync.native(dir);
+      storage.registerWorkspace({ workspace_id: `ws_${randomUUID()}`, project_id: id, root: process.platform === 'win32' ? real.toLowerCase() : real });
+    }
+  } finally { storage.close(); }
+  const registered = host.inspection.workspaces(id).map(w => w.workspace_id), total = 1 + registered.length;
+  expect(registered).toHaveLength(56);
+  const first = await (await get(`workspaces?project=${id}&workspace=&limit=50`)).json() as { workspaces: { workspace_id: string }[]; next: number | null };
+  const second = await (await get(`workspaces?project=${id}&workspace=&after=${first.next}&limit=50`)).json() as { workspaces: { workspace_id: string }[]; next: number | null };
+  expect(first.workspaces).toHaveLength(50); expect(first.next).toBe(50); expect(second.next).toBeNull();
+  expect([...first.workspaces, ...second.workspaces].map(w => w.workspace_id)).toEqual(registered);
+  // The total never comes from a selector page: the project scope and a workspace beyond the first page agree.
+  for (const workspace of ['', registered.at(-1)!]) expect((await (await get(`stats?project=${id}&workspace=${workspace}`)).json() as { workspaces: number }).workspaces).toBe(total);
 });

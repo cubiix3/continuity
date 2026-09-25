@@ -10,6 +10,8 @@
 - Agent auto-bootstrap: read-only startup index (`continuity bootstrap`, `continuity_bootstrap` MCP tool) and explicit Claude Code and Codex `SessionStart` hook integrations.
 - Provider-aware session autosave: after a turn that edited files, a gated `Stop` hook asks the same model once for 0–3 durable lessons and an optional unfinished-work handoff, applied through the existing memory policy. No transcripts are read. On by default only in attended interactive Claude Code sessions; `CONTINUITY_AUTOSAVE=1|0` overrides it, and `--no-autosave` keeps startup context only.
 - Handoff closure: `continuity handoff close` and autosave record that a handoff's work is finished without rewriting it; session start shows the latest open handoff.
+- Dashboard Overview no longer runs the full doctor (#16): it uses a cheap project health check that reads Git link files instead of running Git. The full doctor runs Git asynchronously, four workspaces at a time, so the Dashboard stays responsive during Diagnostics. `continuity doctor` output is unchanged. `host.health(projectId)` is new and display-only.
+- Host API v2: `host.doctor()` is asynchronous and must be awaited. Doctor findings and output semantics are unchanged. v0.1.0 remains Host API 1.
 
 ## 0.1.0 — 2026-09-22
 

@@ -95,7 +95,11 @@ restore a consistent backup with its original version if rollback is required.
 `doctor` checks SQLite integrity, schema version, FTS availability/references,
 foreign-key and provenance orphans, embedded project IDs, source hashes/paths,
 root accessibility/canonical identity, MCP dependency availability, Continuity
-version and Node runtime. Problems cause a nonzero CLI exit status. An unreadable
+version and Node runtime. For every registered workspace it verifies Git membership:
+up to five `git` processes, each with a 5 s timeout, run without a shell and at most
+four workspaces at a time. A failed or timed-out check marks that workspace
+`inaccessible/stale`; the other workspaces are still checked, and findings keep
+registration order. Problems cause a nonzero CLI exit status. An unreadable
 or physically corrupt database can prevent startup; that also produces a nonzero
 error rather than a healthy result. No repair or deletion happens automatically.
 

@@ -19,6 +19,12 @@ source-backed and agent-learned memories. Agent lessons require meaningful token
 overlap; they are explicitly observations, including when their kind is `rule`.
 All source-backed memories retain source-hash freshness checks.
 
+Admission to the byte budget follows the same order. There is one bounded exception:
+after current rules, a memory that covers at least half of the meaningful task terms
+may be admitted before lower-ranked source passages, within 25% of the budget. Without
+this, a crowded source context dropped every memory, however relevant. Presentation
+order is unchanged, and without such a memory the bundle is identical.
+
 ## Compatibility and trust
 
 No migration, new tables, bulk activation, provider hook or LLM summary. Existing

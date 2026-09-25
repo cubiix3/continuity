@@ -71,6 +71,31 @@ not source truth or project policy. Memory records categorized as `rule` are del
 as memories; only actual source rules occupy the project-rule context kind. The stored
 category remains intact. No source retrieval/ranking policy is changed.
 
+The byte budget admits items in that order, first fit, with one bounded exception.
+Once current rules are in, a relevant memory that covers at least half of the
+meaningful task terms (the bar between a strong and a weak match in source ranking)
+may be admitted before lower-ranked source passages:
+
+- such memories use at most 25% of the budget, in their usual order (trust, then
+  id). A typical memory item is about 700 bytes with its provenance, so 25% of the
+  6,000-byte default holds one or two, while rules and sources keep at least 75%.
+  A 10% share would not hold one memory at the default budget. The longest allowed
+  memory (2,000 characters, about 2.5 KB) fits the share from about 10 KB;
+- the memory is still presented after the sources, with the reason
+  `strong task match: n/m terms; bounded memory share`;
+- a memory that does not fit the share competes for the remaining budget as before;
+- rules are never displaced;
+- stale source-backed memories stay excluded, and quarantined conflicts are never
+  candidates;
+- without a strong match, the bundle is unchanged;
+- a weakly matching memory of any trust never uses the share. It is admitted after
+  the sources, as before, only if the remaining budget still fits it. The trust order
+  above therefore holds among memories of the same relevance tier.
+
+When the budget fits the rules plus either the top-ranked source passage or a strong
+memory, but not both, the strong memory is admitted if it fits the share. Otherwise
+the source passage is, as before.
+
 Only `persist` and `accepted` are eligible. Quarantined, rejected, forgotten and
 superseded rows are excluded. A source-bound memory must still match the current
 source path/hash even after human approval. An active **stored status** is not a

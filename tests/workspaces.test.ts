@@ -321,3 +321,16 @@ it('keeps Overview health cheap, project-scoped and free of Git processes', asyn
   rmSync(reused, { recursive: true, force: true }); mkdirSync(reused); git(reused, 'init', '-q');
   expect((await host.health(projectId)).problems).toEqual([`inaccessible/stale workspace: ${reusedId}`]);
 });
+
+it('Overview health agrees with the full doctor for a project registered at a linked worktree', async () => {
+  // A project can itself be a linked worktree: its common Git directory is the main checkout's, not its own admin dir.
+  const linked = join(root, 'linked-project'), sibling = join(root, 'linked-sibling');
+  git(primary, 'worktree', 'add', '-b', 'linked-project', linked); git(primary, 'worktree', 'add', '-b', 'linked-sibling', sibling);
+  const projectId = host.init(linked, 'Linked').project_id; const id = host.workspace(linked, sibling).status().workspace!.workspace_id;
+  expect((await host.doctor()).problems).toEqual([]);
+  expect((await host.health(projectId)).problems).toEqual([]);
+  // A workspace that no longer belongs to the repository is still reported by both.
+  git(primary, 'worktree', 'remove', '--force', sibling); mkdirSync(sibling); git(sibling, 'init', '-q');
+  expect((await host.doctor()).problems).toEqual([`inaccessible/stale workspace: ${id}`]);
+  expect((await host.health(projectId)).problems).toEqual([`inaccessible/stale workspace: ${id}`]);
+});

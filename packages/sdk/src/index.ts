@@ -21,6 +21,8 @@ import type { SourceScope } from './source-scope.js';
 export const CONTINUITY_HOST_API_VERSION = 1;
 /** Workspaces verified at once by doctor. Each verification runs up to five short Git processes in sequence. */
 export const DOCTOR_WORKSPACE_CONCURRENCY = 4;
+/** Workspaces whose Git link files the cheap Overview health reads at once. */
+const HEALTH_READ_CONCURRENCY = 16;
 const gitLinkTarget = (dir: string, text: string) => {
   const link = text.match(/^gitdir:\s*(.+?)\s*$/m)?.[1];
   if (!link) throw new Error('Not a Git link file.');
@@ -40,14 +42,28 @@ function attachedWorktree(projectRoot: string, workspaceRoot: string) {
     return sameDir(common, projectGit);
   } catch { return false; }
 }
-/** attachedWorktree without blocking the event loop, for display-only health over many workspaces. Same checks. */
+const gitLinkAsync = async (dir: string) => realpath(gitLinkTarget(dir, await readFile(join(dir, '.git'), 'utf8')));
+/**
+ * A checkout's common Git directory without spawning git: its .git directory, or behind a .git link file the linked
+ * directory's commondir (a linked worktree) or the linked directory itself (separate Git dir, submodule).
+ */
+async function commonGitDir(root: string) {
+  if ((await stat(join(root, '.git'))).isDirectory()) return realpath(join(root, '.git'));
+  const linked = await gitLinkAsync(root);
+  let common: string;
+  try { common = (await readFile(join(linked, 'commondir'), 'utf8')).trim(); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return linked; throw error; }
+  return realpath(isAbsolute(common) ? common : join(linked, common));
+}
+/**
+ * attachedWorktree without blocking the event loop, for display-only health over many workspaces. The project may
+ * itself be a linked worktree, so its common Git directory is resolved the way git rev-parse --git-common-dir does.
+ */
 async function attachedWorktreeAsync(projectRoot: string, workspaceRoot: string) {
-  const link = async (dir: string) => realpath(gitLinkTarget(dir, await readFile(join(dir, '.git'), 'utf8')));
   try {
-    const worktreeGit = await link(workspaceRoot);
+    const worktreeGit = await gitLinkAsync(workspaceRoot);
     const common = await realpath(join(worktreeGit, (await readFile(join(worktreeGit, 'commondir'), 'utf8')).trim()));
-    const projectGit = (await stat(join(projectRoot, '.git'))).isDirectory() ? await realpath(join(projectRoot, '.git')) : await link(projectRoot);
-    return sameDir(common, projectGit);
+    return sameDir(common, await commonGitDir(projectRoot));
   } catch { return false; }
 }
 /** Runtime findings shared by the full doctor and the cheap Overview health. */
@@ -292,7 +308,8 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       if (sourceScopeProblem) problems.push(sourceScopeProblem);
       if (!rootAccessible(project)) problems.push(`inaccessible/stale registration: ${project.project_id}`);
       const registered = storage.workspaces(project.project_id);
-      const attached = await Promise.all(registered.map(w => attachedWorktreeAsync(project.root, w.root)));
+      // A few file reads per workspace; bounded so thousands of workspaces cannot exhaust file handles.
+      const attached = await mapBounded(registered, HEALTH_READ_CONCURRENCY, w => attachedWorktreeAsync(project.root, w.root));
       registered.forEach((w, index) => { if (!attached[index]) problems.push(`inaccessible/stale workspace: ${w.workspace_id}`); });
       problems.push(...runtimeProblems().problems);
       return { project_id: project.project_id, schema_version, fts5, problems };

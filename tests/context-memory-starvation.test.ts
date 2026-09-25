@@ -132,9 +132,10 @@ test('C. an agent lesson is never admitted while a related human-reviewed memory
   const all = await context(32000, dir);
   expect(all.bundle.items.map(i => i.kind)).toEqual(['rule', 'source', 'decision', 'experience']);
   const floor = bytes({ ...all.bundle, items: all.bundle.items.slice(0, 2) });
-  for (let budget = all.bundle.budget.used; budget >= floor; budget -= 7) {
-    const { outcome } = await context(budget, dir);
-    expect(outcome(lesson.id) === 'included' && outcome(weakHuman.id) !== 'included', `budget ${budget}`).toBe(false);
+  // The inversion band is a whole memory item wide (hundreds of bytes); a 25-byte step crosses it many times.
+  for (let budget = all.bundle.budget.used; budget >= floor; budget -= 25) {
+    const got = ids(await client(dir).context({ task: TASK, budget }));
+    expect(got.includes(lesson.id) && !got.includes(weakHuman.id), `budget ${budget}`).toBe(false);
   }
 }, 60_000);
 
@@ -143,7 +144,8 @@ test('C. a strong lesson that is not admitted changes nothing: higher-trust memo
   // only matching source. Wherever the lesson stays out, the bundle must equal the bundle without the lesson.
   const dir = project('ride', EDGE);
   const weakHuman = human(dir, { key: 'term.policy', kind: 'decision', text: 'The Windows terminal is the supported shell for release checks and demos.' });
-  const budgets = Array.from({ length: 161 }, (_, i) => 1500 + i * 50);
+  // Up to just past the size of everything: the lesson stays out below it and gets in above it.
+  const budgets = Array.from({ length: 71 }, (_, i) => 1500 + i * 50);
   const without = new Map<number, string[]>();
   for (const budget of budgets) without.set(budget, ids(await client(dir).context({ task: TASK, budget })));
   const lesson = client(dir).propose({ key: 'win.rm', kind: 'experience', text: `Remove a pnpm worktree on Windows with fs.rmSync. ${'It avoids long path and junction failures in node_modules trees. '.repeat(19)}`, from: FROM });

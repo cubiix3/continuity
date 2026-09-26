@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
 import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
 import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
-import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, mcpUsable, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
+import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSeen, readSessionState, recordSeen, removeHookIntegration, saveReport, sessionStartInput, sessionStartOutput, sessionStartUnavailable, mcpUsable, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { DETAIL_TOOLS, serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
@@ -180,8 +180,8 @@ for (const provider of ['claude', 'codex'] as const) {
   command.command('session-start', { hidden: true }).action(async () => {
     process.exitCode = 0;
     try {
-      const cwd = sessionStartCwd(await hookStdin(65536) ?? '');
-      if (!cwd || !hasStore()) return;
+      const start = sessionStartInput(await hookStdin(65536) ?? ''), cwd = start?.cwd;
+      if (!start || !cwd || !hasStore()) return;
       let bundle;
       try { bundle = runtime().bootstrap(cwd); }
       catch (error) { if (error instanceof BootstrapUnavailableError) process.stdout.write(sessionStartUnavailable(provider, error.message)); return; }
@@ -189,9 +189,16 @@ for (const provider of ['claude', 'codex'] as const) {
       // on for the project, and the server binds this directory (a nested unregistered checkout shows the parent's index,
       // but its server has no tools).
       if (bundle) {
-        let detail = false;
-        try { detail = mcpUsable(target().mcp, cwd) && !!runtime().session(cwd); } catch { detail = false; }
+        let detail = false, client;
+        try { client = runtime().session(cwd); detail = !!client && mcpUsable(target().mcp, cwd); } catch { detail = false; }
         process.stdout.write(sessionStartOutput(provider, bundle, new Date(), detail));
+        // What this session was shown: the listed memories, and with the detail tool the memories behind the listed keys.
+        // Only these may be replaced by an explicit correction in its saves. Recorded only where saves can happen.
+        if (client && start.session && autosaveEnabled(provider)) {
+          const more = new Set(detail ? bundle.available.more_keys : []);
+          const behind = more.size ? client.memories().filter(m => more.has(m.key) && ['persist', 'accepted'].includes(m.status)).map(m => m.id) : [];
+          recordSeen(continuityHomePath(), provider, start.session, [...bundle.memories.map(m => m.id), ...behind]);
+        }
       }
     } catch { /* Silent: Continuity must not disturb unrelated agent sessions. */ }
   });
@@ -239,7 +246,7 @@ for (const provider of ['claude', 'codex'] as const) {
       applying = true;
       const client = runtime().session(input.cwd);
       if (!client || scopeOf(client) !== state.scope) { process.stdout.write(stopMessage(state.scope === 'mixed' ? 'Continuity: save skipped — this turn edited more than one project or workspace.' : 'Continuity: save skipped — the session moved to another project or workspace.')); return; }
-      const report = saveReport(applySave(client, provider, input.session, reply!, state.close));
+      const report = saveReport(applySave(client, provider, input.session, reply!, state.close, readSeen(home, provider, input.session)));
       if (report) process.stdout.write(stopMessage(report));
     } catch (error) {
       // One short line once a save was attempted; otherwise silent. Never a stack trace, never a blocking exit code.

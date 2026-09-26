@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ProjectClient } from '../../core/src/index.js';
+import type { Correction, ProjectClient } from '../../core/src/index.js';
 import { looksSensitive } from '../../core/src/security/sensitive.js';
 import type { HookProviderName } from './index.js';
 
@@ -24,7 +24,7 @@ const MAX_ITEM = 500;
 
 const SAVE_LINE = `[${SAVE_LABEL}]: <{"memories":[],"handoff":null}>`;
 const SAVE_FIELDS = [
-  'memories: 0-3 durable, non-obvious lessons or decisions (including decisions the user stated) that a future agent in this project must know, each {"key":"area.topic","kind":"decision|experience|memory","text":"one factual sentence"}; add "source_path" only if that project file contains the text verbatim. Never: test/build results, changed-file lists, generic advice, guesses, secrets, chat. Empty is normal.',
+  'memories: 0-3 durable, non-obvious lessons or decisions (including decisions the user stated) that a future agent in this project must know, each {"key":"area.topic","kind":"decision|experience|memory","text":"one factual sentence"}; add "source_path" only if that project file contains the text verbatim. To correct a listed memory that is now wrong, reuse its key and add "corrects":true. Never: test/build results, changed-file lists, generic advice, guesses, secrets, chat. Empty is normal.',
   'handoff: only if meaningful work is left unfinished (including parts deferred to a later session), {"goal":"...","status":"in_progress|blocked","remaining":["..."],"decisions":["..."],"risks":["..."],"next":"one concrete next action"}; otherwise null.',
   'Keep the JSON on that one line; write < and > inside strings as \\u003c and \\u003e.',
 ];
@@ -121,18 +121,48 @@ export function readSessionState(home: string, provider: HookProviderName, sessi
     return { dirty: value.dirty === true, pending: value.pending === true, ...(value.offered === true && value.pending === true ? { offered: true } : {}), ...(value.asked === true && value.pending === true ? { asked: true } : {}), ...(typeof value.turn === 'string' && /^[0-9a-f]{16}$/.test(value.turn) ? { turn: value.turn } : {}), ...(typeof value.prompted_at === 'number' ? { prompted_at: value.prompted_at } : {}), ...(typeof value.scope === 'string' && /^([0-9a-f]{24}|mixed)$/.test(value.scope) ? { scope: value.scope } : {}), ...(typeof value.close === 'string' && /^handoff_[0-9a-f-]{36}$/.test(value.close) ? { close: value.close } : {}) };
   } catch { return { dirty: false, pending: false }; }
 }
-export function writeSessionState(home: string, provider: HookProviderName, session: string, state: SessionState, now = Date.now()) {
-  const dir = stateDir(home), file = stateFile(home, provider, session);
-  // Never follow a linked state directory (cleanup deletes files there); checked before anything is created in it.
+/** The state directory, never through a link (cleanup deletes files there); checked before anything is created in it. */
+function stateDirectory(home: string) {
+  const dir = stateDir(home);
   const linked = (path: string) => { try { return lstatSync(path).isSymbolicLink(); } catch { return false; } };
   if (linked(join(home, 'hooks')) || linked(dir)) throw new Error('Autosave state directory is a link.');
   mkdirSync(dir, { recursive: true });
-  if (!state.dirty && !state.pending && state.prompted_at === undefined) { try { unlinkSync(file); } catch { /* absent */ } }
-  else { const temporary = `${file}.${process.pid}.tmp`; writeFileSync(temporary, JSON.stringify(state)); renameSync(temporary, file); }
-  // Abandoned sessions leave only flags; drop them after a week.
+  return dir;
+}
+const replace = (file: string, text: string) => { const temporary = `${file}.${process.pid}.tmp`; writeFileSync(temporary, text); renameSync(temporary, file); };
+/** Abandoned sessions leave only flags and ids; drop them after a week. */
+function cleanup(dir: string, now: number) {
   for (const name of readdirSync(dir)) {
     try { if (now - statSync(join(dir, name)).mtimeMs > STATE_TTL_MS) unlinkSync(join(dir, name)); } catch { /* concurrent cleanup */ }
   }
+}
+export function writeSessionState(home: string, provider: HookProviderName, session: string, state: SessionState, now = Date.now()) {
+  const dir = stateDirectory(home), file = stateFile(home, provider, session);
+  if (!state.dirty && !state.pending && state.prompted_at === undefined) { try { unlinkSync(file); } catch { /* absent */ } }
+  else replace(file, JSON.stringify(state));
+  cleanup(dir, now);
+}
+
+/**
+ * The memory ids this session was shown in its startup context: the only memories an explicit correction from this
+ * session may replace. Ids only, never content; kept next to the session flags, for as long.
+ */
+const MAX_SEEN = 64;
+const MEMORY_ID = /^mem_[0-9a-f-]{36}$/;
+const seenFile = (home: string, provider: HookProviderName, session: string) => stateFile(home, provider, session).replace(/\.json$/, '.seen.json');
+export function readSeen(home: string, provider: HookProviderName, session: string): Set<string> {
+  try {
+    const value = JSON.parse(readFileSync(seenFile(home, provider, session), 'utf8')) as unknown;
+    return new Set(Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && MEMORY_ID.test(id)).slice(-MAX_SEEN) : []);
+  } catch { return new Set(); }
+}
+/** Adds this startup's ids (startup, resume, clear and compact each show the index again), the newest kept. */
+export function recordSeen(home: string, provider: HookProviderName, session: string, ids: readonly string[], now = Date.now()) {
+  const shown = ids.filter(id => MEMORY_ID.test(id));
+  if (!shown.length) return;
+  const dir = stateDirectory(home), seen = [...readSeen(home, provider, session)].filter(id => !shown.includes(id));
+  replace(seenFile(home, provider, session), JSON.stringify([...seen, ...shown].slice(-MAX_SEEN)));
+  cleanup(dir, now);
 }
 
 /** Ends an offer or request; `dirty` keeps its edits for the next offer. The offered handoff id lives only as long. */
@@ -206,12 +236,13 @@ const list = (value: unknown) => (Array.isArray(value) ? value : []).map(text).f
 const clip = (items: string[]) => items.map(v => Array.from(v).slice(0, MAX_ITEM).join(''));
 
 /**
- * Applies a parsed reply through the existing Core APIs. Only key/kind/text/source_path and handoff text are taken
- * from the model; attribution comes from the provider session, and trust, status, scope and provenance from Core.
+ * Applies a parsed reply through the existing Core APIs. Only key/kind/text/source_path, a memory's "corrects" flag and
+ * handoff text are taken from the model; attribution comes from the provider session, and trust, status, scope and
+ * provenance from Core. A correction may replace only a memory whose id is in `seen` (shown to this session at startup).
  */
-export function applySave(client: ProjectClient, provider: HookProviderName, session: string, reply: SaveReply, offered?: string): Outcome[] {
+export function applySave(client: ProjectClient, provider: HookProviderName, session: string, reply: SaveReply, offered?: string, seen: ReadonlySet<string> = new Set()): Outcome[] {
   const from = { agent: AGENT_NAME[provider], session };
-  const outcomes: Outcome[] = [], proposals: { at: number; candidate: Record<string, unknown> }[] = [];
+  const outcomes: Outcome[] = [], proposals: { at: number; candidate: Record<string, unknown>; correction?: Correction }[] = [];
   let created: string | undefined;
   reply.memories.forEach((raw, index) => {
     const m = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -220,11 +251,12 @@ export function applySave(client: ProjectClient, provider: HookProviderName, ses
     if (m.kind === 'rule') { outcomes.push({ item, outcome: 'skipped: project rules come from project files' }); return; }
     // Each raw field separately: serialization would escape quotes and hide `key = "value"` patterns.
     if ([key, text(m.text), source].some(looksSensitive)) { outcomes.push({ item, outcome: 'skipped: looks like a secret' }); return; }
-    proposals.push({ at: outcomes.length, candidate: { key, kind: m.kind, text: text(m.text), ...(source ? { source_path: source } : {}), from } });
+    // "corrects" is the model's statement of intent; which memory it may replace is decided by the host and Core.
+    proposals.push({ at: outcomes.length, candidate: { key, kind: m.kind, text: text(m.text), ...(source ? { source_path: source } : {}), from }, ...(m.corrects === true ? { correction: { visible: seen } } : {}) });
     outcomes.push({ item, outcome: 'pending' });
   });
   if (proposals.length) {
-    const results = client.proposeAll(proposals.map(p => p.candidate));
+    const results = client.proposeAll(proposals.map(p => p.candidate), proposals.map(p => p.correction));
     proposals.forEach((p, i) => {
       const result = results[i]!;
       // A malformed item is the model's mistake, not a failure the user can act on.

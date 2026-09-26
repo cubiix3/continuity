@@ -27,7 +27,7 @@ trusted local user or host chooses a project before agent input is accepted.
 | Secret indexing | Mandatory filename exclusions plus content scanning and gitignore | Secret names, token patterns, nested ignore tests |
 | Memory poisoning | Exact excerpts use source hashes; attributed agent claims activate at lower trust; conflicts quarantine | Forged-trust rejection, routine filtering, same-key conflicts and source supersession tests |
 | Stale context | Refresh and hash before retrieval; require matching memory evidence version | Source change, deletion, and new exclusion tests |
-| Silent conflicts | Stable claim key; conflict becomes `needs_attention`; append revisions | Conflict, forget, and revision tests |
+| Silent conflicts | Stable claim key; conflict becomes `needs_attention`; an agent correction replaces only a shown, same-workspace agent observation; append revisions | Conflict, forget, and revision tests |
 | Deleted sources | Clear old searchable content; mark missing | Deleted-source test |
 | Malicious repository content | Text cannot change project capability or policy | Prompt scope test; fixed host binding |
 | Compromised agent using tools | Six-operation adapter without DB or namespace access | MCP tool inventory and injected scope rejection |
@@ -126,6 +126,22 @@ tool-command markers. Whoever controls that environment can switch autosave, as 
 trust, scope or attribution. A prompt-injected source can still lead the model to propose
 a false lesson; it is attributed as an agent observation, and sources and human
 review outrank it. See [agent lifecycle](agent-lifecycle.md).
+
+A save may mark a memory `"corrects":true` ([ADR 016](adr/016-agent-corrections.md)).
+The model names only a key. The host passes Core the memory ids that this session's
+startup context showed, and Core replaces a claim only if all of these hold:
+- it is the key's only claim;
+- it is an active agent observation;
+- it belongs to the same workspace;
+- it is among the shown ids.
+
+A human-reviewed or source-backed memory, another workspace's or project's claim,
+and a claim the session never saw cannot be replaced this way. One call applies at
+most three corrections, and the old claim stays in revision history as `superseded`.
+The same prompt-injection limit applies: a manipulated model can replace an agent
+observation it was shown with another agent observation, never anything stronger.
+Agent-facing APIs (MCP, HTTP, CLI `remember`) reject the field, so only the hook
+path, bound to its session, can ask for a correction.
 
 ## Provider-installed detail tools
 

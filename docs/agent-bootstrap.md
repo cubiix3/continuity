@@ -10,7 +10,7 @@ Continuity · Lumen Renderer
 Primary workspace · healthy · synced 2m ago · 365 sources
 
 Needs attention
-  2 unresolved memory conflicts (shadow.mode); no side is current truth.
+  1 unresolved memory conflict (shadow.mode); no side is current truth.
 
 Latest handoff
   Claude Code · in progress · 18m ago
@@ -65,7 +65,7 @@ Continuity hook in `/hooks`. Codex skips untrusted hooks and warns at startup.
 | Included | Excluded |
 | --- | --- |
 | Project name, workspace label, sync age, source count | Absolute paths, internal IDs in the text output |
-| Conflict count and up to three conflict keys | Either side of a conflict as memory |
+| Conflicts, counted per key (two or more different quarantined claims and no active claim), and up to three conflict keys | Either side of a conflict as memory; claims held for review beside an active memory or on their own (counted as `attention.held` in JSON only) |
 | Latest open handoff in this workspace (not done, not closed): agent, status, goal, next action, up to three remaining items | Full handoffs, transcripts, chat history |
 | Up to eight durable memories: key, kind, trust label, first 160 characters | Full memory bodies, source passages, Git history |
 | Counts of further memories and older open handoffs (JSON), and up to ten keys of further memories | Records that look like secrets (withheld and counted) |

@@ -25,7 +25,12 @@ export interface BootstrapBundle {
   workspace: { workspace_id?: string; label: string };
   sync: { at?: string; files?: number };
   health: { status: 'healthy' | 'degraded'; warnings: string[] };
-  attention: { conflicts: number; conflict_keys: string[]; stale_source_backed: number; withheld: number };
+  /**
+   * `conflicts`: keys with two or more different quarantined claims and no active claim, so no side is current truth.
+   * `held`: other quarantined claims: one that contradicts an active memory (the stronger claim stands) or stands alone
+   * (unproven source, or awaiting review). Held claims are for human review and are not rendered for agents.
+   */
+  attention: { conflicts: number; conflict_keys: string[]; held: number; stale_source_backed: number; withheld: number };
   latest_handoff?: BootstrapHandoff;
   memories: BootstrapMemory[];
   /**
@@ -56,7 +61,10 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
   // Startup context is injected without a request; records that look like secrets are withheld, not shown.
   const withheld = looksSensitive;
 
-  const conflicts = input.memories.filter(m => m.status === 'needs_attention');
+  const activeKeys = new Set(input.memories.filter(m => ['persist', 'accepted'].includes(m.status)).map(m => m.key));
+  const quarantined = input.memories.filter(m => m.status === 'needs_attention'), claims = new Map<string, Set<string>>();
+  for (const m of quarantined) if (!activeKeys.has(m.key)) claims.set(m.key, (claims.get(m.key) ?? new Set<string>()).add(m.text));
+  const conflictKeys = [...claims].filter(([, texts]) => texts.size > 1).map(([key]) => key);
   const groups: Record<BootstrapOrigin, Memory[]> = { human: [], source: [], agent: [] };
   let stale = 0, hidden = 0;
   for (const m of input.memories) {
@@ -98,7 +106,7 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
     workspace: { ...(workspace ? { workspace_id: workspace.workspace_id } : {}), label: workspace ? (workspace.root.split(/[\\/]/).filter(Boolean).at(-1) ?? 'Workspace') : 'Primary workspace' },
     sync: sync ? { at: sync.at, files: sync.files } : {},
     health: { status: warnings.length ? 'degraded' : 'healthy', warnings },
-    attention: { conflicts: conflicts.length, conflict_keys: [...new Set(conflicts.filter(m => !withheld(m.key)).map(m => clip(m.key, 80).text))].sort().slice(0, LIMITS.conflictKeys), stale_source_backed: stale, withheld: hidden },
+    attention: { conflicts: conflictKeys.length, conflict_keys: [...new Set(conflictKeys.filter(key => !withheld(key)).map(key => clip(key, 80).text))].sort().slice(0, LIMITS.conflictKeys), held: quarantined.filter(m => !conflictKeys.includes(m.key)).length, stale_source_backed: stale, withheld: hidden },
     memories: [],
     available: { memories: available, more_memories: available, more_keys: [], handoffs: workspaceHandoffs.length, older_handoffs: olderHandoffs, open_handoff: newest !== undefined },
     budget: { requested: budget, used: 0, unit: 'utf8_bytes' },

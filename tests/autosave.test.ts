@@ -282,7 +282,7 @@ test('the report is one short line, only for failures, without item text', () =>
   expect(long.length).toBeLessThan(160); expect(long).not.toContain('\n'); expect(long).not.toContain('memory x');
 });
 
-test('a conflicting lesson is quarantined silently, never overrides a human-accepted memory, and shows at the next start', () => {
+test('a conflicting lesson is quarantined silently, never overrides a human-accepted memory, and is held for review', () => {
   const pending = host.project(a).propose({ key: 'release.branch', kind: 'decision', text: 'Releases are cut from the release branch.' });
   host.review(a, pending.id, 'accepted', 'Maintainer');
   const { answer } = session('claude', a, save({ memories: [{ key: 'release.branch', kind: 'decision', text: 'Releases are cut directly from main.' }] }));
@@ -290,7 +290,11 @@ test('a conflicting lesson is quarantined silently, never overrides a human-acce
   const memories = host.project(a).memories();
   expect(memories.find(m => m.id === pending.id)).toMatchObject({ status: 'accepted', text: 'Releases are cut from the release branch.' });
   expect(memories.find(m => m.text.includes('directly from main'))).toMatchObject({ status: 'needs_attention' });
-  expect(renderBootstrap(host.bootstrap(a)!)).toMatch(/1 unresolved memory conflict \(release\.branch\)/);
+  // The reviewed memory stands, so this is no conflict: the claim is held for review, and startup shows the reviewed one.
+  const start = host.bootstrap(a)!;
+  expect(start.attention).toMatchObject({ conflicts: 0, held: 1 });
+  expect(renderBootstrap(start)).not.toMatch(/unresolved memory conflict|no side is current truth/);
+  expect(start.memories.find(m => m.key === 'release.branch')).toMatchObject({ origin: 'human' });
 });
 
 test('binding: unregistered, nested, cross-project and missing homes stay isolated and silent', () => {

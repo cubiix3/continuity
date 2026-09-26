@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import type { ContextRequest, Handoff, HandoffClosure, MemoryProposal, Project, SourcePort, StoragePort, TokenEstimator, SemanticRetrievalPort, SemanticScope, SemanticHealth, RetrievalMode, SemanticCandidate, Workspace } from './contracts.js';
+import type { ContextRequest, Correction, Handoff, HandoffClosure, Memory, MemoryProposal, Project, SourcePort, StoragePort, TokenEstimator, SemanticRetrievalPort, SemanticScope, SemanticHealth, RetrievalMode, SemanticCandidate, Workspace } from './contracts.js';
 import { handoffActive, handoffCloseSchema, openHandoff, handoffInputSchema, contextRequestSchema, memoryCandidateSchema, observationSchema } from './contracts.js';
 import { contextBroker } from './context/broker.js';
-import { proposeMemory } from './memory/policy.js';
+import { learned, proposeMemory } from './memory/policy.js';
 import { NamespaceGuard } from './security/namespace.js';
 import { passages, PassageLimitError } from './context/passages.js';
 import { rankPassages } from './context/ranking.js';
@@ -13,6 +13,9 @@ export * from './projects/resolver.js';
 export * from './security/namespace.js';
 export { BOOTSTRAP_BUDGET, renderBootstrap, relativeAge } from './context/bootstrap.js';
 export type { BootstrapBundle, BootstrapMemory, BootstrapHandoff } from './context/bootstrap.js';
+
+/** Explicit corrections one proposeAll call may apply. */
+export const MAX_CORRECTIONS = 3;
 
 /** A host-created, project-bound capability. Adapters receive this, never storage. */
 export class ProjectClient {
@@ -139,18 +142,26 @@ export class ProjectClient {
     const bundle = this.inspect(id);
     return { context_id: id, historical: true, retrieval: bundle.retrieval, items: bundle.items.map(i => ({ id: i.id, source: i.provenance.origin, reasons: i.reasons })), ...(verbose ? { selection: this.storage.selection(this.project.project_id, id) } : {}) };
   }
-  propose(input: unknown) {
+  /** `correction` is for trusted hosts only (see Correction); agent-facing APIs never pass it. */
+  propose(input: unknown, correction?: Correction) {
     memoryCandidateSchema.parse(input);
-    this.refresh();
-    return this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id), this.workspace?.workspace_id));
+    const [result] = this.proposeAll([input], [correction]);
+    if (result instanceof Error) throw result;
+    return result!;
   }
-  /** Several proposals against one source snapshot: one refresh, each proposal in its own transaction; an invalid item fails alone. */
-  proposeAll(inputs: readonly unknown[]): (MemoryProposal | Error)[] {
+  /**
+   * Several proposals against one source snapshot: one refresh, each proposal in its own transaction; an invalid item fails
+   * alone. At most MAX_CORRECTIONS of them may replace an earlier claim, so one answer cannot rewrite many memories.
+   */
+  proposeAll(inputs: readonly unknown[], corrections: readonly (Correction | undefined)[] = []): (MemoryProposal | Error)[] {
     this.refresh();
-    return inputs.map(input => {
+    let allowed = MAX_CORRECTIONS;
+    return inputs.map((input, index) => {
       try {
         memoryCandidateSchema.parse(input);
-        return this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id), this.workspace?.workspace_id));
+        const correction = allowed > 0 ? corrections[index] : undefined;
+        if (correction) allowed--;
+        return this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id), this.workspace?.workspace_id, correction));
       } catch (error) { return error instanceof Error ? error : new Error('Proposal failed.'); }
     });
   }
@@ -160,11 +171,25 @@ export class ProjectClient {
     if (!memory) throw new Error('Memory not found in this project.');
     return memory;
   }
+  /**
+   * Trusted host operation. When the forgotten memory was an agent observation, a single agent observation that was
+   * quarantined only against claims now gone becomes active again: removing one side of an agent-only conflict leaves no
+   * conflict. Human-reviewed or source-backed sides never release a quarantined claim.
+   */
   forget(id: string) {
-    const memory = this.memory(id);
-    const forgotten = { ...memory, status: 'forgotten' as const, reason: 'Explicitly forgotten; retained in local revision history.' };
-    this.storage.saveMemory(forgotten);
-    return forgotten;
+    this.assertBinding();
+    return this.storage.atomic(() => {
+      const memory = this.memory(id);
+      const forgotten: Memory = { ...memory, status: 'forgotten', reason: 'Explicitly forgotten; retained in local revision history.' };
+      this.storage.saveMemory(forgotten);
+      if (!learned(memory)) return forgotten;
+      const same = this.storage.memories(this.project.project_id).filter(m => m.key === memory.key);
+      const held = same.filter(m => m.status === 'needs_attention');
+      if (held.length === 1 && learned(held[0]!) && !same.some(m => ['persist', 'accepted'].includes(m.status))) {
+        this.storage.saveMemory({ ...held[0]!, status: 'persist', reason: 'Automatically retained agent observation; the conflicting agent observation was forgotten.' });
+      }
+      return forgotten;
+    });
   }
   createHandoff(input: unknown): Handoff {
     this.assertBinding();

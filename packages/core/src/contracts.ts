@@ -41,8 +41,14 @@ export interface Memory extends MemoryCandidate {
   provenance: Provenance;
   review?: { by: string; at: string; decision: 'accepted' | 'rejected' };
   superseded_by?: string;
+  superseded_at?: string;
 }
 export type MemoryProposal = Memory & { outcome: 'persisted' | 'rejected' | 'quarantined' | 'duplicate' | 'superseded' | 'pending'; superseded_ids?: string[] };
+/**
+ * A trusted host's statement that a proposal explicitly corrects an earlier claim with the same key, with the memory ids
+ * the proposing session was actually shown. Never part of an agent-facing schema: the model names a key, never an id.
+ */
+export interface Correction { visible: ReadonlySet<string> }
 export const observationSchema = z.object({ text: z.string().min(1).max(4000), agent: z.string().min(1).max(100), session: z.string().min(1).max(100) }).strict();
 export interface Observation extends z.infer<typeof observationSchema> { id: string; project_id: string; provenance: Provenance }
 const shortText = z.string().max(2000);

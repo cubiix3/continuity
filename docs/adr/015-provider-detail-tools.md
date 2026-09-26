@@ -58,20 +58,23 @@ Findings, verified with a probe MCP server:
   multi-line ones, and comments, and it counts table headers only outside arrays. It
   decodes quoted and escaped key names. It refuses what it could still misread:
   - `mcp_servers` defined inline or as an array of tables;
-  - unterminated strings or arrays, and invalid escapes;
+  - unterminated strings or arrays, and invalid escapes in key names (values are left to Codex);
   - lines that are no key.
 
   It then writes nothing. The refusal names the file, the reason and `--no-mcp`, and
   `remove` reports that an entry there could not be checked.
 - How and where the server starts belongs to the integration. `command` and `args` are
-  written as installed. A working directory, an environment or another transport key
-  under the entry would bind every session to one place, so any of them makes the entry
-  `stale`, and `install` drops it. That holds for Codex (`cwd`, `env`, `env_vars`,
-  `url` and their sub-tables) and for any extra key in the Claude Code entry. Codex's
-  other keys and sub-tables under `[mcp_servers.continuity]` (a timeout, tool
-  approvals) are the user's and are kept, and a disabled server stays disabled.
-  Comments before the next table and a byte order mark are kept. Every edit is read
-  back before it is written.
+  written as installed. A working directory, an environment, an execution environment
+  or credentials under the entry would bind every session to one place.
+  - Codex: only an allowlist of the user's own settings is kept under
+    `[mcp_servers.continuity]`: `enabled`, `required`, the timeouts, tool lists,
+    `tools` approvals, `default_tools_approval_mode`, `supports_parallel_tool_calls` and
+    `scopes`. Any other key or sub-table (`cwd`, `env`, `env_vars`, `environment_id`,
+    `url`, or a key a later Codex adds) makes the entry `stale`, and `install` drops it.
+  - Claude Code: any key beyond the written entry makes it `stale`.
+
+  A disabled server stays disabled. Comments before the next table and a byte order
+  mark are kept. Every edit is read back before it is written.
 - Backups of `.claude.json` and `config.toml` roll: one private copy each, holding the
   version before the latest change (after a second change, the original is gone). Remove
   normalizes the end of the file to one line break.

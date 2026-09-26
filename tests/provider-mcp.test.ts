@@ -180,7 +180,7 @@ test('Codex: files this editor could misread are refused and never written (the 
   // Lines inside a multi-line array that look like headers are values, not tables.
   writeFileSync(file, '');
   writeMcpEntry(t.mcp, true);
-  writeFileSync(file, readFileSync(file, 'utf8') + 'notes = [\n  ["A", "B"],\n  ["C"]\n]\n\n[after]\nkeep = true\n');
+  writeFileSync(file, readFileSync(file, 'utf8') + 'enabled_tools = [\n  ["A", "B"],\n  ["C"]\n]\n\n[after]\nkeep = true\n');
   expect(mcpState(t.mcp)).toBe('installed');
   removeHookIntegration(t);
   expect(readFileSync(file, 'utf8')).toBe('[after]\nkeep = true\n');
@@ -226,7 +226,7 @@ test('Codex: strings, multi-line strings and quoted keys are read as TOML reads 
   removeHookIntegration(t); expect(readFileSync(file, 'utf8')).toBe('');
 });
 
-test('Codex: a working directory or environment under our table is stale, never current, and a repair drops only those', () => {
+test('Codex: any startup key under our table (working directory, environment, execution environment, unknown) is stale, and a repair drops only those', () => {
   const dir = join(root, 'codex-transport');
   const t = codexTarget(dir), file = join(dir, 'config.toml');
   writeMcpEntry(t.mcp, true);
@@ -237,14 +237,19 @@ test('Codex: a working directory or environment under our table is stale, never 
     'a dotted environment key': 'env.CLAUDE_PROJECT_DIR = "x"\n',
     'passed-through variables': 'env_vars = [\n  "CLAUDE_PROJECT_DIR",\n]\n',
     'an environment sub-table': '\n[mcp_servers.continuity.env]\nCLAUDE_PROJECT_DIR = "x"\n',
+    'an execution environment': 'environment_id = "remote"\n',
+    'credentials': 'bearer_token = "x"\n',
+    'a key Codex may add later': 'launch_directory = "G:/elsewhere"\n',
   };
+  // The user's settings: whether and how long it runs, which tools, and approvals.
+  const kept = 'startup_timeout_sec = 20\nenabled_tools = ["continuity_context"]\nsupports_parallel_tool_calls = true\ntools.continuity_search.approval_mode = "approve"\n';
   for (const [name, extra] of Object.entries(extras)) {
-    writeFileSync(file, `${clean}startup_timeout_sec = 20\n${extra}\n[after]\nkeep = true\n`);
+    writeFileSync(file, `${clean}${kept}${extra}\n[after]\nkeep = true\n`);
     expect(mcpState(t.mcp), name).toBe('stale');
     expect(mcpUsable(t.mcp, a), name).toBe(false);
     expect(hookIntegrationStatus(t).state, name).toBe('stale');
     installHookIntegration(t);
-    expect(readFileSync(file, 'utf8'), name).toBe(`${clean}startup_timeout_sec = 20\n\n[after]\nkeep = true\n`);
+    expect(readFileSync(file, 'utf8'), name).toBe(`${clean}${kept}\n[after]\nkeep = true\n`);
     expect(mcpState(t.mcp), name).toBe('installed');
   }
   // Claude Code: any key beyond the entry we write makes it stale, and the repair writes the exact entry.

@@ -63,11 +63,13 @@ const commandLine = (t: McpTarget) => `command = ${tomlString(t.command)}`;
 const argsLine = (t: McpTarget) => `args = [${t.args.map(tomlString).join(', ')}]`;
 const codexBlock = (t: McpTarget) => [`[mcp_servers.${MCP_SERVER_NAME}]`, commandLine(t), argsLine(t)];
 /**
- * How and where Codex starts a server. Under our table these keys are ours: `command` and `args` as written, and none
- * of the others, since a working directory or an environment would bind every session to one place. Every other key
- * (enabled, timeouts, tool lists, approvals) is the user's and is kept.
+ * Codex's per-server settings that are the user's and are kept under our table: whether it runs, timeouts, tool lists
+ * and approvals. Every other key decides how or where the server starts (a working directory, an environment, a URL,
+ * credentials, an execution environment) and is ours: `command` and `args` as written, nothing else. An allowlist,
+ * so a key Codex adds later cannot bind every session to one place unnoticed.
  */
-const TRANSPORT = new Set(['command', 'args', 'cwd', 'env', 'env_vars', 'url', 'bearer_token_env_var', 'http_headers', 'env_http_headers']);
+const USER_KEYS = new Set(['enabled', 'required', 'startup_timeout_sec', 'tool_timeout_sec', 'enabled_tools', 'disabled_tools', 'default_tools_approval_mode', 'tools', 'supports_parallel_tool_calls', 'scopes']);
+const startup = (key: string) => !USER_KEYS.has(key);
 
 // A TOML key: bare, basic-quoted or literal-quoted segments joined by dots.
 const SEGMENT = String.raw`(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*')`;
@@ -217,9 +219,9 @@ function codexState(t: McpTarget, wanted: boolean, layout: TomlLayout): McpEntry
   if (!ours('codex', args)) return 'foreign';
   if (!wanted) return 'stale';
   if (/^\s*false\s*(?:#.*)?$/.test(value('enabled') ?? '')) return 'disabled';
-  const transport = keys.filter(k => TRANSPORT.has(k.path[0]!)).map(k => k.path.join('.')).sort().join(' ');
+  const transport = keys.filter(k => startup(k.path[0]!)).map(k => k.path.join('.')).sort().join(' ');
   const current = transport === 'args command' && tomlStrings(value('command')) === t.command && JSON.stringify(args) === JSON.stringify(t.args)
-    && !layout.subs.some(s => TRANSPORT.has(s.path[2]!));
+    && !layout.subs.some(s => startup(s.path[2]!));
   return current ? 'installed' : 'stale';
 }
 
@@ -277,11 +279,11 @@ export function writeMcpEntry(t: McpTarget, wanted: boolean): { changed: boolean
     const indexes = (r: Range) => Array.from({ length: r.end - r.start }, (_, k) => r.start + k);
     // Removing drops our table and its sub-tables. Repairing keeps the user's settings and writes command and args in
     // place, dropping any other transport key or sub-table.
-    const drop = new Set((wanted ? layout.subs.filter(s => TRANSPORT.has(s.path[2]!)) : [layout.main, ...layout.subs]).flatMap(indexes));
+    const drop = new Set((wanted ? layout.subs.filter(s => startup(s.path[2]!)) : [layout.main, ...layout.subs]).flatMap(indexes));
     const put = new Map<number, string[]>();
     if (wanted) {
       const written = new Set<string>();
-      for (const key of tableKeys(layout.lines, layout.main).filter(k => TRANSPORT.has(k.path[0]!))) {
+      for (const key of tableKeys(layout.lines, layout.main).filter(k => startup(k.path[0]!))) {
         indexes(key).forEach(i => drop.add(i));
         const line = key.path.join('.') === 'command' ? commandLine(t) : key.path.join('.') === 'args' ? argsLine(t) : undefined;
         if (line && !written.has(line)) { put.set(key.start, [line]); written.add(line); }

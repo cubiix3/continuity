@@ -200,8 +200,9 @@ The answering stop applies the save, with or without `stop_hook_active`.
 
 ## What the hook enforces
 
-The model supplies claims, not policy. The hook takes only key, kind, text and
-`source_path` for memories, the listed handoff fields, and the `close_handoff` flag.
+The model supplies claims, not policy. The hook takes only key, kind, text,
+`source_path` and the `corrects` flag for memories, the listed handoff fields, and the
+`close_handoff` flag.
 Attribution is fixed: `agent` is `Claude Code` or `Codex`, and `session` is the
 provider's `session_id`.
 
@@ -211,8 +212,13 @@ Core then decides trust, status, scope and provenance as for any other proposal:
 - routine output, generic advice and speculation are rejected;
 - a `source_path` claim needs an exact excerpt in the current source snapshot
   (`derived`), otherwise it is quarantined;
-- a conflicting key is quarantined. A human-accepted memory is never overridden, and
-  the next session start reports the conflict;
+- a conflicting key is quarantined. A human-accepted memory is never overridden: the
+  new claim is held for review, and the reviewed memory stays in the startup index.
+  Two agent claims with no active side are reported as a conflict at the next start;
+- a memory marked `"corrects":true` replaces the key's only claim, provided that claim
+  is an active agent observation of this workspace that this session was shown at
+  session start. The old claim becomes `superseded` and stays in the history (see
+  [ADR 016](adr/016-agent-corrections.md)). Otherwise the conflict rule applies;
 - duplicates are not stored twice.
 
 Before Core, the hook drops:
@@ -230,9 +236,16 @@ A close applies only to the handoff id the host recorded when it made the offer 
 request. The model never supplies an id. Closing a handoff that is already closed is
 a quiet no-op.
 
+A correction works the same way. `SessionStart` records the ids of the memories it
+listed in full; a key named only under "more available" does not count. They go into
+`<home>/hooks/autosave/<hash>.seen.json`, next to the session flags, and are kept for
+as long: ids only, at most 64. Nothing is recorded where autosave is off or its hooks
+are not installed (`--no-autosave`). The model names a key and sets the flag; the host
+decides which memory that key may replace.
+
 A save is silent, including an empty one. Policy outcomes are normal and also silent:
 a rejected, quarantined, duplicate or skipped item (a secret, a `rule`, a `done`
-handoff, a malformed item) is not reported, because the user cannot act on it. Conflicts appear in the next session start and in the
+handoff, a malformed item, a key repeated within one save) is not reported, because the user cannot act on it. Conflicts appear in the next session start and in the
 Dashboard. Only a failure produces one `systemMessage` line, without item text and
 without a stack trace, for example:
 

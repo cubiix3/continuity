@@ -42,6 +42,27 @@ The stable key defines a claim. Different texts under the same key conflict:
 
 - Two agent-learned claims quarantine both. Repeating either claim does not make it
   active; another newer agent opinion cannot resolve the conflict.
+- **Explicit agent correction** ([ADR 016](adr/016-agent-corrections.md)). A new
+  agent claim replaces an old one only when a trusted host states that it
+  explicitly corrects the old claim. Only session [autosave](agent-lifecycle.md)
+  does this, and only for a save marked `"corrects":true`. All of these must hold:
+  - the key's only claim is an active agent observation (`persist`, no source path,
+    not human-reviewed);
+  - the claim belongs to the proposer's workspace;
+  - the proposing session's startup context listed the claim in full;
+  - the new claim itself is attributed, free-form and not routine.
+
+  The old row becomes `superseded`, with `superseded_by`, `superseded_at` and the
+  correcting agent and session in its reason. The new row is active. One proposal
+  call applies at most three corrections. Agent-facing APIs (MCP, HTTP, CLI
+  `remember`) cannot ask for a correction. In every other case the conflict rules
+  above and below apply.
+- **Forgetting one side.** Forgetting a live agent observation re-evaluates its key.
+  If exactly one quarantined agent observation remains, no claim is active, and the
+  key carries no human decision and no record with a source path, that claim becomes active,
+  because nothing contradicts it any more. Forgetting a human-reviewed or
+  source-backed claim, a rejected record or an already forgotten one never releases
+  a claim. Rejecting one side does not release the other; approve it instead.
 - A weaker agent observation cannot displace an active source-backed or explicitly
   accepted human-reviewed memory. Only the observation is quarantined.
 - An exact current source excerpt replaces same-key agent claims (including
@@ -134,6 +155,13 @@ The Dashboard shows Active, Source-backed, Agent-learned, Conflicts/unresolved,
 Superseded, Forgotten, legacy/incomplete and Rejected records. Detail exposes trust,
 attribution, evidence and history. Forget is an explicit protected write with
 confirmation; manual review remains an optional detail/CLI action.
+
+The startup index counts a **conflict** per key: two or more different quarantined
+claims and no active claim, so no side is current truth. Every other quarantined
+claim is **held** for review: one that contradicts an active human-reviewed or
+source-backed memory (that memory stands), or a lone claim (an unproven source, or
+one awaiting review). Held claims are counted in the bundle but not rendered for
+agents. The Dashboard's Conflicts/unresolved list keeps showing all of them.
 
 ## Provider-neutral session contract
 

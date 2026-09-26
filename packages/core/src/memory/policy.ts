@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { memoryCandidateSchema } from '../contracts.js';
-import type { Memory, MemoryProposal, Project, Resource, StoragePort } from '../contracts.js';
+import type { Correction, Memory, MemoryProposal, Project, Resource, StoragePort } from '../contracts.js';
 
 const active = (m: Memory) => ['persist', 'accepted'].includes(m.status);
-const learned = (m: Memory) => m.provenance.trust === 'agent_observation' && !m.source_path && m.status !== 'accepted';
+/** An attributed agent observation without source evidence or human review: the only kind an agent may correct. */
+export const learned = (m: Memory) => m.provenance.trust === 'agent_observation' && !m.source_path && m.status !== 'accepted';
 const routine = /(tests? (passed|succeeded)|build (passed|succeeded)|i (modified|changed)|temporary debug|^(?:todo|next task)\s*:|\b(?:i guess|i speculate|probably|might be|maybe)\b|^(?:always write clean code|use meaningful variable names|follow best practices)\b)/i;
 
 /** Automatic activation is not source authority. Evidence and conflicts are checked in the caller's transaction. */
-export function proposeMemory(storage: StoragePort, project: Project, input: unknown, sources: Resource[], workspaceId?: string): MemoryProposal {
+export function proposeMemory(storage: StoragePort, project: Project, input: unknown, sources: Resource[], workspaceId?: string, correction?: Correction): MemoryProposal {
   const candidate = memoryCandidateSchema.parse(input);
   const previous = storage.memories(project.project_id);
   const current = (m: Memory) => sources.some(r => r.project_id === project.project_id && r.provenance.project_id === project.project_id && r.provenance.workspace_id === m.provenance.workspace_id && r.state === 'fresh' && r.path === m.source_path && r.hash === m.provenance.source_version && r.content.includes(m.text));
@@ -20,6 +21,12 @@ export function proposeMemory(storage: StoragePort, project: Project, input: unk
   const duplicate = matches.find(m => m.text === candidate.text && m.kind === candidate.kind && m.source_path === candidate.source_path && (candidate.source_path ? sameEvidenceScope(m) && current(m) : learned(m) || m.status === 'accepted'));
   const resolvesDuplicate = backed && duplicate && duplicate.status !== 'accepted' && (duplicate.status === 'needs_attention' || conflicts.length > 0) && conflicts.every(replaceable);
   if (duplicate && !resolvesDuplicate) return { ...duplicate, outcome: 'duplicate' };
+  // An explicit correction replaces exactly one claim: the only claim with this key, an active agent observation of the
+  // proposer's workspace that the proposing session was shown. Human-reviewed, source-backed, foreign-workspace or unseen
+  // claims, and keys with more than one claim, keep the conflict rules below.
+  const only = matches.length === 1 && conflicts.length === 1 ? conflicts[0]! : undefined;
+  const corrected = correction && candidate.from && !candidate.source_path && only && only.status === 'persist' && learned(only) && sameEvidenceScope(only) && correction.visible.has(only.id) ? only : undefined;
+  const now = new Date().toISOString();
 
   let status: Memory['status'] = 'persist', reason = 'Automatically retained agent observation; current sources and human-reviewed knowledge take precedence.';
   let outcome: MemoryProposal['outcome'] = 'persisted';
@@ -34,9 +41,13 @@ export function proposeMemory(storage: StoragePort, project: Project, input: unk
   const id = resolvesDuplicate ? duplicate!.id : `mem_${randomUUID()}`;
   const replaced: string[] = [];
   if (status === 'persist' && (conflicts.length || (backed && matches.some(replaceable)))) {
-    if (backed && conflicts.every(replaceable)) {
+    if (corrected) {
+      storage.saveMemory({ ...corrected, status: 'superseded', superseded_by: id, superseded_at: now, reason: `Explicitly corrected by ${candidate.from!.agent} in session ${candidate.from!.session}, which was shown this memory.` });
+      replaced.push(corrected.id);
+      outcome = 'superseded'; reason = 'Automatically retained agent observation that explicitly corrects an earlier one; current sources and human-reviewed knowledge take precedence.';
+    } else if (backed && conflicts.every(replaceable)) {
       for (const old of matches.filter(replaceable)) {
-        storage.saveMemory({ ...old, status: 'superseded', superseded_by: id, reason: 'Replaced by a claim proven in the current source snapshot.' }); replaced.push(old.id);
+        storage.saveMemory({ ...old, status: 'superseded', superseded_by: id, superseded_at: now, reason: 'Replaced by a claim proven in the current source snapshot.' }); replaced.push(old.id);
       }
       outcome = 'superseded';
     } else {
@@ -49,7 +60,7 @@ export function proposeMemory(storage: StoragePort, project: Project, input: unk
   }
   const memory: Memory = {
     ...candidate, id, project_id: project.project_id, status, reason,
-    provenance: { project_id: project.project_id, ...(workspaceId ? { workspace_id: workspaceId } : {}), origin: candidate.source_path ?? (candidate.from ? `agent:${candidate.from.agent}` : 'agent:proposal'), captured_at: new Date().toISOString(), source_version: source?.hash ?? candidate.from?.session ?? 'unverified', trust: backed ? 'derived' : candidate.from && !candidate.source_path ? 'agent_observation' : 'untrusted' },
+    provenance: { project_id: project.project_id, ...(workspaceId ? { workspace_id: workspaceId } : {}), origin: candidate.source_path ?? (candidate.from ? `agent:${candidate.from.agent}` : 'agent:proposal'), captured_at: now, source_version: source?.hash ?? candidate.from?.session ?? 'unverified', trust: backed ? 'derived' : candidate.from && !candidate.source_path ? 'agent_observation' : 'untrusted' },
   };
   storage.saveMemory(memory);
   return { ...memory, outcome, ...(replaced.length ? { superseded_ids: replaced } : {}) };

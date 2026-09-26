@@ -29,12 +29,14 @@ const MATCHERS: Record<HookProviderName, Partial<Record<HookEvent, string>>> = {
 const MAX_STDIN = 64 * 1024;
 const marker = (provider: HookProviderName, event: HookEvent) => ['integrate', provider, SUBCOMMAND[event]] as const;
 
-/** Official SessionStart input (Claude Code and Codex) carries `cwd`; anything unusable stays silent. */
-export function sessionStartCwd(stdin: string): string | undefined {
+/** Official SessionStart input (Claude Code and Codex) carries `cwd` and `session_id`; anything unusable stays silent. */
+export function sessionStartInput(stdin: string): { cwd: string; session?: string } | undefined {
   if (!stdin || stdin.length > MAX_STDIN) return undefined;
   try {
-    const input = JSON.parse(stdin) as { cwd?: unknown };
-    return typeof input.cwd === 'string' && input.cwd.length > 0 && input.cwd.length < 4096 ? input.cwd : undefined;
+    const input = JSON.parse(stdin) as { cwd?: unknown; session_id?: unknown };
+    if (typeof input.cwd !== 'string' || !input.cwd.length || input.cwd.length >= 4096) return undefined;
+    const session = typeof input.session_id === 'string' ? input.session_id.trim() : '';
+    return { cwd: input.cwd, ...(session && session.length <= 100 ? { session } : {}) };
   } catch { return undefined; }
 }
 /**
@@ -132,6 +134,15 @@ function eventStates(target: HookTarget, settings: Settings) {
       : found.length === 1 && same(found[0]!.hook, wanted.hook) && found[0]!.matcher === wanted.matcher ? 'installed' : 'stale';
   }
   return { events, entries };
+}
+
+/**
+ * Whether this integration's autosave hooks (PostToolUse and Stop) are present, current or not: an entry an older
+ * release installed still offers and applies saves until the next install. Reads the hook settings file only.
+ */
+export function autosaveInstalled(target: HookTarget): boolean {
+  try { const { events } = eventStates(target, readSettings(target.file).settings); return (['PostToolUse', 'Stop'] as const).every(event => ['installed', 'stale'].includes(events[event]!)); }
+  catch { return false; }
 }
 
 export function hookIntegrationStatus(target: HookTarget): HookIntegrationStatus {

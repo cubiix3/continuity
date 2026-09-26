@@ -110,9 +110,26 @@ test('conflicts are summarized, never presented as memory', async () => {
   client.propose({ key: 'shadow.mode', kind: 'decision', text: 'Shadow rendering requires temporal antialiasing.', from: agent('x') });
   client.propose({ key: 'shadow.mode', kind: 'decision', text: 'Shadow rendering does not require temporal antialiasing.', from: agent('y') });
   const result = bundle();
-  expect(result.attention).toMatchObject({ conflicts: 2, conflict_keys: ['shadow.mode'] });
+  // Counted per key: two quarantined claims of one key are one conflict.
+  expect(result.attention).toMatchObject({ conflicts: 1, conflict_keys: ['shadow.mode'], held: 0 });
   expect(result.memories.some(m => m.key === 'shadow.mode')).toBe(false);
-  expect(renderBootstrap(result)).toContain('2 unresolved memory conflicts (shadow.mode); no side is current truth.');
+  expect(renderBootstrap(result)).toContain('1 unresolved memory conflict (shadow.mode); no side is current truth.');
+});
+
+test('a quarantined claim beside an active memory, or alone, is held for review and never called a conflict', async () => {
+  const client = host.project(a); await client.sync();
+  // A stronger source-backed claim stands; the contradicting agent observation is held.
+  client.propose({ key: 'renderer.csm', kind: 'decision', text: 'The renderer uses cascaded shadow maps without a TAA dependency.', source_path: 'README.md' });
+  client.propose({ key: 'renderer.csm', kind: 'decision', text: 'The renderer depends on TAA for its shadow maps.', from: agent('x') });
+  // Two different held claims are still no conflict while the stronger memory stands.
+  client.propose({ key: 'renderer.csm', kind: 'decision', text: 'The renderer uses variance shadow maps instead.', from: agent('y') });
+  // A lone claim whose source does not prove it is held too.
+  client.propose({ key: 'alpha.unproven', kind: 'decision', text: 'The README documents the release process.', source_path: 'README.md' });
+  const result = bundle();
+  expect(result.attention).toMatchObject({ conflicts: 0, conflict_keys: [], held: 3 });
+  const text = renderBootstrap(result);
+  expect(text).not.toContain('unresolved memory conflict'); expect(text).not.toContain('no side is current truth');
+  expect(result.memories.map(m => m.key)).toContain('renderer.csm');
 });
 
 test('source-backed memory whose source changed is withheld, using the broker freshness rule', async () => {

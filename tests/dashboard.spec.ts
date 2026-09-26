@@ -196,9 +196,9 @@ test('overview prioritizes conflicts and quick memory filters preserve automatic
     }
   }
   await page.getByRole('link', { name: 'Memories', exact: true }).click();
-  await page.getByRole('button', { name: 'Conflicts', exact: true }).focus(); await page.keyboard.press('Enter'); await expect(page.locator('tbody tr')).toHaveCount(2);
-  await expect(page.getByRole('button', { name: 'Conflicts', exact: true })).toBeFocused();
-  await expect(page.getByRole('button', { name: 'Conflicts', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Needs review', exact: true }).focus(); await page.keyboard.press('Enter'); await expect(page.locator('tbody tr')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Needs review', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Needs review', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Active', exact: true }).click(); await expect(page.locator('tbody tr')).toHaveCount(1);
   await page.getByRole('link', { name: source.key, exact: true }).click(); await expect(page.getByText('SOURCE', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);

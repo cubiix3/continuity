@@ -151,7 +151,9 @@ user has approved (for example a Claude Code `.mcp.json` server with the same na
 replace the server command or its environment. That is equivalent to the code
 execution such an approved configuration already has. The environment the provider passes is trusted like the hook environment. The
 installer changes only its own entry and never overwrites a foreign server with the same
-name.
+name. Its entry is current only without a working directory, an environment or any
+other transport setting, since those would bind every session to one project; `install`
+removes them.
 
 ## Local human Dashboard
 

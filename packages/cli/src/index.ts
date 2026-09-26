@@ -157,13 +157,13 @@ const hasStore = () => existsSync(join(continuityHomePath(), 'continuity.db'));
 for (const provider of ['claude', 'codex'] as const) {
   const name = provider === 'claude' ? 'Claude Code' : 'Codex';
   const target = (autosave = true, detail = true) => (provider === 'claude' ? claudeHookTarget : codexHookTarget)(process.execPath, realpathSync.native(fileURLToPath(import.meta.url)), continuityHomePath(), process.env, { autosave, detail });
-  const command = integrate.command(provider).description(`${name} startup context, session autosave hooks and read-only project detail tools in the user settings (${provider === 'claude' ? 'CLAUDE_CONFIG_DIR or ~/.claude/settings.json, and .claude.json for the MCP entry' : 'CODEX_HOME or ~/.codex: hooks.json and config.toml'})`);
+  const command = integrate.command(provider).description(`${name} startup context, session autosave hooks and project detail tools in the user settings (${provider === 'claude' ? 'CLAUDE_CONFIG_DIR or ~/.claude/settings.json, and .claude.json for the MCP entry' : 'CODEX_HOME or ~/.codex: hooks.json and config.toml'})`);
   command.command('install').description('Add or repair the Continuity hooks and MCP entry; other hooks and servers are preserved')
     .option('--no-autosave', 'startup context only; removes Continuity autosave hooks').option('--no-mcp', 'no project detail tools; removes the Continuity MCP entry')
     .action((options: { autosave: boolean; mcp: boolean }) => output(installHookIntegration(target(options.autosave, options.mcp))));
   command.command('status').option('--no-autosave', 'expect startup context only').option('--no-mcp', 'expect no project detail tools')
     .action((options: { autosave: boolean; mcp: boolean }) => { const status = hookIntegrationStatus(target(options.autosave, options.mcp)); output(status); if (status.state !== 'installed') process.exitCode = 1; });
-  command.command('remove').description('Remove only the Continuity hooks and MCP entry').action(() => output(removeHookIntegration(target())));
+  command.command('remove').description('Remove only the Continuity hooks and MCP entry').action(() => { const result = removeHookIntegration(target()); output(result); if (result.state === 'invalid_config') process.exitCode = 1; });
   /**
    * Started by the provider for each session, with the session's directory: Claude Code passes CLAUDE_PROJECT_DIR (its
    * working directory is the project too), Codex starts the server in the session's cwd. The host resolver binds it like

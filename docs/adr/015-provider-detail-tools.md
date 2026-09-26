@@ -54,13 +54,27 @@ Findings, verified with a probe MCP server:
   unregistered checkout shows its parent's index, but its server binds nothing. With
   the tool, the hook lists up to ten keys of the memories it did not show. Otherwise it
   names no tool and no CLI.
-- The Codex editor refuses what it could misread, and then writes nothing:
-  multi-line strings, quoted or inline `mcp_servers`, array tables, and unbalanced
-  brackets. Table headers count only outside arrays. Only `command` and `args` are the
-  integration's own: other keys and sub-tables under `[mcp_servers.continuity]` (a
-  timeout, tool approvals) are kept, and a disabled server stays disabled. Comments
-  before the next table and a byte order mark are kept.
-  Backups of `.claude.json` and `config.toml` roll: one private copy each.
+- The Codex editor reads `config.toml` as TOML does. It skips strings, including
+  multi-line ones, and comments, and it counts table headers only outside arrays. It
+  decodes quoted and escaped key names. It refuses what it could still misread:
+  - `mcp_servers` defined inline or as an array of tables;
+  - unterminated strings or arrays, and invalid escapes;
+  - lines that are no key.
+
+  It then writes nothing. The refusal names the file, the reason and `--no-mcp`, and
+  `remove` reports that an entry there could not be checked.
+- How and where the server starts belongs to the integration. `command` and `args` are
+  written as installed. A working directory, an environment or another transport key
+  under the entry would bind every session to one place, so any of them makes the entry
+  `stale`, and `install` drops it. That holds for Codex (`cwd`, `env`, `env_vars`,
+  `url` and their sub-tables) and for any extra key in the Claude Code entry. Codex's
+  other keys and sub-tables under `[mcp_servers.continuity]` (a timeout, tool
+  approvals) are the user's and are kept, and a disabled server stays disabled.
+  Comments before the next table and a byte order mark are kept. Every edit is read
+  back before it is written.
+- Backups of `.claude.json` and `config.toml` roll: one private copy each, holding the
+  version before the latest change (after a second change, the original is gone). Remove
+  normalizes the end of the file to one line break.
 - Closed and finished handoffs no longer count as "more available". The index says
   `No open handoff.` when no handoff is offered for continuation: all are closed, or
   the newest remaining one was created as done, which ends the chain.

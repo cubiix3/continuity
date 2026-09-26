@@ -6,7 +6,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { openContinuity } from '../packages/sdk/src/index.js';
-import { claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, mcpState, removeHookIntegration, writeMcpEntry } from '../packages/adapter-hooks/src/index.js';
+import { claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, mcpState, mcpUsable, removeHookIntegration, writeMcpEntry } from '../packages/adapter-hooks/src/index.js';
 
 // Real CLI processes and MCP stdio sessions; Windows CI runners need more than vitest's 5 s default.
 vi.setConfig({ testTimeout: 60_000 });
@@ -152,30 +152,35 @@ test('Codex: a foreign or dotted-key continuity server is never touched; our sta
 test('Codex: files this editor could misread are refused and never written (the review cases)', () => {
   const dir = join(root, 'codex-unsafe'); mkdirSync(dir);
   const file = join(dir, 'config.toml'), t = codexTarget(dir);
-  const ourArgs = `args = ["--no-warnings", "${cli.replace(/\\/g, '\\\\')}", "--home", "h", "integrate", "codex", "mcp"]`;
   const cases = {
-    'a header inside a multi-line string': `notes = """\n[mcp_servers.continuity]\ncommand = "node"\n${ourArgs}\n"""\n`,
-    'a quoted mcp_servers table': '["mcp_servers".continuity]\ncommand = "node"\n',
     'a root inline mcp_servers table': 'mcp_servers = { other = { command = "node" } }\n',
     'an array table': '[[mcp_servers.continuity]]\ncommand = "node"\n',
     'an unclosed array': 'x = [\n  1,\n',
+    'an unterminated string': 'x = "open\n',
+    'an unterminated multi-line string': 'x = """\n[mcp_servers.continuity]\n',
+    'an invalid escape in a key': `[projects."G:${'\\'}q"]\ntrust_level = "trusted"\n`,
+    'a line that is no key': '[tui]\njust words\n',
   };
   for (const [i, [name, text]] of Object.entries(cases).entries()) {
     const own = join(root, `codex-unsafe-${i}`); mkdirSync(own);
     const target = codexTarget(own), config = join(own, 'config.toml');
     writeFileSync(config, text);
     expect(mcpState(target.mcp), name).toBe('invalid_config');
-    expect(() => installHookIntegration(target), name).toThrow(/does not edit/);
+    // The refusal names the file, the reason and the way out.
+    expect(() => installHookIntegration(target), name).toThrow(/does not edit \(.+\)\. Nothing was changed\..*--no-mcp/);
     expect(readFileSync(config, 'utf8'), name).toBe(text);
     expect(existsSync(join(own, 'hooks.json')), name).toBe(false);
     // Hooks only (--no-mcp) do not need the file at all.
     expect(installHookIntegration(codexTarget(own, { detail: false })), name).toMatchObject({ state: 'installed', mcp: 'invalid_config' });
     expect(readFileSync(config, 'utf8'), name).toBe(text);
+    // Removing cannot see an entry there, and says so instead of reporting a clean removal.
+    expect(removeHookIntegration(target), name).toMatchObject({ state: 'invalid_config', message: expect.stringContaining(config) });
+    expect(readFileSync(config, 'utf8'), name).toBe(text);
   }
   // Lines inside a multi-line array that look like headers are values, not tables.
   writeFileSync(file, '');
   writeMcpEntry(t.mcp, true);
-  writeFileSync(file, readFileSync(file, 'utf8') + 'env_vars = [\n  ["A", "B"],\n  ["C"]\n]\n\n[after]\nkeep = true\n');
+  writeFileSync(file, readFileSync(file, 'utf8') + 'notes = [\n  ["A", "B"],\n  ["C"]\n]\n\n[after]\nkeep = true\n');
   expect(mcpState(t.mcp)).toBe('installed');
   removeHookIntegration(t);
   expect(readFileSync(file, 'utf8')).toBe('[after]\nkeep = true\n');
@@ -183,6 +188,75 @@ test('Codex: files this editor could misread are refused and never written (the 
   writeFileSync(file, String.fromCharCode(0xfeff) + 'model = "m"\n');
   writeMcpEntry(t.mcp, true);
   expect(readFileSync(file, 'utf8').charCodeAt(0)).toBe(0xfeff); expect(mcpState(t.mcp)).toBe('installed');
+});
+
+test('Codex: strings, multi-line strings and quoted keys are read as TOML reads them', () => {
+  const ourArgs = `args = ["--no-warnings", "${cli.replace(/\\/g, '\\\\')}", "--home", "${home.replace(/\\/g, '\\\\')}", "integrate", "codex", "mcp"]`;
+  const u = '\\' + 'u0075';
+  // A header inside a multi-line string is text: the file is edited, and the string survives install and remove.
+  const texts = {
+    'a table inside a multi-line string': `notes = """\n[mcp_servers.continuity]\ncommand = "evil"\n"""\nshort = '"""'\nraw = '''\n[x]\n'''\n\n[projects."G:\\\\Continuity"]\ntrust_level = "trusted"\n`,
+    'escaped quotes before a closing delimiter': 'a = """ends with ""quotes"" \\""""\nb = 1\n',
+  };
+  for (const [i, [name, text]] of Object.entries(texts).entries()) {
+    const dir = join(root, `codex-strings-${i}`); mkdirSync(dir);
+    const t = codexTarget(dir), file = join(dir, 'config.toml');
+    writeFileSync(file, text);
+    expect(mcpState(t.mcp), name).toBe('missing');
+    expect(installHookIntegration(t), name).toMatchObject({ state: 'installed', mcp: 'installed' });
+    expect(readFileSync(file, 'utf8').startsWith(text.trimEnd()), name).toBe(true);
+    removeHookIntegration(t);
+    expect(readFileSync(file, 'utf8'), name).toBe(text);
+  }
+  const dir = join(root, 'codex-keys'); mkdirSync(dir);
+  const t = codexTarget(dir), file = join(dir, 'config.toml');
+  // Quoted and escaped names are decoded: they are the same keys TOML sees.
+  for (const text of [`[mcp_servers]\n"contin${u}ity" = { command = "node" }\n`, `[mcp_servers."contin${u}ity"]\ncommand = "node"\nargs = ["x"]\n`]) {
+    writeFileSync(file, text);
+    expect(mcpState(t.mcp), text).toBe('foreign');
+    expect(installHookIntegration(t), text).toMatchObject({ state: 'partial', mcp: 'foreign' }); expect(readFileSync(file, 'utf8')).toBe(text);
+  }
+  const quoted = `["mcp_servers"."contin${u}ity"]\ncommand = ${JSON.stringify(process.execPath)}\n${ourArgs}\n`;
+  writeFileSync(file, quoted);
+  expect(mcpState(t.mcp)).toBe('installed');
+  removeHookIntegration(t); expect(readFileSync(file, 'utf8')).toBe('');
+  // Our entry with a trailing comma and comments in its args is still ours: current, and removed on request.
+  writeFileSync(file, `[mcp_servers.continuity]\ncommand = ${JSON.stringify(process.execPath)} # node\n${ourArgs.replace(' "mcp"]', '\n  "mcp", # the server\n] # end')}\n`);
+  expect(mcpState(t.mcp)).toBe('installed');
+  removeHookIntegration(t); expect(readFileSync(file, 'utf8')).toBe('');
+});
+
+test('Codex: a working directory or environment under our table is stale, never current, and a repair drops only those', () => {
+  const dir = join(root, 'codex-transport');
+  const t = codexTarget(dir), file = join(dir, 'config.toml');
+  writeMcpEntry(t.mcp, true);
+  const clean = readFileSync(file, 'utf8');
+  const extras = {
+    'a working directory': `cwd = ${JSON.stringify(a)}\n`,
+    'an inline environment': 'env = { CONTINUITY_PROJECT = "x" }\n',
+    'a dotted environment key': 'env.CLAUDE_PROJECT_DIR = "x"\n',
+    'passed-through variables': 'env_vars = [\n  "CLAUDE_PROJECT_DIR",\n]\n',
+    'an environment sub-table': '\n[mcp_servers.continuity.env]\nCLAUDE_PROJECT_DIR = "x"\n',
+  };
+  for (const [name, extra] of Object.entries(extras)) {
+    writeFileSync(file, `${clean}startup_timeout_sec = 20\n${extra}\n[after]\nkeep = true\n`);
+    expect(mcpState(t.mcp), name).toBe('stale');
+    expect(mcpUsable(t.mcp, a), name).toBe(false);
+    expect(hookIntegrationStatus(t).state, name).toBe('stale');
+    installHookIntegration(t);
+    expect(readFileSync(file, 'utf8'), name).toBe(`${clean}startup_timeout_sec = 20\n\n[after]\nkeep = true\n`);
+    expect(mcpState(t.mcp), name).toBe('installed');
+  }
+  // Claude Code: any key beyond the entry we write makes it stale, and the repair writes the exact entry.
+  const claudeDir = join(root, 'claude-transport'), claude = claudeTarget(claudeDir);
+  installHookIntegration(claude);
+  const config = json(join(claudeDir, '.claude.json'));
+  config.mcpServers.continuity.cwd = a;
+  writeFileSync(join(claudeDir, '.claude.json'), JSON.stringify(config));
+  expect(mcpState(claude.mcp)).toBe('stale'); expect(mcpUsable(claude.mcp, a)).toBe(false);
+  installHookIntegration(claude);
+  expect(json(join(claudeDir, '.claude.json')).mcpServers.continuity).not.toHaveProperty('cwd');
+  expect(mcpState(claude.mcp)).toBe('installed');
 });
 
 test('a dangling Claude config link is refused before any file is written; MCP backups roll', (context) => {

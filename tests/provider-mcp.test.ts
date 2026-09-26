@@ -242,7 +242,7 @@ test('Codex: any startup key under our table (working directory, environment, ex
     'a key Codex may add later': 'launch_directory = "G:/elsewhere"\n',
   };
   // The user's settings: whether and how long it runs, which tools, and approvals.
-  const kept = 'startup_timeout_sec = 20\nenabled_tools = ["continuity_context"]\nsupports_parallel_tool_calls = true\ntools.continuity_search.approval_mode = "approve"\n';
+  const kept = 'startup_timeout_sec = 20\nstartup_timeout_ms = 20000\nenabled_tools = ["continuity_context"]\nsupports_parallel_tool_calls = true\ntools.continuity_search.approval_mode = "approve"\n';
   for (const [name, extra] of Object.entries(extras)) {
     writeFileSync(file, `${clean}${kept}${extra}\n[after]\nkeep = true\n`);
     expect(mcpState(t.mcp), name).toBe('stale');

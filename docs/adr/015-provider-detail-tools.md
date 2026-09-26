@@ -67,7 +67,7 @@ Findings, verified with a probe MCP server:
   written as installed. A working directory, an environment, an execution environment
   or credentials under the entry would bind every session to one place.
   - Codex: only an allowlist of the user's own settings is kept under
-    `[mcp_servers.continuity]`: `enabled`, `required`, the timeouts, tool lists,
+    `[mcp_servers.continuity]`: `enabled`, `required`, the timeouts (`startup_timeout_sec`, `startup_timeout_ms`, `tool_timeout_sec`), tool lists,
     `tools` approvals, `default_tools_approval_mode`, `supports_parallel_tool_calls` and
     `scopes`. Any other key or sub-table (`cwd`, `env`, `env_vars`, `environment_id`,
     `url`, or a key a later Codex adds) makes the entry `stale`, and `install` drops it.

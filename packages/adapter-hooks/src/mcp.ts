@@ -68,7 +68,7 @@ const codexBlock = (t: McpTarget) => [`[mcp_servers.${MCP_SERVER_NAME}]`, comman
  * credentials, an execution environment) and is ours: `command` and `args` as written, nothing else. An allowlist,
  * so a key Codex adds later cannot bind every session to one place unnoticed.
  */
-const USER_KEYS = new Set(['enabled', 'required', 'startup_timeout_sec', 'tool_timeout_sec', 'enabled_tools', 'disabled_tools', 'default_tools_approval_mode', 'tools', 'supports_parallel_tool_calls', 'scopes']);
+const USER_KEYS = new Set(['enabled', 'required', 'startup_timeout_sec', 'startup_timeout_ms', 'tool_timeout_sec', 'enabled_tools', 'disabled_tools', 'default_tools_approval_mode', 'tools', 'supports_parallel_tool_calls', 'scopes']);
 const startup = (key: string) => !USER_KEYS.has(key);
 
 // A TOML key: bare, basic-quoted or literal-quoted segments joined by dots.

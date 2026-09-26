@@ -151,17 +151,19 @@ export class ProjectClient {
   }
   /**
    * Several proposals against one source snapshot: one refresh, each proposal in its own transaction; an invalid item fails
-   * alone. At most MAX_CORRECTIONS of them may replace an earlier claim, so one answer cannot rewrite many memories.
+   * alone. At most MAX_CORRECTIONS of them may replace an earlier claim, so one answer cannot rewrite many memories;
+   * only applied corrections count.
    */
   proposeAll(inputs: readonly unknown[], corrections: readonly (Correction | undefined)[] = []): (MemoryProposal | Error)[] {
     this.refresh();
-    let allowed = MAX_CORRECTIONS;
+    let applied = 0;
     return inputs.map((input, index) => {
       try {
         memoryCandidateSchema.parse(input);
-        const correction = allowed > 0 ? corrections[index] : undefined;
-        if (correction) allowed--;
-        return this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id), this.workspace?.workspace_id, correction));
+        const correction = applied < MAX_CORRECTIONS ? corrections[index] : undefined;
+        const result = this.storage.atomic(() => proposeMemory(this.storage, this.project, input, this.storage.resources(this.project.project_id), this.workspace?.workspace_id, correction));
+        if (correction && result.outcome === 'superseded' && !result.source_path) applied++;
+        return result;
       } catch (error) { return error instanceof Error ? error : new Error('Proposal failed.'); }
     });
   }
@@ -172,9 +174,10 @@ export class ProjectClient {
     return memory;
   }
   /**
-   * Trusted host operation. When the forgotten memory was an agent observation, a single agent observation that was
-   * quarantined only against claims now gone becomes active again: removing one side of an agent-only conflict leaves no
-   * conflict. Human-reviewed or source-backed sides never release a quarantined claim.
+   * Trusted host operation. Forgetting a live agent observation (active or quarantined) re-evaluates its key: when a
+   * single quarantined agent observation remains, nothing is active, and no human decision or source evidence exists on
+   * the key (a superseded record aside), that claim becomes active again. Removing one side of an agent-only conflict
+   * leaves no conflict. Forgetting anything else, or a human-reviewed or source-backed side, releases nothing.
    */
   forget(id: string) {
     this.assertBinding();
@@ -182,10 +185,11 @@ export class ProjectClient {
       const memory = this.memory(id);
       const forgotten: Memory = { ...memory, status: 'forgotten', reason: 'Explicitly forgotten; retained in local revision history.' };
       this.storage.saveMemory(forgotten);
-      if (!learned(memory)) return forgotten;
+      if (!learned(memory) || !['persist', 'needs_attention'].includes(memory.status)) return forgotten;
       const same = this.storage.memories(this.project.project_id).filter(m => m.key === memory.key);
       const held = same.filter(m => m.status === 'needs_attention');
-      if (held.length === 1 && learned(held[0]!) && !same.some(m => ['persist', 'accepted'].includes(m.status))) {
+      const decided = same.some(m => m.status !== 'superseded' && (m.review !== undefined || m.status === 'accepted' || !!m.source_path));
+      if (held.length === 1 && learned(held[0]!) && !decided && !same.some(m => ['persist', 'accepted'].includes(m.status))) {
         this.storage.saveMemory({ ...held[0]!, status: 'persist', reason: 'Automatically retained agent observation; the conflicting agent observation was forgotten.' });
       }
       return forgotten;

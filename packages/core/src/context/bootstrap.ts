@@ -61,7 +61,8 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
   // Startup context is injected without a request; records that look like secrets are withheld, not shown.
   const withheld = looksSensitive;
 
-  const activeKeys = new Set(input.memories.filter(m => ['persist', 'accepted'].includes(m.status)).map(m => m.key));
+  // A claim stands only while it is current: a source-backed memory whose source changed is withheld, and stands for nothing.
+  const activeKeys = new Set(input.memories.filter(m => ['persist', 'accepted'].includes(m.status) && sourceBackedCurrent(m, input.sources)).map(m => m.key));
   const quarantined = input.memories.filter(m => m.status === 'needs_attention'), claims = new Map<string, Set<string>>();
   for (const m of quarantined) if (!activeKeys.has(m.key)) claims.set(m.key, (claims.get(m.key) ?? new Set<string>()).add(m.text));
   const conflictKeys = [...claims].filter(([, texts]) => texts.size > 1).map(([key]) => key);

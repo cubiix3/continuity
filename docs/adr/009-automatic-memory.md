@@ -1,5 +1,7 @@
 # 009 — Automatic activation with explicit agent-observation trust
 
+Amended by [ADR 016](016-agent-corrections.md): explicit agent corrections of agent observations.
+
 ## Decision
 
 Automatically activate bounded durable agent candidates that have agent/session

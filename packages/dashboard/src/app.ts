@@ -29,7 +29,7 @@ function date(value: unknown) {
 }
 function timestamp(value: unknown) { const node = el('time', date(value)); if (typeof value === 'string') { node.dateTime = value; node.title = new Date(value).toLocaleString(); } return node; }
 function bytes(value: unknown) { return typeof value === 'number' ? value < 1024 ? `${value} B` : `${(value / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KiB` : '—'; }
-const statusLabels: Record<string, string> = { persist: 'Active', accepted: 'Human reviewed', needs_attention: 'Conflict', done: 'Completed', in_progress: 'In progress', proposed: 'Legacy pending', ok: 'Healthy', fresh: 'Fresh', stale: 'Stale', blocked: 'Blocked', healthy: 'Healthy', degraded: 'Degraded', active: 'Active', unavailable: 'Unavailable', disabled: 'Disabled', rejected: 'Rejected', forgotten: 'Forgotten', superseded: 'Superseded', missing: 'Missing' };
+const statusLabels: Record<string, string> = { persist: 'Active', accepted: 'Human reviewed', needs_attention: 'Needs review', done: 'Completed', in_progress: 'In progress', proposed: 'Legacy pending', ok: 'Healthy', fresh: 'Fresh', stale: 'Stale', blocked: 'Blocked', healthy: 'Healthy', degraded: 'Degraded', active: 'Active', unavailable: 'Unavailable', disabled: 'Disabled', rejected: 'Rejected', forgotten: 'Forgotten', superseded: 'Superseded', missing: 'Missing' };
 function status(value: string, label?: string) { const node = el('span', label ?? statusLabels[value] ?? value.replaceAll('_', ' '), 'status'); node.dataset.state = value; return node; }
 function metaLine(...values: (string | Node | undefined)[]) { const line = el('div', undefined, 'meta-line'); for (const value of values) if (value !== undefined) line.append(typeof value === 'string' ? el('span', value) : value); return line; }
 /** Two-column label/value facts; empty values are omitted instead of shown as dashes. */
@@ -201,7 +201,7 @@ async function detail(kind: string, id: string, stamp: number) {
     header.append(title, metaLine(originLabel(m), m.kind, status(m.status), timestamp(m.provenance.captured_at)));
     wrap.append(header, el('pre', m.text, 'memory-content'));
     if (m.status === 'needs_attention') wrap.append(el('p', 'This claim is quarantined. It is not delivered as active project knowledge.', 'notice warning'));
-    wrap.append(el('h2', 'Origin'), facts([['Trust', m.provenance.trust], ['Agent / session', m.from ? `${m.from.agent} / ${m.from.session}` : undefined], ['Evidence', m.source_path], ['Source version', m.source_path ? m.provenance.source_version : undefined], ['Superseded by', m.superseded_by], ['Reviewed by', m.review?.by], ['Reviewed', m.review ? timestamp(m.review.at) : undefined]]), el('p', m.reason, 'reason'));
+    wrap.append(el('h2', 'Origin'), facts([['Trust', m.provenance.trust], ['Agent / session', m.from ? `${m.from.agent} / ${m.from.session}` : undefined], ['Evidence', m.source_path], ['Source version', m.source_path ? m.provenance.source_version : undefined], ['Superseded by', m.superseded_by], ['Superseded', m.superseded_at ? timestamp(m.superseded_at) : undefined], ['Reviewed by', m.review?.by], ['Reviewed', m.review ? timestamp(m.review.at) : undefined]]), el('p', m.reason, 'reason'));
     const controls = el('div', undefined, 'actions');
     if (['proposed', 'needs_attention'].includes(m.status)) controls.append(button('Approve', trigger => review(m, 'accepted', trigger), 'primary'), button('Reject', trigger => review(m, 'rejected', trigger), 'danger'));
     if (!['forgotten', 'superseded'].includes(m.status)) controls.append(button('Forget', trigger => forget(m, trigger), 'danger'));
@@ -231,7 +231,7 @@ async function detail(kind: string, id: string, stamp: number) {
   }
 }
 function provenanceBlock(value: unknown) { const d = provenance(value); d.classList.add('provenance'); return d; }
-function memoryOrigin(m: Memory) { return m.status === 'needs_attention' ? 'CONFLICT' : m.status === 'accepted' ? 'HUMAN' : m.source_path && m.provenance.trust === 'derived' ? 'SOURCE' : 'AGENT'; }
+function memoryOrigin(m: Memory) { return m.status === 'needs_attention' ? 'REVIEW' : m.status === 'accepted' ? 'HUMAN' : m.source_path && m.provenance.trust === 'derived' ? 'SOURCE' : 'AGENT'; }
 function openDialog(dialog: HTMLDialogElement, initial: HTMLElement, trigger: HTMLButtonElement) {
   dialog.onkeydown = event => {
     if (event.key !== 'Tab') return;

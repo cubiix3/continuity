@@ -128,8 +128,9 @@ a false lesson; it is attributed as an agent observation, and sources and human
 review outrank it. See [agent lifecycle](agent-lifecycle.md).
 
 A save may mark a memory `"corrects":true` ([ADR 016](adr/016-agent-corrections.md)).
-The model names only a key. The host passes Core the memory ids that this session's
-startup context showed, and Core replaces a claim only if all of these hold:
+The model names only a key. The host passes Core the ids of the memories that this
+session's startup context listed in full, and Core replaces a claim only if all of
+these hold:
 - it is the key's only claim;
 - it is an active agent observation;
 - it belongs to the same workspace;

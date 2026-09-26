@@ -49,7 +49,7 @@ The stable key defines a claim. Different texts under the same key conflict:
   - the key's only claim is an active agent observation (`persist`, no source path,
     not human-reviewed);
   - the claim belongs to the proposer's workspace;
-  - the proposing session was shown the claim at session start;
+  - the proposing session's startup context listed the claim in full;
   - the new claim itself is attributed, free-form and not routine.
 
   The old row becomes `superseded`, with `superseded_by`, `superseded_at` and the
@@ -57,10 +57,12 @@ The stable key defines a claim. Different texts under the same key conflict:
   call applies at most three corrections. Agent-facing APIs (MCP, HTTP, CLI
   `remember`) cannot ask for a correction. In every other case the conflict rules
   above and below apply.
-- **Forgetting one side.** Forgetting an agent observation re-evaluates its key. If
-  exactly one quarantined agent observation remains and no claim is active, that
-  claim becomes active, because nothing contradicts it any more. Forgetting a
-  human-reviewed or source-backed claim never releases a claim it held back.
+- **Forgetting one side.** Forgetting a live agent observation re-evaluates its key.
+  If exactly one quarantined agent observation remains, no claim is active, and the
+  key carries no human decision or source-backed record, that claim becomes active,
+  because nothing contradicts it any more. Forgetting a human-reviewed or
+  source-backed claim, a rejected record or an already forgotten one never releases
+  a claim. Rejecting one side does not release the other; approve it instead.
 - A weaker agent observation cannot displace an active source-backed or explicitly
   accepted human-reviewed memory. Only the observation is quarantined.
 - An exact current source excerpt replaces same-key agent claims (including

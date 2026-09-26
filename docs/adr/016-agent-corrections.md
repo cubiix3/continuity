@@ -22,9 +22,10 @@ claims. Reproduced on post-#25 main (2ca899f):
 
 - **Explicit correction, host-validated.** A save may mark a memory
   `"corrects":true`. The flag is the model's intent only. The hook passes Core a
-  `Correction` holding the memory ids that its `SessionStart` showed this session:
-  the listed memories, plus the memories behind the listed keys when the detail tool
-  is installed. They are stored as ids only, beside the session flags.
+  `Correction` holding the ids of the memories its `SessionStart` listed in full, with
+  their text. A key named only under "more available" was not shown and is not
+  included. The ids are stored beside the session flags, at most 64, and only where
+  the autosave hooks are installed and autosave is on.
 - **What Core replaces.** Core replaces the claim only if all of these hold:
   - the key has exactly one claim;
   - that claim is `persist`, `agent_observation`, has no source path and is not
@@ -36,18 +37,27 @@ claims. Reproduced on post-#25 main (2ca899f):
   `superseded`, with `superseded_by`, `superseded_at` and the correcting agent and
   session in its reason; both versions stay in revision history. The new claim is
   active with `agent_observation` trust.
-- **Limits.** One proposal call applies at most three corrections. Anything else
+- **Limits.** One proposal call applies at most three corrections; only applied ones
+  count. A session can correct at most the eight memories its startup listed. Anything else
   follows the unchanged conflict rules: quarantine, a human-reviewed or source-backed
   memory stands, and a current source excerpt supersedes. Source-backed corrections
   still resolve only through source evidence.
 - **Not agent-facing.** `Correction` is not part of the candidate schema. MCP, HTTP
   and CLI `remember` reject a `corrects` field, and the model never supplies an id.
-- **Forget re-evaluates.** Forgetting an agent observation re-evaluates its key. A
-  single remaining quarantined agent observation, with no active claim, becomes
-  active. Forgetting a human-reviewed or source-backed claim, including an accepted
-  agent observation, releases nothing.
+- **Forget re-evaluates.** Forgetting a live agent observation (active or
+  quarantined) re-evaluates its key. A claim is released, becoming active again, only
+  if all of these hold:
+  - it is the single remaining quarantined agent observation;
+  - no claim is active;
+  - the key has no human decision (review) and no source-backed record, other than
+    superseded ones.
+
+  Forgetting anything else releases nothing: a human-reviewed or source-backed claim
+  (including an accepted agent observation), a rejected record, or a record already
+  forgotten. Rejecting one side does not release the other; approve it instead.
 - **Conflicts follow the active topology.** A conflict is a key with two or more
-  different quarantined claims and no active claim, and it is counted per key. Other
+  different quarantined claims and no current active claim, counted per key. A
+  source-backed claim whose source changed is withheld and does not count as active. Other
   quarantined claims are `attention.held`: beside an active memory (that memory
   stands) or alone. They are not rendered for agents. `no side is current truth` is
   said only when it is true.
@@ -62,9 +72,10 @@ claims. Reproduced on post-#25 main (2ca899f):
 - **Also correct quarantined claims shown only as a conflict key:** rejected. The
   session never saw their text, so it cannot knowingly correct them. Human review
   or forgetting one side resolves those.
-- **Also correct memories found through `continuity_context` during the session:**
-  not possible yet. The MCP server is not bound to the provider session, so the host
-  cannot know what it showed. Such corrections are quarantined as before.
+- **Also correct memories named only by key under "more available", or found through
+  `continuity_context`:** rejected for now. The startup shows only their keys, and
+  the MCP server is not bound to the provider session, so the host cannot know that
+  the session saw their text. Such corrections are quarantined as before.
 
 ## Consequences
 
@@ -77,3 +88,6 @@ claims. Reproduced on post-#25 main (2ca899f):
 - The save contract grew by one sentence (the offer is 1,098 bytes). The fallback
   request is unchanged, since the model saw the rule in the offer.
 - `BootstrapBundle.attention.conflicts` now counts keys, and `attention.held` is new.
+  `schema_version` stays 1: the field keeps its name, type and purpose (the number of
+  conflicts to report); it was over-counting before. The Dashboard labels quarantined
+  records "Needs review" and shows when a record was superseded.

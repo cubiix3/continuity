@@ -136,6 +136,12 @@ function eventStates(target: HookTarget, settings: Settings) {
   return { events, entries };
 }
 
+/** Whether this integration's autosave hooks (PostToolUse and Stop) are installed as expected. Reads the hook settings file only. */
+export function autosaveInstalled(target: HookTarget): boolean {
+  try { const { events } = eventStates(target, readSettings(target.file).settings); return events.PostToolUse === 'installed' && events.Stop === 'installed'; }
+  catch { return false; }
+}
+
 export function hookIntegrationStatus(target: HookTarget): HookIntegrationStatus {
   const base = { provider: target.provider, settings: target.file, expected: target.expected, autosave: target.autosave, detail: target.detail, mcp: mcpState(target.mcp, target.detail), mcp_settings: target.mcp.file, executable_available: existsSync(target.executable), cli_available: existsSync(target.cli) };
   let settings: Settings;

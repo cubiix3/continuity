@@ -156,13 +156,14 @@ export function readSeen(home: string, provider: HookProviderName, session: stri
     return new Set(Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && MEMORY_ID.test(id)).slice(-MAX_SEEN) : []);
   } catch { return new Set(); }
 }
-/** Adds this startup's ids (startup, resume, clear and compact each show the index again), the newest kept. */
+/** Adds this startup's ids (startup, resume, clear and compact each show the index again), the newest kept. Ids of a session idle past the TTL are dropped first. */
 export function recordSeen(home: string, provider: HookProviderName, session: string, ids: readonly string[], now = Date.now()) {
   const shown = ids.filter(id => MEMORY_ID.test(id));
   if (!shown.length) return;
-  const dir = stateDirectory(home), seen = [...readSeen(home, provider, session)].filter(id => !shown.includes(id));
-  replace(seenFile(home, provider, session), JSON.stringify([...seen, ...shown].slice(-MAX_SEEN)));
+  const dir = stateDirectory(home);
   cleanup(dir, now);
+  const seen = [...readSeen(home, provider, session)].filter(id => !shown.includes(id));
+  replace(seenFile(home, provider, session), JSON.stringify([...seen, ...shown].slice(-MAX_SEEN)));
 }
 
 /** Ends an offer or request; `dirty` keeps its edits for the next offer. The offered handoff id lives only as long. */
@@ -244,10 +245,14 @@ export function applySave(client: ProjectClient, provider: HookProviderName, ses
   const from = { agent: AGENT_NAME[provider], session };
   const outcomes: Outcome[] = [], proposals: { at: number; candidate: Record<string, unknown>; correction?: Correction }[] = [];
   let created: string | undefined;
+  const keys = new Set<string>();
   reply.memories.forEach((raw, index) => {
     const m = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
     const key = text(m.key), source = text(m.source_path), item = key && !looksSensitive(key) ? `memory ${key.slice(0, 60)}` : `memory ${index + 1}`;
     if (index >= MAX_MEMORIES) { outcomes.push({ item, outcome: 'skipped: too many memories' }); return; }
+    // One claim per key and answer: a second one would only conflict with the first.
+    if (keys.has(key)) { outcomes.push({ item, outcome: 'skipped: key repeated in this save' }); return; }
+    keys.add(key);
     if (m.kind === 'rule') { outcomes.push({ item, outcome: 'skipped: project rules come from project files' }); return; }
     // Each raw field separately: serialization would escape quotes and hide `key = "value"` patterns.
     if ([key, text(m.text), source].some(looksSensitive)) { outcomes.push({ item, outcome: 'skipped: looks like a secret' }); return; }

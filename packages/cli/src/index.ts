@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
 import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
 import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
-import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSeen, readSessionState, recordSeen, removeHookIntegration, saveReport, sessionStartInput, sessionStartOutput, sessionStartUnavailable, mcpUsable, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
+import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSeen, readSessionState, recordSeen, autosaveInstalled, removeHookIntegration, saveReport, sessionStartInput, sessionStartOutput, sessionStartUnavailable, mcpUsable, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { DETAIL_TOOLS, serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
@@ -192,13 +192,9 @@ for (const provider of ['claude', 'codex'] as const) {
         let detail = false, client;
         try { client = runtime().session(cwd); detail = !!client && mcpUsable(target().mcp, cwd); } catch { detail = false; }
         process.stdout.write(sessionStartOutput(provider, bundle, new Date(), detail));
-        // What this session was shown: the listed memories, and with the detail tool the memories behind the listed keys.
+        // What this session was shown in full: the listed memories (a bare key in "more available" is not their text).
         // Only these may be replaced by an explicit correction in its saves. Recorded only where saves can happen.
-        if (client && start.session && autosaveEnabled(provider)) {
-          const more = new Set(detail ? bundle.available.more_keys : []);
-          const behind = more.size ? client.memories().filter(m => more.has(m.key) && ['persist', 'accepted'].includes(m.status)).map(m => m.id) : [];
-          recordSeen(continuityHomePath(), provider, start.session, [...bundle.memories.map(m => m.id), ...behind]);
-        }
+        if (client && start.session && autosaveEnabled(provider) && autosaveInstalled(target())) recordSeen(continuityHomePath(), provider, start.session, bundle.memories.map(m => m.id));
       }
     } catch { /* Silent: Continuity must not disturb unrelated agent sessions. */ }
   });

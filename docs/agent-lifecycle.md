@@ -236,11 +236,11 @@ A close applies only to the handoff id the host recorded when it made the offer 
 request. The model never supplies an id. Closing a handoff that is already closed is
 a quiet no-op.
 
-A correction works the same way. `SessionStart` records the memory ids it showed.
-These are the listed memories and, when the detail tool is installed, the memories
-behind the listed keys. They go into `<home>/hooks/autosave/<hash>.seen.json`, next
-to the session flags, and are kept for as long: ids only, at most 64. Nothing is
-recorded where autosave is off. The model names a key and sets the flag; the host
+A correction works the same way. `SessionStart` records the ids of the memories it
+listed in full; a key named only under "more available" does not count. They go into
+`<home>/hooks/autosave/<hash>.seen.json`, next to the session flags, and are kept for
+as long: ids only, at most 64. Nothing is recorded where autosave is off or its hooks
+are not installed (`--no-autosave`). The model names a key and sets the flag; the host
 decides which memory that key may replace.
 
 A save is silent, including an empty one. Policy outcomes are normal and also silent:

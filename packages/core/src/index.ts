@@ -176,7 +176,7 @@ export class ProjectClient {
   /**
    * Trusted host operation. Forgetting a live agent observation (active or quarantined) re-evaluates its key: when a
    * single quarantined agent observation remains, nothing is active, and no human decision or source evidence exists on
-   * the key (a superseded record aside), that claim becomes active again. Removing one side of an agent-only conflict
+   * the key, that claim becomes active again. Removing one side of an agent-only conflict
    * leaves no conflict. Forgetting anything else, or a human-reviewed or source-backed side, releases nothing.
    */
   forget(id: string) {
@@ -188,7 +188,7 @@ export class ProjectClient {
       if (!learned(memory) || !['persist', 'needs_attention'].includes(memory.status)) return forgotten;
       const same = this.storage.memories(this.project.project_id).filter(m => m.key === memory.key);
       const held = same.filter(m => m.status === 'needs_attention');
-      const decided = same.some(m => m.status !== 'superseded' && (m.review !== undefined || m.status === 'accepted' || !!m.source_path));
+      const decided = same.some(m => m.review !== undefined || m.status === 'accepted' || !!m.source_path);
       if (held.length === 1 && learned(held[0]!) && !decided && !same.some(m => ['persist', 'accepted'].includes(m.status))) {
         this.storage.saveMemory({ ...held[0]!, status: 'persist', reason: 'Automatically retained agent observation; the conflicting agent observation was forgotten.' });
       }

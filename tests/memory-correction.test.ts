@@ -215,12 +215,27 @@ test('forgetting one side of an agent-only conflict leaves the other active; hum
   const source = client.propose({ key: 'source.key', kind: 'decision', text: 'The locale loader rejects blank lines in locale files.', source_path: 'README.md' });
   const claim = client.propose({ key: 'source.key', kind: 'decision', text: 'The locale loader accepts blank lines in locale files.', from: agent('s2') });
   const other = client.propose({ key: 'source.key', kind: 'decision', text: 'The locale loader ignores blank lines in locale files.', from: agent('s3') });
-  client.forget(other.id); expect(byId(claim.id).status).toBe('needs_attention');
+  // The source claim is forgotten first: its record still counts when the live agent sibling is forgotten afterwards.
   client.forget(source.id); expect(byId(claim.id).status).toBe('needs_attention');
+  client.forget(other.id); expect(byId(claim.id).status).toBe('needs_attention');
   // A held claim whose own source does not prove it is never activated by a forget.
   const agentClaim = client.propose({ ...stale, key: 'unproven.key', from: agent('s1') });
   const unproven = client.propose({ ...stale, key: 'unproven.key', text: 'The README says the token is read from disk.', source_path: 'README.md', from: agent('s3') });
   client.forget(agentClaim.id); expect(byId(unproven.id).status).toBe('needs_attention');
+});
+
+test('forget and the release it causes are one transaction', () => {
+  const client = host.project(a);
+  const old = client.propose({ ...stale, from: agent('s1') }), next = client.propose({ ...stale, text: fixed, from: agent('s2') });
+  const db = new DatabaseSync(join(home, 'continuity.db'));
+  try {
+    db.exec("CREATE TRIGGER fail_release_fixture BEFORE INSERT ON memories WHEN json_extract(NEW.data, '$.status') = 'persist' AND json_extract(NEW.data, '$.reason') LIKE '%was forgotten%' BEGIN SELECT RAISE(ABORT, 'fixture failure'); END");
+    expect(() => client.forget(old.id)).toThrow('fixture failure');
+    expect([byId(old.id).status, byId(next.id).status]).toEqual(['needs_attention', 'needs_attention']);
+    expect(revisions(old.id).map(r => r.status)).toEqual(['persist', 'needs_attention']);
+  } finally { db.exec('DROP TRIGGER fail_release_fixture'); db.close(); }
+  client.forget(old.id);
+  expect([byId(old.id).status, byId(next.id).status]).toEqual(['forgotten', 'persist']);
 });
 
 test('a withheld stale source claim does not hide a conflict; forgotten or superseded records are not active', async () => {
@@ -232,6 +247,12 @@ test('a withheld stale source claim does not hide a conflict; forgotten or super
   const start = host.bootstrap(a)!;
   expect(start.attention).toMatchObject({ conflicts: 1, conflict_keys: ['loader.blank'], stale_source_backed: 1 });
   expect(renderBootstrap(start)).toContain('1 unresolved memory conflict (loader.blank); no side is current truth.');
+  // Two held claims with the same text do not contradict each other: held, not a conflict.
+  const t = client.propose({ ...stale, key: 'same.text', from: agent('s1') }), u = client.propose({ ...stale, key: 'same.text', text: fixed, from: agent('s2') });
+  expect(client.propose({ ...stale, key: 'same.text', kind: 'decision', source_path: 'README.md', from: agent('s3') }).outcome).toBe('quarantined');
+  client.forget(u.id);
+  expect(client.memories().filter(m => m.key === 'same.text' && m.status === 'needs_attention').map(m => m.text)).toEqual([t.text, t.text]);
+  expect(host.bootstrap(a)!.attention).toMatchObject({ conflicts: 1, conflict_keys: ['loader.blank'] });
 });
 
 type Provider = 'claude' | 'codex';
@@ -278,6 +299,11 @@ test('only memories listed in full count as shown, also with the detail tool ins
   const listed = host.bootstrap(a)!.memories.map(m => m.id);
   expect(listed).toHaveLength(8);
   expect(seenFiles().map(s => [...s].sort())).toEqual([[...listed].sort()]);
+  // The session id is read the same way at start and stop (surrounding spaces do not make another session).
+  run('codex', 'session-start', { session_id: '  padded  ', cwd: a });
+  const paddedKey = byId(listed[1]!).key;
+  turn('codex', 'padded', [{ key: paddedKey, kind: 'experience', text: fixed, corrects: true }], false);
+  expect(byId(listed[1]!).status).toBe('superseded');
   // A key named only under "more available" was never shown with its text: a correction there is quarantined.
   const unlisted = ids.find(id => !listed.includes(id))!, unlistedKey = byId(unlisted).key;
   turn('codex', 'listed', [{ key: unlistedKey, kind: 'experience', text: fixed, corrects: true }], false);
@@ -295,12 +321,24 @@ test('nothing is recorded without installed autosave hooks or with autosave off'
   // Installed for startup context only.
   install('claude', '--no-autosave');
   run('claude', 'session-start', { session_id: 'startup-only', cwd: a });
+  // Installed, but the edit hook removed by hand: no offer can happen, so nothing is recorded.
+  install('claude');
+  const settings = join(configs().CLAUDE_CONFIG_DIR, 'settings.json'), parsed = JSON.parse(readFileSync(settings, 'utf8'));
+  delete parsed.hooks.PostToolUse; writeFileSync(settings, JSON.stringify(parsed));
+  run('claude', 'session-start', { session_id: 'no-edit-hook', cwd: a });
   // Installed, but autosave switched off for the session.
   install('claude');
   run('claude', 'session-start', { session_id: 'off', cwd: a }, { CONTINUITY_AUTOSAVE: '0' });
   expect(seenFiles()).toEqual([]);
   run('claude', 'session-start', { session_id: 'on', cwd: a });
   expect(seenFiles()).toHaveLength(1);
+  // An entry from an older release (status "stale") still offers and applies saves, so it still records.
+  const current = JSON.parse(readFileSync(settings, 'utf8'));
+  current.hooks.PostToolUse[0].matcher = 'Edit|Write';
+  writeFileSync(settings, JSON.stringify(current));
+  expect(cliRun(['integrate', 'claude', 'status']).stdout).toMatch(/^state: stale$/m);
+  run('claude', 'session-start', { session_id: 'older-entry', cwd: a });
+  expect(seenFiles()).toHaveLength(2);
 });
 
 test('without the startup context, or without the flag, a same-key save stays quarantined', () => {

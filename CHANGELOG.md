@@ -18,11 +18,12 @@
 - Agent corrections without a command (#26):
   - **Explicit correction.** An autosave memory marked `"corrects":true` replaces the key's only claim, if it is an active agent observation of the same workspace that the session's startup listed in full. The old claim becomes `superseded`, with `superseded_at` and the correcting agent and session in its revision history.
   - **Never stronger claims.** Human-reviewed and source-backed memories, other workspaces and claims the session never saw are never replaced this way.
-  - **Limits.** One call applies at most three corrections; only applied ones count. MCP, HTTP and CLI `remember` reject the field.
+  - **Limits.** One call applies at most three corrections; only applied ones count. A key repeated within one autosave answer is skipped. MCP, HTTP and CLI `remember` reject the field.
   - **Forget.** Forgetting a live side of an agent-only conflict re-activates the lone remaining agent claim, unless the key carries a human decision or source evidence.
   - **Conflicts.** The startup index counts conflicts per key, and only when no claim is active. It says "no side is current truth" only then. Other quarantined claims are counted as `attention.held` and are not rendered.
   - **Contract.** `BootstrapBundle.attention.conflicts` changes meaning from records to keys. A stale, withheld source claim no longer hides a conflict.
-  - **Dashboard.** Quarantined records are labelled "Needs review" instead of "Conflict", and the time a record was superseded is shown. See ADR 016.
+  - **Dashboard.** Quarantined records and their filter are labelled "Needs review" instead of "Conflict(s)", and the time a record was superseded is shown. See ADR 016.
+  - **Existing databases.** A correction already stuck next to a forgotten old claim stays quarantined. The startup index now counts it as held rather than as a conflict, so only the Dashboard ("Needs review") shows it: approve it or forget it there.
 - Context no longer starves strongly relevant memories: after current rules, a memory whose text covers at least half of the meaningful task terms may use up to 25% of the byte budget ahead of lower-ranked source passages. Trust order holds inside that share (a related higher-trust memory is always offered it first). Presentation order is unchanged, and contexts without such a memory are identical.
 
 ## 0.1.0 — 2026-09-22

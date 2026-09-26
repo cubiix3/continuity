@@ -38,7 +38,8 @@ claims. Reproduced on post-#25 main (2ca899f):
   session in its reason; both versions stay in revision history. The new claim is
   active with `agent_observation` trust.
 - **Limits.** One proposal call applies at most three corrections; only applied ones
-  count. A session can correct at most the eight memories its startup listed. Anything else
+  count. A session can correct only memories its startups listed: eight per start,
+  and up to 64 ids per session across resume, clear and compact. Anything else
   follows the unchanged conflict rules: quarantine, a human-reviewed or source-backed
   memory stands, and a current source excerpt supersedes. Source-backed corrections
   still resolve only through source evidence.
@@ -49,8 +50,8 @@ claims. Reproduced on post-#25 main (2ca899f):
   if all of these hold:
   - it is the single remaining quarantined agent observation;
   - no claim is active;
-  - the key has no human decision (review) and no source-backed record, other than
-    superseded ones.
+  - no record of the key carries a human decision (an approval or rejection) or a
+    source path (source-backed, or an unproven source claim), in any status.
 
   Forgetting anything else releases nothing: a human-reviewed or source-backed claim
   (including an accepted agent observation), a rejected record, or a record already

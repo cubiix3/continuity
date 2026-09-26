@@ -245,7 +245,7 @@ decides which memory that key may replace.
 
 A save is silent, including an empty one. Policy outcomes are normal and also silent:
 a rejected, quarantined, duplicate or skipped item (a secret, a `rule`, a `done`
-handoff, a malformed item) is not reported, because the user cannot act on it. Conflicts appear in the next session start and in the
+handoff, a malformed item, a key repeated within one save) is not reported, because the user cannot act on it. Conflicts appear in the next session start and in the
 Dashboard. Only a failure produces one `systemMessage` line, without item text and
 without a stack trace, for example:
 

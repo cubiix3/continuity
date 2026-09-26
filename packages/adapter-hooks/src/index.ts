@@ -136,9 +136,12 @@ function eventStates(target: HookTarget, settings: Settings) {
   return { events, entries };
 }
 
-/** Whether this integration's autosave hooks (PostToolUse and Stop) are installed as expected. Reads the hook settings file only. */
+/**
+ * Whether this integration's autosave hooks (PostToolUse and Stop) are present, current or not: an entry an older
+ * release installed still offers and applies saves until the next install. Reads the hook settings file only.
+ */
 export function autosaveInstalled(target: HookTarget): boolean {
-  try { const { events } = eventStates(target, readSettings(target.file).settings); return events.PostToolUse === 'installed' && events.Stop === 'installed'; }
+  try { const { events } = eventStates(target, readSettings(target.file).settings); return (['PostToolUse', 'Stop'] as const).every(event => ['installed', 'stale'].includes(events[event]!)); }
   catch { return false; }
 }
 

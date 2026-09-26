@@ -59,7 +59,7 @@ The stable key defines a claim. Different texts under the same key conflict:
   above and below apply.
 - **Forgetting one side.** Forgetting a live agent observation re-evaluates its key.
   If exactly one quarantined agent observation remains, no claim is active, and the
-  key carries no human decision or source-backed record, that claim becomes active,
+  key carries no human decision and no record with a source path, that claim becomes active,
   because nothing contradicts it any more. Forgetting a human-reviewed or
   source-backed claim, a rejected record or an already forgotten one never releases
   a claim. Rejecting one side does not release the other; approve it instead.

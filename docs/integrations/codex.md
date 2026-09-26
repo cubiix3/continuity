@@ -58,6 +58,23 @@ user hooks until they are trusted once in `/hooks`. Verified with Codex 0.156.1 
 Windows using the installer's exact command strings (trust bypassed for the
 test run only). See [agent bootstrap](../agent-bootstrap.md).
 
+The same install adds `[mcp_servers.continuity]` to `config.toml`. Codex starts that
+server once per session in the session's directory; it serves
+`continuity_context`, `continuity_search` and `continuity_handoff_latest` for that
+project, and no tools elsewhere. The daemon ends a session's server one to two minutes
+after the session. ORCA mirrors `~/.codex/config.toml` into its own `CODEX_HOME` as it
+does `hooks.json`. For a separate `CODEX_HOME` that is not mirrored, run the install
+once with that `CODEX_HOME` set.
+
+Verified with Codex 0.157.1 on Windows, in an isolated `CODEX_HOME`:
+- the closed-handoff question used two structured Continuity calls and no CLI; before,
+  it made four CLI calls and chased a closed handoff;
+- the memory question found the note once the index listed its key.
+
+Codex's `/new` can move the session into a new Git worktree under `CODEX_HOME`. That
+checkout is not a registered Continuity workspace, so Continuity stays silent there. A
+`CODEX_HOME` path longer than about 100 characters breaks Codex's daemon socket.
+
 ## Session autosave (Codex 0.157)
 
 The same install adds the `PostToolUse` (`apply_patch`) and `Stop` hooks. Interactive

@@ -349,6 +349,8 @@ hooks and their order.
 - An older bootstrap-only install shows as `partial`, and `install` upgrades it.
 - `install --no-autosave` removes Continuity's `PostToolUse` and `Stop` entries;
   `status --no-autosave` checks that shape.
+- `install` also writes the project detail tools' MCP entry
+  ([ADR 015](adr/015-provider-detail-tools.md)); `--no-mcp` removes it.
 - `remove` deletes all Continuity entries and nothing else.
 
 The autosave defaults and the closure behaviour live in the CLI, not in the hook

@@ -127,6 +127,34 @@ trust, scope or attribution. A prompt-injected source can still lead the model t
 a false lesson; it is attributed as an agent observation, and sources and human
 review outrank it. See [agent lifecycle](agent-lifecycle.md).
 
+## Provider-installed detail tools
+
+`integrate claude|codex install` registers one user-level MCP server in the provider's
+configuration (see [ADR 015](adr/015-provider-detail-tools.md)). The entry carries
+absolute paths and no project. The provider starts the server once per session with
+that session's directory: Claude Code with `CLAUDE_PROJECT_DIR` and the project as
+working directory, and Codex with the session's working directory. The server binds
+that directory through the host resolver, once, before any tool exists.
+
+The tools (`continuity_context`, `continuity_search`, `continuity_handoff_latest`) take
+no project, root, workspace or database input; unknown fields are rejected.
+The following sessions get no tools:
+- unregistered directories;
+- worktrees that no longer link into their project;
+- a missing Continuity home.
+
+Nested projects bind to themselves. The server has no memory or handoff writes;
+context and search refresh the source index and record audits as every retrieval does.
+A model, a prompt or tool arguments cannot widen the scope, because nothing they
+control reaches the binding. Provider configuration that a repository ships and the
+user has approved (for example a Claude Code `.mcp.json` server with the same name) can
+replace the server command or its environment. That is equivalent to the code
+execution such an approved configuration already has. The environment the provider passes is trusted like the hook environment. The
+installer changes only its own entry and never overwrites a foreign server with the same
+name. Its entry is current only without a working directory, an environment, an
+execution environment, credentials or any key outside the user settings it keeps, since
+those could bind every session to one project; `install` removes them.
+
 ## Local human Dashboard
 
 The Dashboard is an installation-wide trusted human client, separate from agent

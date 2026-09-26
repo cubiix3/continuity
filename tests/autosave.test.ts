@@ -605,7 +605,9 @@ test('handoff closure: offered in the request, closed by the answer, history kep
   expect(answer.stdout).toBe('');
   expect(host.project(a).handoff(h1.id)).toMatchObject({ task: { goal: 'Migrate locale files to UTF-8', status: 'in_progress' }, remaining: ['de_DE', 'fr_FR'], closure: { status: 'done', closed_by: { agent: 'Claude Code', session: 'finisher' } } });
   const next = renderBootstrap(host.bootstrap(a)!);
-  expect(next).not.toContain('Latest handoff'); expect(next).toContain('locale.encoding'); expect(next).toContain('1 older handoff');
+  expect(next).not.toContain('Latest handoff'); expect(next).toContain('locale.encoding');
+  // The closed handoff is history: nothing baits the next agent into looking for it (#25).
+  expect(next).not.toContain('older handoff'); expect(next).toContain('No open handoff.');
   // Double close is a quiet no-op that keeps the first closure.
   expect(host.project(a).closeHandoff({ id: h1.id, from: { agent: 'Codex', session: 'late' } })).toMatchObject({ outcome: 'already_closed', handoff: { closure: { closed_by: { session: 'finisher' } } } });
   const db = new DatabaseSync(join(home, 'continuity.db'), { readOnly: true });
@@ -687,7 +689,7 @@ test('a newest handoff created as done ends the open chain; closed ones are skip
   client.createHandoff({ ...base, from: { agent: 'Codex', session: 'x' }, task: { goal: 'Old open work', status: 'in_progress' } });
   client.createHandoff({ ...base, from: { agent: 'Codex', session: 'y' }, task: { goal: 'Old work finished', status: 'done' } });
   expect(host.bootstrap(a)?.latest_handoff).toBeUndefined(); expect(client.activeHandoff()).toBeNull();
-  expect(host.bootstrap(a)?.available).toMatchObject({ handoffs: 2, older_handoffs: 2 });
+  expect(host.bootstrap(a)?.available).toMatchObject({ handoffs: 2, older_handoffs: 0, open_handoff: false });
   const newer = client.createHandoff({ ...base, from: { agent: 'Codex', session: 'z' }, task: { goal: 'New open work', status: 'in_progress' } });
   expect(host.bootstrap(a)?.latest_handoff?.goal).toBe('New open work');
   client.closeHandoff({ id: newer.id, from: { agent: 'Codex', session: 'z' } });

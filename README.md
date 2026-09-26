@@ -232,7 +232,7 @@ handoff create --file <path>  Save structured JSON (use - for stdin)
 handoff latest | show <id>    Retrieve a handoff
 handoff close <id>            Mark a handoff finished (kept as history)
 bootstrap                     Read-only startup index for agent sessions (main)
-integrate claude|codex        Provider startup and autosave hooks: install | status | remove (main)
+integrate claude|codex        Provider startup, autosave hooks and detail tools: install | status | remove (main)
 project list | status         Inspect local registrations
 project rebind <id>           Explicit move with --from and --to
 retention status              Retention classes and eligibility

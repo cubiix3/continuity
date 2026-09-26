@@ -53,12 +53,56 @@ test('trust order, labels, diversity, rule demotion and handoff priority', async
   // An agent-authored "rule" is never presented as a project rule.
   expect(result.memories.some(m => (m.kind as string) === 'rule')).toBe(false);
   expect(result.latest_handoff).toMatchObject({ goal: 'Character distance clarity', status: 'in_progress', next_action: 'Continue Character distance clarity.', selection_reason: 'latest_handoff' });
-  expect(result.available).toEqual({ memories: 8, more_memories: 0, handoffs: 2, older_handoffs: 1 });
+  // The older handoff was finished, so it is history, not more work.
+  expect(result.available).toEqual({ memories: 8, more_memories: 0, more_keys: [], handoffs: 2, older_handoffs: 0, open_handoff: true });
   const text = renderBootstrap(result);
   expect(text).toContain('release.tags · decision · human-reviewed'); expect(text).toContain('renderer.csm · decision · source-backed (README.md)');
-  expect(text).toContain('agent observation'); expect(text).toContain('Next: Continue Character distance clarity.'); expect(text).toContain('More available: 1 older handoff.');
+  expect(text).toContain('agent observation'); expect(text).toContain('Next: Continue Character distance clarity.'); expect(text).not.toContain('More available');
   // Deterministic for an unchanged snapshot.
   expect(bundle()).toEqual(result);
+});
+
+test('closed and finished handoffs are history: never counted as more, and the index says nothing is open', async () => {
+  const client = host.project(a); await client.sync();
+  const only = client.createHandoff(handoff('Migrate locale files'));
+  client.closeHandoff({ id: only.id, from: agent('closer') });
+  const closed = bundle();
+  expect(closed.latest_handoff).toBeUndefined();
+  expect(closed.available).toMatchObject({ handoffs: 1, older_handoffs: 0, open_handoff: false });
+  const text = renderBootstrap(closed);
+  expect(text).not.toContain('older handoff'); expect(text).not.toContain('More available'); expect(text).toContain('No open handoff and no durable memories yet.');
+  // With memories, the settled state is one line.
+  client.propose({ key: 'locale.encoding', kind: 'decision', text: 'Locale files are stored as UTF-8 without BOM.', from: agent('s') });
+  expect(renderBootstrap(bundle())).toContain('\nNo open handoff.\n');
+  // Older open work behind the presented handoff is counted; closed and finished ones are not.
+  client.createHandoff(handoff('Old open work'));
+  const done = client.createHandoff(handoff('Old closed work')); client.closeHandoff({ id: done.id, from: agent('closer') });
+  client.createHandoff(handoff('Old finished work', 'done'));
+  client.createHandoff(handoff('Newest work'));
+  expect(bundle()).toMatchObject({ latest_handoff: { goal: 'Newest work' }, available: { handoffs: 5, older_handoffs: 1, open_handoff: true } });
+  expect(renderBootstrap(bundle())).not.toContain('No open handoff');
+});
+
+test('a handoff dropped for the byte budget is never reported as absent', async () => {
+  const client = host.project(a); await client.sync();
+  client.createHandoff({ ...handoff('G'.repeat(400)), recommended_next_action: 'N'.repeat(400) });
+  const tight = bundle(a, 1024);
+  expect(tight.latest_handoff).toBeUndefined(); expect(tight.available.open_handoff).toBe(true);
+  expect(renderBootstrap(tight)).not.toContain('No open handoff');
+});
+
+test('hook-injected startup context names no tools and no CLI; only an MCP reader is told how to fetch more', async () => {
+  const client = host.project(a); await client.sync();
+  for (let i = 0; i < 12; i++) client.propose({ key: `lesson.${i}`, kind: 'experience', text: `Renderer lesson ${i} about mip selection.`, from: agent(`s${i}`) });
+  const cli = resolve('dist/packages/cli/src/index.js');
+  for (const provider of ['claude', 'codex'] as const) {
+    const hook = spawnSync(process.execPath, [cli, '--home', home, 'integrate', provider, 'session-start'], { input: JSON.stringify({ cwd: a, source: 'startup' }), encoding: 'utf8', windowsHide: true });
+    const text = provider === 'claude' ? JSON.parse(hook.stdout).hookSpecificOutput.additionalContext as string : hook.stdout;
+    expect(text).toContain('Continuity · Alpha');
+    for (const bait of ['tool', 'CLI', 'continuity_', 'Fetch', 'More available', 'continuity ']) expect(text, `${provider}: ${bait}`).not.toContain(bait);
+  }
+  const mcp = renderBootstrap(bundle(), new Date(), { tools: ['continuity_context', 'continuity_search'] });
+  expect(mcp).toMatch(/More available: 4 more memories \(lesson\.\d+, lesson\.\d+, lesson\.\d+, lesson\.\d+\) via continuity_context, continuity_search\./);
 });
 
 test('conflicts are summarized, never presented as memory', async () => {
@@ -93,7 +137,12 @@ test('byte budget bounds the index with 100 available memories', async () => {
   expect(size(tight)).toBeLessThanOrEqual(1500); expect(tight.latest_handoff).toBeDefined(); expect(tight.memories.length).toBeLessThan(standard.memories.length);
   expect(tight.available.more_memories).toBe(100 - tight.memories.length);
   expect(() => bundle(a, 100)).toThrow(/budget/);
-  expect(renderBootstrap(standard)).toMatch(/More available: \d+ more memories\./);
+  // Only a reader with Continuity tools is told about further memories, and how to fetch them.
+  expect(renderBootstrap(standard)).not.toContain('More available');
+  // ... as a bounded index of keys (never their text), in trust and recency order, within the byte budget.
+  expect(standard.available.more_keys).toHaveLength(10); expect(standard.available.more_keys.every(k => k.startsWith('lesson.'))).toBe(true);
+  expect(renderBootstrap(standard, new Date(), { tools: ['continuity_context', 'continuity_search'] })).toContain(`More available: ${standard.available.more_memories} more memories (${standard.available.more_keys.join(', ')}, …) via continuity_context, continuity_search.`);
+  expect(size(tight)).toBeLessThanOrEqual(1500); expect(tight.budget.used).toBe(size(tight));
 });
 
 test('project isolation: a bootstrap bound to Alpha never contains Beta records', async () => {
@@ -282,7 +331,10 @@ test('worktrees of a repository with a separate git dir are recognized; an unatt
 test('older handoff count excludes a withheld newest handoff; dangling settings symlinks are refused', async (context) => {
   const client = host.project(a); await client.sync();
   client.createHandoff({ ...handoff('Rotate credentials'), recommended_next_action: 'Use api_key = "abcd1234efgh5678".' });
-  expect(bundle().available).toMatchObject({ handoffs: 1, older_handoffs: 0 }); expect(renderBootstrap(bundle())).not.toContain('older handoff');
+  expect(bundle().available).toMatchObject({ handoffs: 1, older_handoffs: 0, open_handoff: true }); expect(renderBootstrap(bundle())).not.toContain('older handoff');
+  // The withheld record is the open handoff: nothing may claim there is none, and there are handoffs.
+  expect(renderBootstrap(bundle())).not.toContain('No open handoff'); expect(renderBootstrap(bundle())).not.toContain('or handoffs');
+  expect(renderBootstrap(bundle())).toContain('No durable memories yet.');
   const config = join(root, 'dangling'); mkdirSync(config);
   try { symlinkSync(join(root, 'missing-target.json'), join(config, 'settings.json'), 'file'); } catch { context.skip(); return; }
   const target = claudeHookTarget(process.execPath, resolve('dist/packages/cli/src/index.js'), home, { CLAUDE_CONFIG_DIR: config });

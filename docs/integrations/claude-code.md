@@ -67,3 +67,22 @@ sessions in registered projects receive the [bootstrap index](../agent-bootstrap
 other directories stay silent. Verified with Claude Code 2.1.280 on Windows: fresh
 `-p` sessions with all tools disabled described the project's in-progress handoff
 and memories with their trust labels, and did not mention the other fixture project.
+
+## Project detail tools
+
+The same install adds a user-scope MCP server `continuity` to `.claude.json` (or
+`$CLAUDE_CONFIG_DIR/.claude.json`). Claude Code starts it for each session in the
+project, and it serves `continuity_context`, `continuity_search` and
+`continuity_handoff_latest`, bound to that project. The tools are marked `alwaysLoad`,
+so Claude Code calls them without a tool search. The startup index then lists the keys of
+memories it did not show.
+
+Verified with Claude Code 2.1.283 on Windows, in an isolated config, with prompts that
+did not mention Continuity:
+- "What should we continue?" with only a closed handoff: one `continuity_context` call
+  and two Git reads, no tool search, no CLI, 15 s. Before: 9 calls, 6 of them Continuity
+  CLI, 47 s.
+- A question needing a memory the index did not show: `continuity_context` found it
+  directly.
+
+See [ADR 015](../adr/015-provider-detail-tools.md).

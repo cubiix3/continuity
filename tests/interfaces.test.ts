@@ -139,6 +139,8 @@ it('exposes seven scoped tools over a real MCP stdio connection', async () => {
     const bootstrap = await client.callTool({ name: 'continuity_bootstrap', arguments: {} });
     expect(bootstrap.isError).not.toBe(true);
     expect(bootstrap.structuredContent).toMatchObject({ result: { bundle: { schema_version: 1, budget: { unit: 'utf8_bytes' } }, text: expect.stringContaining('Continuity · ') } });
+    // An MCP reader has the tools, so it alone may be told where details come from; never the CLI.
+    expect((bootstrap.structuredContent as { result: { text: string } }).result.text).not.toContain('CLI');
     expect((await client.callTool({ name: 'continuity_bootstrap', arguments: { project_id: 'foreign' } })).isError).toBe(true);
     const observed = await client.callTool({ name: 'continuity_observe', arguments: { text: 'Reconnect tests passed', agent: 'test', session: 'mcp-session' } });
     expect(observed.isError).not.toBe(true);

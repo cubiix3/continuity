@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -127,14 +127,72 @@ test('Codex: a foreign or dotted-key continuity server is never touched; our sta
   expect(mcpState(t.mcp)).toBe('foreign');
   writeFileSync(file, '[mcp_servers]\ncontinuity = { command = "node" }\n');
   expect(mcpState(t.mcp)).toBe('foreign');
-  // Our own entry with an extra env sub-table (as `codex mcp` might write) is stale and replaced whole.
+  // Codex's own settings under our table (an approval sub-table, a timeout) belong to the user and survive a repair.
   writeFileSync(file, '');
   writeMcpEntry(t.mcp, true);
-  writeFileSync(file, readFileSync(file, 'utf8') + '\n[mcp_servers.continuity.env]\nX = "1"\n\n[after]\nkeep = true\n');
-  expect(mcpState(t.mcp)).toBe('stale');
-  writeMcpEntry(t.mcp, true);
+  writeFileSync(file, readFileSync(file, 'utf8') + 'startup_timeout_sec = 20\n\n[mcp_servers.continuity.tools.continuity_context]\napproval_mode = "approve"\n\n# the next table\n[after]\nkeep = true\n');
+  expect(mcpState(t.mcp)).toBe('installed');
+  const moved = codexHookTarget(process.execPath, join(root, 'moved', 'dist', 'packages', 'cli', 'src', 'index.js'), home, { CODEX_HOME: dir });
+  expect(mcpState(moved.mcp)).toBe('stale');
+  writeMcpEntry(moved.mcp, true);
   const repaired = readFileSync(file, 'utf8');
-  expect(repaired).not.toContain('[mcp_servers.continuity.env]'); expect(repaired).toContain('[after]\nkeep = true'); expect(mcpState(t.mcp)).toBe('installed');
+  expect(mcpState(moved.mcp)).toBe('installed');
+  for (const kept of ['startup_timeout_sec = 20', '[mcp_servers.continuity.tools.continuity_context]\napproval_mode = "approve"', '# the next table\n[after]\nkeep = true']) expect(repaired).toContain(kept);
+  // A server the user turned off stays off, and no tool is promised.
+  writeFileSync(file, repaired.replace('startup_timeout_sec = 20', 'enabled = false'));
+  expect(mcpState(t.mcp)).toBe('disabled');
+  const before = readFileSync(file, 'utf8');
+  expect(installHookIntegration(t)).toMatchObject({ state: 'partial', mcp: 'disabled', message: expect.stringContaining('turned off') });
+  expect(readFileSync(file, 'utf8')).toBe(before);
+  // Removing takes our table and its sub-tables, and keeps the comment that belongs to the next table.
+  removeHookIntegration(t);
+  expect(readFileSync(file, 'utf8')).toBe('# the next table\n[after]\nkeep = true\n');
+});
+
+test('Codex: files this editor could misread are refused and never written (the review cases)', () => {
+  const dir = join(root, 'codex-unsafe'); mkdirSync(dir);
+  const file = join(dir, 'config.toml'), t = codexTarget(dir);
+  const ourArgs = `args = ["--no-warnings", "${cli.replace(/\\/g, '\\\\')}", "--home", "h", "integrate", "codex", "mcp"]`;
+  const cases = {
+    'a header inside a multi-line string': `notes = """\n[mcp_servers.continuity]\ncommand = "node"\n${ourArgs}\n"""\n`,
+    'a quoted mcp_servers table': '["mcp_servers".continuity]\ncommand = "node"\n',
+    'a root inline mcp_servers table': 'mcp_servers = { other = { command = "node" } }\n',
+    'an array table': '[[mcp_servers.continuity]]\ncommand = "node"\n',
+    'an unclosed array': 'x = [\n  1,\n',
+  };
+  for (const [i, [name, text]] of Object.entries(cases).entries()) {
+    const own = join(root, `codex-unsafe-${i}`); mkdirSync(own);
+    const target = codexTarget(own), config = join(own, 'config.toml');
+    writeFileSync(config, text);
+    expect(mcpState(target.mcp), name).toBe('invalid_config');
+    expect(() => installHookIntegration(target), name).toThrow(/does not edit/);
+    expect(readFileSync(config, 'utf8'), name).toBe(text);
+    expect(existsSync(join(own, 'hooks.json')), name).toBe(false);
+    // Hooks only (--no-mcp) do not need the file at all.
+    expect(installHookIntegration(codexTarget(own, { detail: false })), name).toMatchObject({ state: 'installed', mcp: 'invalid_config' });
+    expect(readFileSync(config, 'utf8'), name).toBe(text);
+  }
+  // Lines inside a multi-line array that look like headers are values, not tables.
+  writeFileSync(file, '');
+  writeMcpEntry(t.mcp, true);
+  writeFileSync(file, readFileSync(file, 'utf8') + 'env_vars = [\n  ["A", "B"],\n  ["C"]\n]\n\n[after]\nkeep = true\n');
+  expect(mcpState(t.mcp)).toBe('installed');
+  removeHookIntegration(t);
+  expect(readFileSync(file, 'utf8')).toBe('[after]\nkeep = true\n');
+  // A byte order mark survives.
+  writeFileSync(file, String.fromCharCode(0xfeff) + 'model = "m"\n');
+  writeMcpEntry(t.mcp, true);
+  expect(readFileSync(file, 'utf8').charCodeAt(0)).toBe(0xfeff); expect(mcpState(t.mcp)).toBe('installed');
+});
+
+test('a dangling Claude config link is refused before any file is written; MCP backups roll', (context) => {
+  const dir = join(root, 'claude-dangling'); mkdirSync(dir);
+  try { symlinkSync(join(root, 'missing.json'), join(dir, '.claude.json'), 'file'); } catch { context.skip(); return; }
+  expect(() => installHookIntegration(claudeTarget(dir))).toThrow(/dangling/);
+  expect(existsSync(join(dir, 'settings.json'))).toBe(false);
+  const rolling = join(root, 'claude-rolling'); mkdirSync(rolling); writeFileSync(join(rolling, '.claude.json'), '{"keep":1}');
+  installHookIntegration(claudeTarget(rolling)); removeHookIntegration(claudeTarget(rolling)); installHookIntegration(claudeTarget(rolling));
+  expect(readdirSync(rolling).filter(f => f.startsWith('.claude.json.continuity-backup'))).toEqual(['.claude.json.continuity-backup']);
 });
 
 /** A real stdio MCP session with the provider-mode server, started the way the provider starts it. */
@@ -152,7 +210,9 @@ test('the provider server is bound by the session directory, never by tool input
     const tools = await claude.listTools();
     expect(tools.tools.map(t => t.name).sort()).toEqual(['continuity_context', 'continuity_handoff_latest', 'continuity_search']);
     // Claude Code loads these tools without a search step.
-    expect(tools.tools.every(t => t._meta?.['anthropic/alwaysLoad'] === true && t.annotations?.readOnlyHint === true)).toBe(true);
+    expect(tools.tools.every(t => t._meta?.['anthropic/alwaysLoad'] === true)).toBe(true);
+    // Context and search refresh the source index and record an audit, so only the handoff read claims to be read-only.
+    expect(Object.fromEntries(tools.tools.map(t => [t.name, t.annotations?.readOnlyHint ?? false]))).toEqual({ continuity_context: false, continuity_search: false, continuity_handoff_latest: true });
     // CLAUDE_PROJECT_DIR (the provider's project) wins over the process directory.
     const context = await claude.callTool({ name: 'continuity_context', arguments: { task: 'plural forms invoices' } });
     expect(text(context)).toContain('ALPHA plural forms'); expect(text(context)).not.toContain('BETA');
@@ -213,6 +273,32 @@ test('the startup index names the detail tool only when the MCP entry is really 
   const claudeDir = join(root, 'claude-hint'); install({ CLAUDE_CONFIG_DIR: claudeDir }, 'claude');
   const claude = spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', 'claude', 'session-start'], { input: JSON.stringify({ cwd: a, source: 'startup' }), encoding: 'utf8', windowsHide: true, env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir } }).stdout;
   expect(JSON.parse(claude).hookSpecificOutput.additionalContext).toContain('More available: 3 more memories (alpha.lesson-1, alpha.lesson-0, alpha.plurals) via continuity_context.');
+});
+
+test('no tool is promised where the session has none: a nested unregistered checkout, or a server turned off for the project', () => {
+  for (let i = 0; i < 10; i++) host.project(a).propose({ key: `alpha.lesson-${i}`, kind: 'experience', text: `Alpha lesson number ${i} about locale files.`, from: { agent: 'Codex', session: `s${i}` } });
+  const env = { ...process.env, CODEX_HOME: join(root, 'cx'), CLAUDE_CONFIG_DIR: join(root, 'cc') };
+  for (const provider of ['codex', 'claude']) spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', provider, 'install'], { encoding: 'utf8', windowsHide: true, env });
+  const start = (provider: string, cwd: string) => { const out = spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', provider, 'session-start'], { input: JSON.stringify({ cwd, source: 'startup' }), encoding: 'utf8', windowsHide: true, env }).stdout; return provider === 'claude' && out ? JSON.parse(out).hookSpecificOutput.additionalContext as string : out; };
+  expect(start('codex', a)).toContain('via continuity_context');
+  // A Git checkout nested in the project shows the parent's index, but its MCP server binds nothing.
+  const nested = join(a, '.claude', 'worktrees', 'feat'); mkdirSync(nested, { recursive: true }); writeFileSync(join(nested, '.git'), 'gitdir: ../../../.git/worktrees/feat\n');
+  expect(start('codex', nested)).toContain('Continuity · Alpha'); expect(start('codex', nested)).not.toContain('continuity_context');
+  // Claude Code keeps per-project server toggles in the same file.
+  expect(start('claude', a)).toContain('via continuity_context');
+  const file = join(root, 'cc', '.claude.json'), config = json(file);
+  writeFileSync(file, JSON.stringify({ ...config, projects: { [a.replace(/\\/g, '/')]: { disabledMcpServers: ['continuity'] } } }));
+  expect(start('claude', a)).toContain('Continuity · Alpha'); expect(start('claude', a)).not.toContain('continuity_context');
+});
+
+test('Windows: an install made before the home exists stays current once the home is created', (context) => {
+  if (process.platform !== 'win32') { context.skip(); return; }
+  const later = join(root, 'Later Home'), env = { ...process.env, CODEX_HOME: join(root, 'cx-case') };
+  const run = (...args: string[]) => spawnSync(process.execPath, ['--no-warnings', cli, '--home', later, '--json', ...args], { encoding: 'utf8', windowsHide: true, env });
+  expect(JSON.parse(run('integrate', 'codex', 'install').stdout)).toMatchObject({ state: 'installed' });
+  expect(existsSync(later)).toBe(false);
+  run('--project', a, 'init');
+  expect(JSON.parse(run('integrate', 'codex', 'status').stdout)).toMatchObject({ state: 'installed', mcp: 'installed' });
 });
 
 test('real CLI: install, status and remove report hooks and MCP together for both providers', () => {

@@ -3,12 +3,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { BootstrapBundle } from '../../core/src/index.js';
 import { renderBootstrap } from '../../core/src/index.js';
-import { writeFileAtomically } from './files.js';
+import { assertWritable, writeFileAtomically } from './files.js';
 import { claudeMcpTarget, codexMcpTarget, mcpState, writeMcpEntry } from './mcp.js';
 import type { McpEntryState, McpTarget } from './mcp.js';
 
 export * from './autosave.js';
 export * from './mcp.js';
+export { assertWritable } from './files.js';
 
 /**
  * Thin provider hook adapters. They resolve nothing: the host binds the hook's cwd, and this module only shapes
@@ -141,16 +142,17 @@ export function hookIntegrationStatus(target: HookTarget): HookIntegrationStatus
   const { events, entries } = eventStates(target, settings), values = Object.values(events), mcp = base.mcp;
   const name = target.provider === 'claude' ? 'Claude Code' : 'Codex', trust = target.provider === 'codex' ? ' once the hooks are trusted in Codex (/hooks)' : '';
   // A foreign server named continuity is left alone: without the detail tools the integration is partial, not broken.
-  const mcpCurrent = target.detail ? mcp === 'installed' : mcp === 'absent' || mcp === 'foreign';
+  const mcpCurrent = target.detail ? mcp === 'installed' : ['absent', 'foreign', 'invalid_config'].includes(mcp);
   const current = values.every(v => v === 'installed' || v === 'absent') && mcpCurrent;
   // An older install: startup context works; the autosave hooks or the detail tools were never added.
-  const partial = events.SessionStart === 'installed' && values.every(v => v === 'installed' || v === 'absent' || v === 'missing') && ['installed', 'missing', 'foreign', 'absent', 'invalid_config'].includes(mcp);
+  const partial = events.SessionStart === 'installed' && values.every(v => v === 'installed' || v === 'absent' || v === 'missing') && ['installed', 'missing', 'disabled', 'foreign', 'absent', 'invalid_config'].includes(mcp);
   const exes = base.executable_available && base.cli_available;
-  const state = !entries && !['installed', 'stale'].includes(mcp) ? 'missing' : current && exes ? 'installed' : partial && exes ? 'partial' : 'stale';
+  const state = !entries && !['installed', 'stale', 'disabled'].includes(mcp) ? 'missing' : current && exes ? 'installed' : partial && exes ? 'partial' : 'stale';
   const detailMessage = mcp === 'foreign' ? ` An MCP server named continuity in ${target.mcp.file} is not Continuity's; the project detail tools were not installed. Rename that server, or pass --no-mcp.`
-    : mcp === 'invalid_config' ? ` ${target.mcp.file} could not be read, so the project detail tools could not be checked.`
+    : mcp === 'disabled' ? ` The Continuity MCP server is turned off in ${target.mcp.file} (enabled = false); Continuity leaves it off and does not name its tools.`
+    : mcp === 'invalid_config' && target.detail ? ` ${target.mcp.file} could not be read, or has a form Continuity does not edit, so the project detail tools could not be checked or added.`
     : target.detail && mcp === 'missing' ? ` The project detail tools are missing. Run continuity integrate ${target.provider} install to add them, or pass --no-mcp.` : '';
-  return { ...base, state, installed: entries > 0 || mcp === 'installed', current, entries, events,
+  return { ...base, state, installed: entries > 0 || ['installed', 'stale', 'disabled'].includes(mcp), current, entries, events,
     message: state === 'installed' ? `${name} sessions in registered projects receive Continuity startup context${target.detail ? ' and read-only project detail tools' : ''}${!target.autosave ? '' : target.provider === 'claude' ? ', and, in interactive sessions, an automatic save after file edits' : ', and, in interactive sessions (the shared app-server, not codex exec or --no-daemon), an automatic save after file edits'}${trust}.`
       : state === 'missing' ? `Not installed. Run continuity integrate ${target.provider} install.`
       : state === 'partial' ? `Startup context is installed.${values.includes('missing') ? ` The session autosave hooks are missing. Run continuity integrate ${target.provider} install to add them, or pass --no-autosave to keep startup context only.` : ''}${detailMessage}`
@@ -164,8 +166,12 @@ export function installHookIntegration(target: HookTarget) {
   const { settings, exists } = readSettings(target.file);
   const status = hookIntegrationStatus(target);
   if (status.state === 'installed') return { ...status, changed: false };
-  if (status.mcp === 'invalid_config') throw new Error(`${target.mcp.file} could not be read. Nothing was changed.`);
+  if (status.mcp === 'invalid_config' && target.detail) throw new Error(`${target.mcp.file} could not be read, or has a form Continuity does not edit. Nothing was changed.`);
+  const mcpWrite = target.detail ? ['missing', 'stale'].includes(status.mcp) : status.mcp === 'stale';
+  // Both files are checked before either is written, so a refused MCP file never leaves hooks half-updated.
+  if (mcpWrite) assertWritable(target.mcp.file);
   const backups: string[] = [];
+  let changed = false;
   if (!Object.values(status.events).every(v => v === 'installed' || v === 'absent')) {
     const hooks: Record<string, unknown> = { ...(settings.hooks ?? {}) };
     for (const event of EVENTS) {
@@ -175,10 +181,14 @@ export function installHookIntegration(target: HookTarget) {
     }
     const backup = writeSettings(target.file, { ...settings, hooks }, exists);
     if (backup) backups.push(backup);
+    changed = true;
   }
-  const mcp = writeMcpEntry(target.mcp, target.detail);
-  if (mcp.backup) backups.push(mcp.backup);
-  return { ...hookIntegrationStatus(target), changed: true, ...(backups.length ? { backup: backups[0], backups } : {}) };
+  if (mcpWrite) {
+    const mcp = writeMcpEntry(target.mcp, target.detail);
+    if (mcp.backup) backups.push(mcp.backup);
+    changed ||= mcp.changed;
+  }
+  return { ...hookIntegrationStatus(target), changed, ...(backups.length ? { backup: backups[0], backups } : {}) };
 }
 /** Removes only Continuity's hook entries and its MCP entry; unrelated hooks, servers, groups and settings are preserved. */
 export function removeHookIntegration(target: HookTarget) {
@@ -196,5 +206,5 @@ export function removeHookIntegration(target: HookTarget) {
   }
   const mcp = mcpState(target.mcp, false) === 'stale' ? writeMcpEntry(target.mcp, false) : undefined;
   if (mcp?.backup) backups.push(mcp.backup);
-  return { ...hookIntegrationStatus(target), changed: backups.length > 0, ...(backups.length ? { backup: backups[0], backups } : {}) };
+  return { ...hookIntegrationStatus(target), changed: backups.length > 0 || !!mcp?.changed, ...(backups.length ? { backup: backups[0], backups } : {}) };
 }

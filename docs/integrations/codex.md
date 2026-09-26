@@ -59,7 +59,7 @@ Windows using the installer's exact command strings (trust bypassed for the
 test run only). See [agent bootstrap](../agent-bootstrap.md).
 
 The same install adds `[mcp_servers.continuity]` to `config.toml`. Codex starts that
-server once per session in the session's directory; it serves the read-only
+server once per session in the session's directory; it serves
 `continuity_context`, `continuity_search` and `continuity_handoff_latest` for that
 project, and no tools elsewhere. The daemon ends a session's server one to two minutes
 after the session. ORCA mirrors `~/.codex/config.toml` into its own `CODEX_HOME` as it

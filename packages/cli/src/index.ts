@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
 import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
 import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
-import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, mcpState, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
+import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, mcpUsable, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { DETAIL_TOOLS, serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
@@ -138,7 +138,8 @@ const integrate = program.command('integrate').description('Explicit provider in
 // Same canonical form as the runtime's continuityHome(), without creating a missing home (hooks must stay side-effect free).
 const continuityHomePath = () => {
   const home = resolve(program.opts<{ home?: string }>().home ?? process.env.CONTINUITY_HOME ?? join(homedir(), '.continuity'));
-  return existsSync(home) ? continuityHome(home) : home;
+  // A home created later becomes lower-case on Windows; installed entries must already match that canonical form.
+  return existsSync(home) ? continuityHome(home) : process.platform === 'win32' ? home.toLowerCase() : home;
 };
 /** Bounded provider hook input; oversized input is ignored rather than truncated. */
 async function hookStdin(limit: number) {
@@ -179,8 +180,14 @@ for (const provider of ['claude', 'codex'] as const) {
       let bundle;
       try { bundle = runtime().bootstrap(cwd); }
       catch (error) { if (error instanceof BootstrapUnavailableError) process.stdout.write(sessionStartUnavailable(provider, error.message)); return; }
-      // The index names the detail tool only when this integration's MCP entry is really configured for the provider.
-      if (bundle) process.stdout.write(sessionStartOutput(provider, bundle, new Date(), mcpState(target().mcp) === 'installed'));
+      // The index names the detail tool only when this session really has it: this integration's MCP entry is installed and
+      // on for the project, and the server binds this directory (a nested unregistered checkout shows the parent's index,
+      // but its server has no tools).
+      if (bundle) {
+        let detail = false;
+        try { detail = mcpUsable(target().mcp, cwd) && !!runtime().session(cwd); } catch { detail = false; }
+        process.stdout.write(sessionStartOutput(provider, bundle, new Date(), detail));
+      }
     } catch { /* Silent: Continuity must not disturb unrelated agent sessions. */ }
   });
   // PostToolUse on file edits: flags the session and its bound scope, and gives the first edit of a turn the save

@@ -143,9 +143,13 @@ The following sessions get no tools:
 - worktrees that no longer link into their project;
 - a missing Continuity home.
 
-Nested projects bind to themselves. The server has no write tools. A model, a prompt or
-repository content cannot widen the scope, because nothing it controls reaches the
-binding. The environment the provider passes is trusted like the hook environment. The
+Nested projects bind to themselves. The server has no memory or handoff writes;
+context and search refresh the source index and record audits as every retrieval does.
+A model, a prompt or tool arguments cannot widen the scope, because nothing they
+control reaches the binding. Provider configuration that a repository ships and the
+user has approved (for example a Claude Code `.mcp.json` server with the same name) can
+replace the server command or its environment. That is equivalent to the code
+execution such an approved configuration already has. The environment the provider passes is trusted like the hook environment. The
 installer changes only its own entry and never overwrites a foreign server with the same
 name.
 

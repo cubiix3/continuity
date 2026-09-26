@@ -332,8 +332,9 @@ test('older handoff count excludes a withheld newest handoff; dangling settings 
   const client = host.project(a); await client.sync();
   client.createHandoff({ ...handoff('Rotate credentials'), recommended_next_action: 'Use api_key = "abcd1234efgh5678".' });
   expect(bundle().available).toMatchObject({ handoffs: 1, older_handoffs: 0, open_handoff: true }); expect(renderBootstrap(bundle())).not.toContain('older handoff');
-  // The withheld record is the open handoff: nothing may claim there is none.
-  expect(renderBootstrap(bundle())).not.toContain('No open handoff');
+  // The withheld record is the open handoff: nothing may claim there is none, and there are handoffs.
+  expect(renderBootstrap(bundle())).not.toContain('No open handoff'); expect(renderBootstrap(bundle())).not.toContain('or handoffs');
+  expect(renderBootstrap(bundle())).toContain('No durable memories yet.');
   const config = join(root, 'dangling'); mkdirSync(config);
   try { symlinkSync(join(root, 'missing-target.json'), join(config, 'settings.json'), 'file'); } catch { context.skip(); return; }
   const target = claudeHookTarget(process.execPath, resolve('dist/packages/cli/src/index.js'), home, { CLAUDE_CONFIG_DIR: config });

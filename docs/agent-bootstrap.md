@@ -41,9 +41,10 @@ continuity integrate codex install    # Codex: ~/.codex/hooks.json and config.to
 ```
 
 From then on, `cd project` and `claude` (or `codex`) is enough. The install also adds
-the read-only project detail tools (see below); `--no-mcp` leaves them out. `status` reports
-`installed`, `partial` (startup context without the [autosave](agent-lifecycle.md)
-hooks), `missing`, `stale` (another command, home or a missing executable) or
+the project detail tools (see below); `--no-mcp` leaves them out. `status` reports
+`installed`, `partial` (startup context works, but the [autosave](agent-lifecycle.md)
+hooks or the detail tools are missing, turned off, or blocked by a foreign server of
+the same name), `missing`, `stale` (another command, home or a missing executable) or
 `invalid_config`. `install` repairs a stale or partial install; `--no-autosave`
 keeps startup context only. `remove` deletes only Continuity's entries. `--home` or `CONTINUITY_HOME` selects the Continuity state that
 the hook reads; the resolved home, Node executable and CLI path are written into
@@ -68,7 +69,7 @@ Continuity hook in `/hooks`. Codex skips untrusted hooks and warns at startup.
 | Latest open handoff in this workspace (not done, not closed): agent, status, goal, next action, up to three remaining items | Full handoffs, transcripts, chat history |
 | Up to eight durable memories: key, kind, trust label, first 160 characters | Full memory bodies, source passages, Git history |
 | Counts of further memories and older open handoffs (JSON), and up to ten keys of further memories | Records that look like secrets (withheld and counted) |
-| `No open handoff.` when every earlier handoff is closed or finished | Closed and finished handoffs as "more available" |
+| `No open handoff.` when no handoff is offered for continuation (all closed, or the newest was created as done) | Closed and finished handoffs as "more available" |
 | The detail tool's name, only when it is installed for the session | Tool or CLI hints for tools that are not installed |
 
 Memory selection is deterministic and needs no task: newest first within each
@@ -134,13 +135,15 @@ session can fetch detail without any setup or command:
 
 | Session | Continuity capabilities | What the index says |
 | --- | --- | --- |
-| `claude` or `codex` after `integrate … install` | Startup context, autosave, and three read-only tools: `continuity_context`, `continuity_search`, `continuity_handoff_latest` | The keys of memories not listed, and the tool that fetches them |
+| `claude` or `codex` after `integrate … install` | Startup context, autosave, and three detail tools that write no memories or handoffs: `continuity_context`, `continuity_search`, `continuity_handoff_latest` | The keys of memories not listed, and the tool that fetches them |
 | The same with `install --no-mcp` | Startup context and autosave only | No tool or CLI hint, no "more available" line |
 | ORCA-launched Codex | ORCA mirrors `~/.codex` `hooks.json` and `config.toml` into its own `CODEX_HOME` | Same as `codex` |
 | An MCP client with `continuity mcp` configured by hand | Seven project-bound tools | `continuity_bootstrap` names `continuity_context` and `continuity_search` |
 
-The hook names the tool only when the provider's configuration really contains this
-integration's current MCP entry (the `installed` state of `integrate … status`).
+The hook names the tool only when the session really has it: the provider's
+configuration contains this integration's current entry (`installed`), the server is
+not turned off for the project, and it binds this directory (a nested unregistered
+checkout shows its parent's index, but no tool).
 Earlier releases ended every index with "Fetch details with Continuity
 context/search/handoff tools or the continuity CLI" whether or not any tool existed. In
 hook-only sessions, agents spent their first calls searching their tool lists and running
@@ -160,7 +163,7 @@ The server binds that directory through the same host resolver as this index, on
 start. The tools take no project, root, workspace or database input, and unknown fields
 are rejected. A session outside every registered project, or in a worktree that no longer
 links into its project, gets a server with no tools and no messages. Autosave stays with
-the hooks: the installed server has no write tools.
+the hooks: the installed server writes no memories or handoffs.
 
 **Cost** (Windows, Node 24):
 - one Node process per provider session, about 80 MB working set;

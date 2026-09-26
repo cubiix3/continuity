@@ -84,8 +84,8 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
   const newest = openHandoff(workspaceHandoffs);
   const latest = newest && !withheld([newest.from.agent, newest.task.goal, newest.recommended_next_action, ...newest.remaining].join('\n')) ? newest : undefined;
   if (newest && !latest) hidden++;
-  // Older open work behind the handoff presented. Closed and finished handoffs are history, not more work, and without a
-  // presented handoff nothing older is offered either; all of them stay counted in `handoffs`.
+  // Older open work behind the newest open handoff (presented, or dropped later for the byte budget). Closed and finished
+  // handoffs are history, not more work; with no open handoff nothing older is offered either. `handoffs` counts them all.
   const olderHandoffs = latest ? workspaceHandoffs.slice(workspaceHandoffs.indexOf(latest) + 1).filter(h => !h.closure && h.task.status !== 'done').length : 0;
   const sync = input.sync;
   const warnings: string[] = [];
@@ -167,7 +167,7 @@ export function renderBootstrap(bundle: BootstrapBundle, now = new Date(), optio
   }
   // Earlier handoffs that are all closed or finished leave nothing to continue; say so rather than hint at history.
   const settled = !h && bundle.available.handoffs > 0 && !bundle.available.open_handoff;
-  if (!h && !bundle.memories.length) lines.push('', settled ? 'No open handoff and no durable memories yet.' : 'No durable memories or handoffs yet.');
+  if (!h && !bundle.memories.length) lines.push('', settled ? 'No open handoff and no durable memories yet.' : bundle.available.handoffs ? 'No durable memories yet.' : 'No durable memories or handoffs yet.');
   else if (settled) lines.push('', 'No open handoff.');
   const tools = options.tools ?? [];
   if (tools.length && bundle.available.more_memories) {

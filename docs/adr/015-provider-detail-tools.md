@@ -42,15 +42,28 @@ Findings, verified with a probe MCP server:
   - Claude Code: `CLAUDE_PROJECT_DIR`, else the working directory;
   - Codex: the working directory.
 
-  It never registers anything. It serves the three read-only tools (`continuity_context`,
-  `continuity_search`, `continuity_handoff_latest`), marked `readOnlyHint`. For Claude
-  Code they also carry `alwaysLoad`. Unbound sessions (unregistered, detached worktree,
-  no state) get a server with no tools and no output.
-- The startup hook checks the provider's actual configuration. It names the tool only
-  when this integration's entry is current, and then lists up to ten keys of the
-  memories it did not show. Without the entry it names no tool and no CLI.
-- Closed and finished handoffs no longer count as "more available", and the index says
-  `No open handoff.` when nothing is open.
+  It never registers anything. It serves three tools that write no memories or handoffs:
+  `continuity_context`, `continuity_search` and `continuity_handoff_latest`. Context and
+  search refresh the source index and record a context audit like any retrieval, so
+  only the handoff read carries `readOnlyHint`. For Claude Code they also carry
+  `alwaysLoad`. Unbound sessions (unregistered, detached worktree, no state) get a
+  server with no tools and no output.
+- The startup hook names the tool only when this session really has it: this
+  integration's entry is current, not turned off (Codex `enabled = false`, Claude Code
+  per-project `disabledMcpServers`), and the server binds this directory. A nested
+  unregistered checkout shows its parent's index, but its server binds nothing. With
+  the tool, the hook lists up to ten keys of the memories it did not show. Otherwise it
+  names no tool and no CLI.
+- The Codex editor refuses what it could misread, and then writes nothing:
+  multi-line strings, quoted or inline `mcp_servers`, array tables, and unbalanced
+  brackets. Table headers count only outside arrays. Only `command` and `args` are the
+  integration's own: other keys and sub-tables under `[mcp_servers.continuity]` (a
+  timeout, tool approvals) are kept, and a disabled server stays disabled. Comments
+  before the next table and a byte order mark are kept.
+  Backups of `.claude.json` and `config.toml` roll: one private copy each.
+- Closed and finished handoffs no longer count as "more available". The index says
+  `No open handoff.` when no handoff is offered for continuation: all are closed, or
+  the newest remaining one was created as done, which ends the chain.
 
 ## Alternatives
 
@@ -83,3 +96,14 @@ Findings, verified with a probe MCP server:
 - Codex hook trust is still not visible to `status`. `/hooks` trust is stored in Codex's
   config under hashed keys, and `status` does not claim it.
 - Upgrading Continuity in place keeps the CLI path, and the entries stay current.
+  Installs from before this change report `partial` (exit code 1) until `install` runs
+  again.
+- Known limits:
+  - the read-modify-rename has no lock, so a provider write in the same moment can be
+    lost; install is rare;
+  - Codex `enabled_tools`/`disabled_tools` lists are not read, so the hint may name a
+    tool the user hid;
+  - a project- or local-scope Claude Code server named `continuity` shadows ours without
+    the hook knowing;
+  - a session started before the project was registered keeps a server without tools
+    until it restarts, even though `/clear` may then show the hint.

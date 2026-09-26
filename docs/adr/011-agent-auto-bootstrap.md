@@ -31,6 +31,13 @@ A read-only MCP tool is added for clients without a startup hook. No memory-by-I
 tool is added: `continuity_context` returns full memories for their key or text,
 and `continuity_handoff_latest` returns the full handoff.
 
+The rendered text states only what its reader can use (issue #25). Hook-injected
+context names no tools and no CLI, because `integrate` installs hooks only. Only
+`continuity_bootstrap`, whose reader has the MCP tools, says how many further
+memories exist and which tools fetch them. Closed and finished handoffs are
+history: `older_handoffs` counts only older open handoffs, and the text says
+`No open handoff.` when none is open.
+
 ## Alternatives
 
 - Reuse `continuity_context` at startup: it refreshes sources and needs a task.

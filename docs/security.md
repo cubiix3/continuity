@@ -127,6 +127,28 @@ trust, scope or attribution. A prompt-injected source can still lead the model t
 a false lesson; it is attributed as an agent observation, and sources and human
 review outrank it. See [agent lifecycle](agent-lifecycle.md).
 
+## Provider-installed detail tools
+
+`integrate claude|codex install` registers one user-level MCP server in the provider's
+configuration (see [ADR 015](adr/015-provider-detail-tools.md)). The entry carries
+absolute paths and no project. The provider starts the server once per session with
+that session's directory: Claude Code with `CLAUDE_PROJECT_DIR` and the project as
+working directory, and Codex with the session's working directory. The server binds
+that directory through the host resolver, once, before any tool exists.
+
+The tools (`continuity_context`, `continuity_search`, `continuity_handoff_latest`) take
+no project, root, workspace or database input; unknown fields are rejected.
+The following sessions get no tools:
+- unregistered directories;
+- worktrees that no longer link into their project;
+- a missing Continuity home.
+
+Nested projects bind to themselves. The server has no write tools. A model, a prompt or
+repository content cannot widen the scope, because nothing it controls reaches the
+binding. The environment the provider passes is trusted like the hook environment. The
+installer changes only its own entry and never overwrites a foreign server with the same
+name.
+
 ## Local human Dashboard
 
 The Dashboard is an installation-wide trusted human client, separate from agent

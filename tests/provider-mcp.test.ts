@@ -1,0 +1,229 @@
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { openContinuity } from '../packages/sdk/src/index.js';
+import { claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, mcpState, removeHookIntegration, writeMcpEntry } from '../packages/adapter-hooks/src/index.js';
+
+// Real CLI processes and MCP stdio sessions; Windows CI runners need more than vitest's 5 s default.
+vi.setConfig({ testTimeout: 60_000 });
+const cli = resolve('dist/packages/cli/src/index.js');
+let root: string, a: string, b: string, home: string, host: ReturnType<typeof openContinuity>;
+beforeEach(async () => {
+  // Spaces, quotes and non-ASCII characters in every path the provider configs carry.
+  root = mkdtempSync(join(tmpdir(), "continuity mcp ü 'q' ")); a = join(root, 'alpha'); b = join(root, 'beta'); home = join(root, 'home');
+  mkdirSync(a); mkdirSync(b);
+  writeFileSync(join(a, 'README.md'), '# Alpha\n'); writeFileSync(join(b, 'README.md'), '# Beta\n');
+  host = openContinuity(home); host.init(a, 'Alpha'); host.init(b, 'Beta'); await host.project(a).sync(); await host.project(b).sync();
+  host.project(a).propose({ key: 'alpha.plurals', kind: 'experience', text: 'ALPHA plural forms are read from plural_pl.json.', from: { agent: 'Codex', session: 's' } });
+  host.project(b).propose({ key: 'beta.secret-rule', kind: 'experience', text: 'BETA invoices are stored in integer cents.', from: { agent: 'Codex', session: 's' } });
+});
+afterEach(() => { host.close(); rmSync(root, { recursive: true, force: true }); });
+
+const claudeTarget = (dir: string, options = {}) => claudeHookTarget(process.execPath, cli, home, { CLAUDE_CONFIG_DIR: dir }, options);
+const codexTarget = (dir: string, options = {}) => codexHookTarget(process.execPath, cli, home, { CODEX_HOME: dir }, options);
+const json = (file: string) => JSON.parse(readFileSync(file, 'utf8'));
+
+test('Claude: the MCP entry is added next to foreign servers and settings, idempotently, and removed alone', () => {
+  const dir = join(root, 'claude'); mkdirSync(dir);
+  const file = join(dir, '.claude.json');
+  const foreign = { type: 'stdio', command: 'npx', args: ['-y', '@example/server'], env: { TOKEN_NAME: 'x' } };
+  writeFileSync(file, JSON.stringify({ numStartups: 7, projects: { 'C:\\p': { allowedTools: [] } }, mcpServers: { first: foreign, zeta: { type: 'http', url: 'http://127.0.0.1:1' } } }, null, 2));
+  const t = claudeTarget(dir);
+  expect(mcpState(t.mcp)).toBe('missing');
+  expect(installHookIntegration(t)).toMatchObject({ state: 'installed', mcp: 'installed', changed: true });
+  const installed = json(file);
+  expect(Object.keys(installed.mcpServers)).toEqual(['first', 'zeta', 'continuity']);
+  expect(installed.mcpServers.first).toEqual(foreign); expect(installed.numStartups).toBe(7); expect(installed.projects).toEqual({ 'C:\\p': { allowedTools: [] } });
+  expect(installed.mcpServers.continuity).toEqual({ type: 'stdio', command: process.execPath, args: ['--no-warnings', cli, '--home', home, 'integrate', 'claude', 'mcp'], env: {} });
+  expect(installHookIntegration(t)).toMatchObject({ changed: false });
+  expect(hookIntegrationStatus(t)).toMatchObject({ state: 'installed', mcp: 'installed', detail: true, mcp_settings: file });
+  removeHookIntegration(t);
+  const removed = json(file);
+  expect(removed.mcpServers).toEqual({ first: foreign, zeta: { type: 'http', url: 'http://127.0.0.1:1' } }); expect(removed.numStartups).toBe(7);
+  expect(hookIntegrationStatus(t)).toMatchObject({ state: 'missing', mcp: 'missing' });
+});
+
+test('Claude: a clean config dir gets both files; --no-mcp keeps hooks and drops only the MCP entry', () => {
+  const dir = join(root, 'claude-clean');
+  const t = claudeTarget(dir);
+  expect(installHookIntegration(t)).toMatchObject({ state: 'installed', changed: true });
+  expect(existsSync(join(dir, 'settings.json'))).toBe(true); expect(json(join(dir, '.claude.json')).mcpServers.continuity.args.slice(-3)).toEqual(['integrate', 'claude', 'mcp']);
+  const noMcp = claudeTarget(dir, { detail: false });
+  expect(hookIntegrationStatus(noMcp)).toMatchObject({ state: 'stale', mcp: 'stale' });
+  expect(installHookIntegration(noMcp)).toMatchObject({ state: 'installed', mcp: 'absent', detail: false });
+  expect(json(join(dir, '.claude.json')).mcpServers).toEqual({});
+  expect(hookIntegrationStatus(t)).toMatchObject({ state: 'partial', mcp: 'missing', message: expect.stringContaining('project detail tools are missing') });
+});
+
+test('Claude: a foreign server named continuity is never overwritten or removed; malformed config changes nothing', () => {
+  const dir = join(root, 'claude-foreign'); mkdirSync(dir);
+  const file = join(dir, '.claude.json');
+  // A hand-configured project server from the MCP documentation.
+  const manual = { type: 'stdio', command: 'node', args: [cli, '--home', home, '--project', a, 'mcp'], env: {} };
+  writeFileSync(file, JSON.stringify({ mcpServers: { continuity: manual } }));
+  const t = claudeTarget(dir);
+  expect(installHookIntegration(t)).toMatchObject({ state: 'partial', mcp: 'foreign', message: expect.stringContaining("is not Continuity's") });
+  expect(json(file).mcpServers.continuity).toEqual(manual);
+  removeHookIntegration(t); expect(json(file).mcpServers.continuity).toEqual(manual);
+  writeFileSync(file, '{ "mcpServers": [ broken');
+  const settingsBefore = readFileSync(join(dir, 'settings.json'), 'utf8');
+  expect(hookIntegrationStatus(t)).toMatchObject({ mcp: 'invalid_config' });
+  expect(() => installHookIntegration(t)).toThrow(/could not be read/);
+  expect(readFileSync(file, 'utf8')).toBe('{ "mcpServers": [ broken'); expect(readFileSync(join(dir, 'settings.json'), 'utf8')).toBe(settingsBefore);
+});
+
+test('Claude: a moved CLI makes the entry stale until install repairs it; a symlinked config stays a symlink', (context) => {
+  const dir = join(root, 'claude-stale');
+  installHookIntegration(claudeTarget(dir));
+  const moved = claudeHookTarget(process.execPath, join(root, 'moved', 'dist', 'packages', 'cli', 'src', 'index.js'), home, { CLAUDE_CONFIG_DIR: dir });
+  expect(mcpState(moved.mcp)).toBe('stale');
+  expect(writeMcpEntry(moved.mcp, true)).toMatchObject({ changed: true, state: 'installed' });
+  const real = join(root, 'real-claude.json'); writeFileSync(real, JSON.stringify({ keep: true }));
+  const linked = join(root, 'claude-link'); mkdirSync(linked);
+  try { symlinkSync(real, join(linked, '.claude.json'), 'file'); } catch { context.skip(); return; }
+  writeMcpEntry(claudeTarget(linked).mcp, true);
+  expect(lstatSync(join(linked, '.claude.json')).isSymbolicLink()).toBe(true);
+  expect(json(real)).toMatchObject({ keep: true, mcpServers: { continuity: { type: 'stdio' } } });
+});
+
+test('Codex: the MCP table is appended and removed as a whole block; comments, CRLF and other tables are untouched', () => {
+  const dir = join(root, 'codex'); mkdirSync(dir);
+  const file = join(dir, 'config.toml');
+  const original = ['# user settings', 'model = "gpt-6-sol"', '', '[mcp_servers.node_repl]', 'command = "node"', 'args = ["repl.js"]', '', '[projects.\'C:\\work.dir\']', 'trust_level = "trusted"', ''].join('\r\n');
+  writeFileSync(file, original);
+  const t = codexTarget(dir);
+  expect(installHookIntegration(t)).toMatchObject({ state: 'installed', mcp: 'installed', changed: true });
+  const installed = readFileSync(file, 'utf8');
+  expect(installed.startsWith(original.trimEnd())).toBe(true); expect(installed).not.toMatch(/[^\r]\n/);
+  const block = installed.slice(original.trimEnd().length).trim().split('\r\n');
+  expect(block[0]).toBe('[mcp_servers.continuity]');
+  expect(installHookIntegration(t)).toMatchObject({ changed: false });
+  removeHookIntegration(t);
+  expect(readFileSync(file, 'utf8')).toBe(original);
+});
+
+test('Codex: TOML strings keep hostile path characters literal and round-trip through the entry check', () => {
+  const dir = join(root, 'codex-escape');
+  const odd = join(root, 'we"ird\\ü \'dir');
+  const t = codexHookTarget(process.execPath, cli, odd, { CODEX_HOME: dir });
+  writeMcpEntry(t.mcp, true);
+  const text = readFileSync(join(dir, 'config.toml'), 'utf8');
+  expect(text).toContain('we\\"ird\\\\ü \'dir');
+  expect(mcpState(t.mcp)).toBe('installed');
+});
+
+test('Codex: a foreign or dotted-key continuity server is never touched; our stale sub-tables are replaced', () => {
+  const dir = join(root, 'codex-foreign'); mkdirSync(dir);
+  const file = join(dir, 'config.toml');
+  const manual = '[mcp_servers.continuity]\ncommand = "node"\nargs = ["G:/tools/continuity/dist/packages/cli/src/index.js", "--project", "G:/p", "mcp"]\n';
+  writeFileSync(file, manual);
+  const t = codexTarget(dir);
+  expect(installHookIntegration(t)).toMatchObject({ state: 'partial', mcp: 'foreign' }); expect(readFileSync(file, 'utf8')).toBe(manual);
+  writeFileSync(file, 'mcp_servers.continuity.command = "node"\n');
+  expect(mcpState(t.mcp)).toBe('foreign');
+  writeFileSync(file, '[mcp_servers]\ncontinuity = { command = "node" }\n');
+  expect(mcpState(t.mcp)).toBe('foreign');
+  // Our own entry with an extra env sub-table (as `codex mcp` might write) is stale and replaced whole.
+  writeFileSync(file, '');
+  writeMcpEntry(t.mcp, true);
+  writeFileSync(file, readFileSync(file, 'utf8') + '\n[mcp_servers.continuity.env]\nX = "1"\n\n[after]\nkeep = true\n');
+  expect(mcpState(t.mcp)).toBe('stale');
+  writeMcpEntry(t.mcp, true);
+  const repaired = readFileSync(file, 'utf8');
+  expect(repaired).not.toContain('[mcp_servers.continuity.env]'); expect(repaired).toContain('[after]\nkeep = true'); expect(mcpState(t.mcp)).toBe('installed');
+});
+
+/** A real stdio MCP session with the provider-mode server, started the way the provider starts it. */
+async function mcpSession(provider: 'claude' | 'codex', cwd: string, env: Record<string, string> = {}) {
+  const transport = new StdioClientTransport({ command: process.execPath, args: ['--no-warnings', cli, '--home', home, 'integrate', provider, 'mcp'], cwd, env: { ...Object.fromEntries(Object.entries(process.env).filter(([k, v]) => v !== undefined && !/^CLAUDE_PROJECT_DIR$/.test(k))) as Record<string, string>, ...env }, stderr: 'pipe' });
+  const client = new Client({ name: 'test-provider', version: '1.0.0' });
+  await client.connect(transport);
+  return client;
+}
+const text = (r: Awaited<ReturnType<Client['callTool']>>) => JSON.stringify(r.structuredContent ?? r.content);
+
+test('the provider server is bound by the session directory, never by tool input', async () => {
+  const claude = await mcpSession('claude', b, { CLAUDE_PROJECT_DIR: a });
+  try {
+    const tools = await claude.listTools();
+    expect(tools.tools.map(t => t.name).sort()).toEqual(['continuity_context', 'continuity_handoff_latest', 'continuity_search']);
+    // Claude Code loads these tools without a search step.
+    expect(tools.tools.every(t => t._meta?.['anthropic/alwaysLoad'] === true && t.annotations?.readOnlyHint === true)).toBe(true);
+    // CLAUDE_PROJECT_DIR (the provider's project) wins over the process directory.
+    const context = await claude.callTool({ name: 'continuity_context', arguments: { task: 'plural forms invoices' } });
+    expect(text(context)).toContain('ALPHA plural forms'); expect(text(context)).not.toContain('BETA');
+    for (const args of [{ task: 'invoices', project_id: 'beta' }, { task: 'invoices', root: b }, { task: 'invoices', workspace: b }, { task: 'invoices', database: join(home, 'continuity.db') }]) {
+      expect((await claude.callTool({ name: 'continuity_context', arguments: args })).isError, JSON.stringify(args)).toBe(true);
+    }
+  } finally { await claude.close(); }
+  const codex = await mcpSession('codex', b);
+  try {
+    const tools = await codex.listTools();
+    expect(tools.tools.every(t => t._meta === undefined)).toBe(true);
+    const context = await codex.callTool({ name: 'continuity_context', arguments: { task: 'plural forms invoices' } });
+    expect(text(context)).toContain('BETA invoices'); expect(text(context)).not.toContain('ALPHA');
+  } finally { await codex.close(); }
+});
+
+test('nested projects bind to themselves; unregistered directories and missing state get no tools', async () => {
+  const nested = join(a, 'packages', 'inner'); mkdirSync(nested, { recursive: true }); host.init(nested, 'Inner');
+  host.project(nested).propose({ key: 'inner.rule', kind: 'experience', text: 'INNER package keeps its own release notes.', from: { agent: 'Codex', session: 's' } });
+  const inner = await mcpSession('codex', nested);
+  try { expect(text(await inner.callTool({ name: 'continuity_context', arguments: { task: 'release notes plural forms' } }))).not.toContain('ALPHA'); } finally { await inner.close(); }
+  const child = await mcpSession('codex', join(a, 'packages'));
+  try { expect(text(await child.callTool({ name: 'continuity_context', arguments: { task: 'plural forms' } }))).toContain('ALPHA'); } finally { await child.close(); }
+  const outside = join(root, 'outside'); mkdirSync(outside);
+  for (const [provider, cwd, env] of [['codex', outside, {}], ['claude', outside, { CLAUDE_PROJECT_DIR: outside }]] as const) {
+    const client = await mcpSession(provider, cwd, env);
+    try { expect((await client.listTools().catch(() => ({ tools: [] }))).tools).toEqual([]); } finally { await client.close(); }
+  }
+  const noHome = spawnSync(process.execPath, ['--no-warnings', cli, '--home', join(root, 'no-home'), 'integrate', 'codex', 'mcp'], { cwd: a, input: '', encoding: 'utf8', windowsHide: true });
+  expect(noHome.status).toBe(0); expect(existsSync(join(root, 'no-home'))).toBe(false);
+});
+
+test('an attached worktree binds to its workspace; a detached one gets no tools', async () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.invalid', ...args], { cwd, stdio: 'pipe' });
+  git(a, 'init'); git(a, 'add', '.'); git(a, 'commit', '-m', 'fixture');
+  const feature = join(root, 'alpha-feature'); git(a, 'worktree', 'add', '-b', 'feature', feature);
+  await host.workspace(a, feature).sync();
+  host.workspace(a, feature).createHandoff({ from: { agent: 'Codex', session: 'w' }, task: { goal: 'FEATURE branch work', status: 'in_progress' }, completed: [], remaining: [], decisions: [], files_changed: [], risks: [], recommended_next_action: 'Continue the feature.' });
+  const attached = await mcpSession('codex', feature);
+  try { expect(text(await attached.callTool({ name: 'continuity_handoff_latest', arguments: {} }))).toContain('FEATURE branch work'); } finally { await attached.close(); }
+  renameSync(join(a, '.git', 'worktrees', 'alpha-feature'), join(root, 'pruned'));
+  const detached = await mcpSession('codex', feature);
+  try { expect((await detached.listTools().catch(() => ({ tools: [] }))).tools).toEqual([]); } finally { await detached.close(); }
+});
+
+test('the startup index names the detail tool only when the MCP entry is really installed', () => {
+  for (let i = 0; i < 10; i++) host.project(a).propose({ key: `alpha.lesson-${i}`, kind: 'experience', text: `Alpha lesson number ${i} about locale files.`, from: { agent: 'Codex', session: `s${i}` } });
+  const start = (env: Record<string, string>) => spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', 'codex', 'session-start'], { input: JSON.stringify({ cwd: a, source: 'startup' }), encoding: 'utf8', windowsHide: true, env: { ...process.env, ...env } }).stdout;
+  // Installed through the real CLI, as a user would: the entry then carries the canonical home and CLI paths.
+  const install = (env: Record<string, string>, provider: string) => spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', provider, 'install'], { encoding: 'utf8', windowsHide: true, env: { ...process.env, ...env } });
+  const dir = join(root, 'codex-hint');
+  expect(start({ CODEX_HOME: dir })).not.toContain('continuity_context');
+  install({ CODEX_HOME: dir }, 'codex');
+  expect(start({ CODEX_HOME: dir })).toContain('More available: 3 more memories (alpha.lesson-1, alpha.lesson-0, alpha.plurals) via continuity_context.');
+  // A stale entry (for example after the CLI moved) is not promised.
+  writeMcpEntry(codexHookTarget(process.execPath, join(root, 'old', 'dist', 'packages', 'cli', 'src', 'index.js'), home, { CODEX_HOME: dir }).mcp, true);
+  expect(start({ CODEX_HOME: dir })).not.toContain('continuity_context');
+  const claudeDir = join(root, 'claude-hint'); install({ CLAUDE_CONFIG_DIR: claudeDir }, 'claude');
+  const claude = spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', 'claude', 'session-start'], { input: JSON.stringify({ cwd: a, source: 'startup' }), encoding: 'utf8', windowsHide: true, env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir } }).stdout;
+  expect(JSON.parse(claude).hookSpecificOutput.additionalContext).toContain('More available: 3 more memories (alpha.lesson-1, alpha.lesson-0, alpha.plurals) via continuity_context.');
+});
+
+test('real CLI: install, status and remove report hooks and MCP together for both providers', () => {
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: join(root, 'cc'), CODEX_HOME: join(root, 'cx') };
+  const cmd = (provider: string, ...args: string[]) => spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, '--json', 'integrate', provider, ...args], { encoding: 'utf8', env, windowsHide: true });
+  for (const provider of ['claude', 'codex']) {
+    expect(JSON.parse(cmd(provider, 'install').stdout)).toMatchObject({ state: 'installed', mcp: 'installed', entries: 3 });
+    expect(cmd(provider, 'status').status).toBe(0);
+    expect(cmd(provider, 'status', '--no-mcp').status).toBe(1);
+    expect(JSON.parse(cmd(provider, 'install', '--no-mcp').stdout)).toMatchObject({ state: 'installed', mcp: 'absent' });
+    expect(JSON.parse(cmd(provider, 'install').stdout)).toMatchObject({ state: 'installed', mcp: 'installed' });
+    expect(JSON.parse(cmd(provider, 'remove').stdout)).toMatchObject({ state: 'missing', changed: true });
+  }
+});

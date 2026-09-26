@@ -54,7 +54,7 @@ test('trust order, labels, diversity, rule demotion and handoff priority', async
   expect(result.memories.some(m => (m.kind as string) === 'rule')).toBe(false);
   expect(result.latest_handoff).toMatchObject({ goal: 'Character distance clarity', status: 'in_progress', next_action: 'Continue Character distance clarity.', selection_reason: 'latest_handoff' });
   // The older handoff was finished, so it is history, not more work.
-  expect(result.available).toEqual({ memories: 8, more_memories: 0, handoffs: 2, older_handoffs: 0, open_handoff: true });
+  expect(result.available).toEqual({ memories: 8, more_memories: 0, more_keys: [], handoffs: 2, older_handoffs: 0, open_handoff: true });
   const text = renderBootstrap(result);
   expect(text).toContain('release.tags · decision · human-reviewed'); expect(text).toContain('renderer.csm · decision · source-backed (README.md)');
   expect(text).toContain('agent observation'); expect(text).toContain('Next: Continue Character distance clarity.'); expect(text).not.toContain('More available');
@@ -102,7 +102,7 @@ test('hook-injected startup context names no tools and no CLI; only an MCP reade
     for (const bait of ['tool', 'CLI', 'continuity_', 'Fetch', 'More available', 'continuity ']) expect(text, `${provider}: ${bait}`).not.toContain(bait);
   }
   const mcp = renderBootstrap(bundle(), new Date(), { tools: ['continuity_context', 'continuity_search'] });
-  expect(mcp).toMatch(/More available: \d+ more memories \(continuity_context, continuity_search\)\./);
+  expect(mcp).toMatch(/More available: 4 more memories \(lesson\.\d+, lesson\.\d+, lesson\.\d+, lesson\.\d+\) via continuity_context, continuity_search\./);
 });
 
 test('conflicts are summarized, never presented as memory', async () => {
@@ -139,7 +139,10 @@ test('byte budget bounds the index with 100 available memories', async () => {
   expect(() => bundle(a, 100)).toThrow(/budget/);
   // Only a reader with Continuity tools is told about further memories, and how to fetch them.
   expect(renderBootstrap(standard)).not.toContain('More available');
-  expect(renderBootstrap(standard, new Date(), { tools: ['continuity_context', 'continuity_search'] })).toContain(`More available: ${standard.available.more_memories} more memories (continuity_context, continuity_search).`);
+  // ... as a bounded index of keys (never their text), in trust and recency order, within the byte budget.
+  expect(standard.available.more_keys).toHaveLength(10); expect(standard.available.more_keys.every(k => k.startsWith('lesson.'))).toBe(true);
+  expect(renderBootstrap(standard, new Date(), { tools: ['continuity_context', 'continuity_search'] })).toContain(`More available: ${standard.available.more_memories} more memories (${standard.available.more_keys.join(', ')}, …) via continuity_context, continuity_search.`);
+  expect(size(tight)).toBeLessThanOrEqual(1500); expect(tight.budget.used).toBe(size(tight));
 });
 
 test('project isolation: a bootstrap bound to Alpha never contains Beta records', async () => {

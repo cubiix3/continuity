@@ -8,9 +8,9 @@ import { randomBytes } from 'node:crypto';
 import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
 import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
 import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
-import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
+import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, mcpState, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
-import { serveMcp } from '../../adapter-mcp/src/index.js';
+import { DETAIL_TOOLS, serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
 import { createDashboardServer } from '../../server/src/dashboard.js';
 import { continuityHome } from '../../sdk/src/local-ipc.js';
@@ -150,13 +150,26 @@ const scopeOf = (client: { status(): { project_id: string; workspace?: { workspa
 const hasStore = () => existsSync(join(continuityHomePath(), 'continuity.db'));
 for (const provider of ['claude', 'codex'] as const) {
   const name = provider === 'claude' ? 'Claude Code' : 'Codex';
-  const target = (autosave = true) => (provider === 'claude' ? claudeHookTarget : codexHookTarget)(process.execPath, realpathSync.native(fileURLToPath(import.meta.url)), continuityHomePath(), process.env, { autosave });
-  const command = integrate.command(provider).description(`${name} startup context and session autosave hooks in the user hook settings (${provider === 'claude' ? 'CLAUDE_CONFIG_DIR or ~/.claude/settings.json' : 'CODEX_HOME or ~/.codex/hooks.json'})`);
-  command.command('install').description('Add or repair the Continuity hooks; other hooks are preserved').option('--no-autosave', 'startup context only; removes Continuity autosave hooks')
-    .action((options: { autosave: boolean }) => output(installHookIntegration(target(options.autosave))));
-  command.command('status').option('--no-autosave', 'expect startup context only')
-    .action((options: { autosave: boolean }) => { const status = hookIntegrationStatus(target(options.autosave)); output(status); if (status.state !== 'installed') process.exitCode = 1; });
-  command.command('remove').description('Remove only the Continuity hooks').action(() => output(removeHookIntegration(target())));
+  const target = (autosave = true, detail = true) => (provider === 'claude' ? claudeHookTarget : codexHookTarget)(process.execPath, realpathSync.native(fileURLToPath(import.meta.url)), continuityHomePath(), process.env, { autosave, detail });
+  const command = integrate.command(provider).description(`${name} startup context, session autosave hooks and read-only project detail tools in the user settings (${provider === 'claude' ? 'CLAUDE_CONFIG_DIR or ~/.claude/settings.json, and .claude.json for the MCP entry' : 'CODEX_HOME or ~/.codex: hooks.json and config.toml'})`);
+  command.command('install').description('Add or repair the Continuity hooks and MCP entry; other hooks and servers are preserved')
+    .option('--no-autosave', 'startup context only; removes Continuity autosave hooks').option('--no-mcp', 'no project detail tools; removes the Continuity MCP entry')
+    .action((options: { autosave: boolean; mcp: boolean }) => output(installHookIntegration(target(options.autosave, options.mcp))));
+  command.command('status').option('--no-autosave', 'expect startup context only').option('--no-mcp', 'expect no project detail tools')
+    .action((options: { autosave: boolean; mcp: boolean }) => { const status = hookIntegrationStatus(target(options.autosave, options.mcp)); output(status); if (status.state !== 'installed') process.exitCode = 1; });
+  command.command('remove').description('Remove only the Continuity hooks and MCP entry').action(() => output(removeHookIntegration(target())));
+  /**
+   * Started by the provider for each session, with the session's directory: Claude Code passes CLAUDE_PROJECT_DIR (its
+   * working directory is the project too), Codex starts the server in the session's cwd. The host resolver binds it like
+   * the startup hook; the model never names a project. Outside every registered project the server has no tools.
+   */
+  command.command('mcp', { hidden: true }).action(async () => {
+    const directory = provider === 'claude' && process.env.CLAUDE_PROJECT_DIR ? process.env.CLAUDE_PROJECT_DIR : process.cwd();
+    let bound;
+    try { bound = hasStore() ? runtime().session(directory) : undefined; } catch { bound = undefined; }
+    await serveMcp(bound ? new GenericAdapter(bound) : undefined, { tools: DETAIL_TOOLS, ...(provider === 'claude' ? { meta: { 'anthropic/alwaysLoad': true } } : {}) });
+    persistent = true;
+  });
   // Invoked by the provider. Never blocks the session: unregistered directories and unreadable state stay silent.
   command.command('session-start', { hidden: true }).action(async () => {
     process.exitCode = 0;
@@ -166,7 +179,8 @@ for (const provider of ['claude', 'codex'] as const) {
       let bundle;
       try { bundle = runtime().bootstrap(cwd); }
       catch (error) { if (error instanceof BootstrapUnavailableError) process.stdout.write(sessionStartUnavailable(provider, error.message)); return; }
-      if (bundle) process.stdout.write(sessionStartOutput(provider, bundle));
+      // The index names the detail tool only when this integration's MCP entry is really configured for the provider.
+      if (bundle) process.stdout.write(sessionStartOutput(provider, bundle, new Date(), mcpState(target().mcp) === 'installed'));
     } catch { /* Silent: Continuity must not disturb unrelated agent sessions. */ }
   });
   // PostToolUse on file edits: flags the session and its bound scope, and gives the first edit of a turn the save

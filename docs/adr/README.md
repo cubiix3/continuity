@@ -16,3 +16,4 @@ These decisions describe implemented boundaries. Revisit them with evidence, not
 - [012: Agent session autosave](012-agent-session-autosave.md)
 - [013: Codex autosave in daemon-hosted sessions](013-codex-daemon-autosave.md)
 - [014: Autosave in the final answer](014-autosave-in-the-final-answer.md)
+- [015: Project detail tools installed with the provider integration](015-provider-detail-tools.md)

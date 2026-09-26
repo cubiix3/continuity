@@ -1,5 +1,8 @@
 # 012: Agent session autosave
 
+Amended by [ADR 014](014-autosave-in-the-final-answer.md): the save now travels in
+the edited turn's final answer, and the `Stop` continuation below is the fallback.
+
 Follows [ADR 011](011-agent-auto-bootstrap.md). Sessions should end with the
 durable lessons and unfinished work that the next agent needs. The model decides
 what to save, and Continuity's policy stays final.

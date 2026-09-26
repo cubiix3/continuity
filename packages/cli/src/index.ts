@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
 import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
 import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
-import { applySave, autosaveEnabled, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, stopBlock, stopDecision, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
+import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSessionState, removeHookIntegration, saveReport, sessionStartCwd, sessionStartOutput, sessionStartUnavailable, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import { serveMcp } from '../../adapter-mcp/src/index.js';
 import { createLocalServer } from '../../server/src/index.js';
@@ -169,7 +169,8 @@ for (const provider of ['claude', 'codex'] as const) {
       if (bundle) process.stdout.write(sessionStartOutput(provider, bundle));
     } catch { /* Silent: Continuity must not disturb unrelated agent sessions. */ }
   });
-  // PostToolUse on file edits: flags the session and its bound scope. Reads only session_id and cwd, never the tool payload.
+  // PostToolUse on file edits: flags the session and its bound scope, and gives the first edit of a turn the save
+  // contract as additional context. Reads only session_id, cwd and agent_id, never the tool payload.
   command.command('tool-use', { hidden: true }).action(async () => {
     process.exitCode = 0;
     try {
@@ -177,14 +178,17 @@ for (const provider of ['claude', 'codex'] as const) {
       if (!input || !autosaveEnabled(provider) || !hasStore()) return;
       const client = runtime().session(input.cwd);
       if (!client) return;
-      // The project/workspace the edits belong to; `mixed` when a session edits several.
-      const home = continuityHomePath(), state = readSessionState(home, provider, input.session), key = scopeOf(client);
-      // While a request is outstanding its scope is fixed: an edit elsewhere makes the answer unusable, never redirects it.
-      const scope = (state.dirty || state.pending) && state.scope && state.scope !== key ? 'mixed' : key;
-      if (!state.dirty || state.scope !== scope) writeSessionState(home, provider, input.session, { ...state, dirty: true, scope });
+      const home = continuityHomePath(), state = readSessionState(home, provider, input.session);
+      const decision = editDecision(state, scopeOf(client), input.subagent);
+      if (!decision.offer) { if (JSON.stringify(decision.state) !== JSON.stringify(state)) writeSessionState(home, provider, input.session, decision.state); return; }
+      // The latest open handoff in this scope may be closed by the answer; only its id is kept, never text.
+      const open = client.activeHandoff(), goal = open ? offerableGoal(open) : undefined;
+      // Persisted before the offer is shown: an answer without its offer on record is never applied.
+      writeSessionState(home, provider, input.session, { ...decision.state, ...(open && goal ? { close: open.id } : {}) });
+      process.stdout.write(saveOffer(goal));
     } catch { /* Silent. */ }
   });
-  // Stop: after edits, asks the same model once for a deliberate save; on the answering stop, applies it via Core.
+  // Stop: applies the save line of the final answer via Core; without one, asks the same model once through a continuation.
   command.command('stop', { hidden: true }).action(async () => {
     process.exitCode = 0;
     let applying = false;
@@ -192,31 +196,31 @@ for (const provider of ['claude', 'codex'] as const) {
       const input = stopInput(await hookStdin(1024 * 1024) ?? '');
       if (!input || !autosaveEnabled(provider) || !hasStore()) return;
       const home = continuityHomePath(), state = readSessionState(home, provider, input.session);
-      const decision = stopDecision(state, input.active);
+      // Only the final answer is read, and only a save in it; without an outstanding offer it is ignored.
+      const reply = state.pending ? parseSaveReply(input.message) : undefined;
+      const decision = stopDecision(state, input.active, reply !== undefined);
       const write = (next: typeof state) => { if (JSON.stringify(next) !== JSON.stringify(state)) writeSessionState(home, provider, input.session, next); };
       if (decision.action === 'none') { write(decision.state); return; }
-      if (decision.action === 'prompt') {
+      if (decision.action === 'request') {
         // Ask only where the edits happened: this stop must bind to the same project/workspace as the edits.
         const client = runtime().session(input.cwd);
         if (!client || scopeOf(client) !== state.scope) { write({ dirty: false, pending: false, ...(state.prompted_at !== undefined ? { prompted_at: state.prompted_at } : {}) }); return; }
-        // The latest open handoff in this scope may be closed by the answer; only its id is kept, never text.
-        const open = client.activeHandoff(), goal = open ? offerableGoal(open) : undefined;
-        write({ ...decision.state, scope: state.scope, ...(open && goal ? { close: open.id } : {}) });
-        process.stdout.write(stopBlock(goal)); return;
+        let goal: string | undefined, close = decision.state.close;
+        if (!decision.offered) { const open = client.activeHandoff(); goal = open ? offerableGoal(open) : undefined; close = open && goal ? open.id : undefined; }
+        const next = { ...decision.state }; delete next.close;
+        write({ ...next, ...(close ? { close } : {}) });
+        process.stdout.write(stopRequest(provider, decision.offered, goal)); return;
       }
       // Persist first: a crash or timeout below can never cause a second request or a loop.
       write(decision.state);
-      // Only the tagged answer to Continuity's own request is read; without it nothing is saved.
-      const reply = parseSaveReply(input.message);
-      if (!reply) return;
       applying = true;
       const client = runtime().session(input.cwd);
-      if (!client || scopeOf(client) !== state.scope) { process.stdout.write(stopMessage('Continuity autosave: nothing saved; the session left the project or workspace where the save was requested.')); return; }
-      const report = saveReport(applySave(client, provider, input.session, reply, state.close));
+      if (!client || scopeOf(client) !== state.scope) { process.stdout.write(stopMessage('Continuity: save skipped — the session left the project where the files were edited.')); return; }
+      const report = saveReport(applySave(client, provider, input.session, reply!, state.close));
       if (report) process.stdout.write(stopMessage(report));
     } catch (error) {
-      // Honest partial-failure report once a save was attempted; otherwise silent.
-      if (applying) process.stdout.write(stopMessage(`Continuity autosave did not complete (${error instanceof Error ? error.message.replace(/\s+/g, ' ').slice(0, 160) : 'error'}); earlier items may have been saved.`));
+      // One short line once a save was attempted; otherwise silent. Never a stack trace, never a blocking exit code.
+      if (applying) process.stdout.write(stopMessage(`Continuity: save skipped — ${failureReason(error instanceof Error ? error.message : 'error')}.`));
     }
   });
 }

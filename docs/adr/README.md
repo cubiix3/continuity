@@ -15,3 +15,4 @@ These decisions describe implemented boundaries. Revisit them with evidence, not
 - [011: Agent auto-bootstrap](011-agent-auto-bootstrap.md)
 - [012: Agent session autosave](012-agent-session-autosave.md)
 - [013: Codex autosave in daemon-hosted sessions](013-codex-daemon-autosave.md)
+- [014: Autosave in the final answer](014-autosave-in-the-final-answer.md)

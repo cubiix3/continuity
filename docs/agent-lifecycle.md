@@ -5,22 +5,36 @@ Continuity closes the loop around an agent session without reading its transcrip
 1. **Load.** `SessionStart` injects the read-only [bootstrap index](agent-bootstrap.md),
    including the latest open handoff.
 2. **Work.** Native tools do the work. A `PostToolUse` hook on file-edit tools records
-   only that this session edited files, and in which project or workspace.
-3. **Save.** When a turn that edited files ends, a `Stop` hook asks the same model
-   once to decide what future sessions must know. The model answers with one tagged
-   JSON block. The next `Stop` applies that block through Core's existing memory and
-   handoff APIs.
-4. **Close.** If the request named an open handoff and the session finished its work,
-   the answer closes that handoff instead of creating a "task complete" handoff.
+   only that this session edited files, and in which project or workspace. On the
+   first edit of a turn it also gives the model the save contract as additional
+   context, which neither provider displays.
+3. **Save.** The model decides what future sessions must know and ends its final
+   answer with one save line. The turn's `Stop` hook applies it through Core's
+   existing memory and handoff APIs. There is no extra turn. Only if the line is
+   missing does `Stop` ask once through a continuation.
+4. **Close.** If the offer named an open handoff and the session finished its work,
+   the save closes that handoff instead of creating a "task complete" handoff.
+
+What the user sees after an edited turn:
+
+| Provider | Normal case | Fallback (save line missing) |
+| --- | --- | --- |
+| Codex 0.157 TUI | Only the normal answer: the save line is a Markdown link reference definition, which Codex does not display | `Blocked by hook` with a one-line reason, then nothing |
+| Claude Code 2.1.280 | The normal answer plus the save line as one raw line at its end | One `Stop hook feedback` line, then the save line |
+
+Claude Code renders every assistant text, including link reference definitions and
+HTML comments, and its Stop `suppressOutput` does not hide the continuation. Its
+`MessageDisplay` hook was parsed but not applied to the screen in 2.1.280 (all tested on
+Windows, 2026-09-26). One raw line is therefore the least Claude Code can show.
 
 `continuity integrate claude install` and `continuity integrate codex install`
 install all three hooks. Use `--no-autosave` to keep startup context only.
 
 ## When autosave runs
 
-The save turn becomes the provider's final answer, so it must not run in scripts
-that read that answer. Autosave therefore runs by default only in sessions the
-provider reports as interactive:
+The save line becomes part of the provider's final answer (and the fallback save turn
+replaces it), so autosave must not run in scripts that read that answer. It therefore
+runs by default only in sessions the provider reports as interactive:
 
 | Session | Default | Signal in the hook's environment |
 | --- | --- | --- |
@@ -49,9 +63,11 @@ setting the daemon marker, Codex autosave turns off. If it stopped setting all t
 tool markers, a `codex exec` run by an agent would count as interactive. Re-verify
 with each Codex version that changes the daemon or the hook environment.
 
-A Codex sub-agent's edit reaches `PostToolUse` with the parent's `session_id` (plus
-`agent_id`), so it counts toward the parent session. A sub-agent ends with
-`SubagentStop`, which Continuity does not install, so only the parent is asked.
+A sub-agent's edit reaches `PostToolUse` with the parent's `session_id` (plus
+`agent_id`, in both providers), so it counts toward the parent session. It gets no
+offer, which would reach the sub-agent rather than the model that ends the turn. A
+sub-agent ends with `SubagentStop`, which Continuity does not install, so only the
+parent is asked, through the fallback request with the full contract.
 
 Codex documents that the daemon shares the environment it started with across all
 of its sessions. A variable set when you launch `codex` reaches daemon-hosted hooks
@@ -74,34 +90,47 @@ also force autosave for every `codex exec` that an agent runs. To autosave in a
 `--no-daemon` Codex session,
 start it with `CONTINUITY_AUTOSAVE=1`. Every provider started from that environment
 inherits the variable, including `codex exec` and `claude -p`, whose final answers
-then become save answers. Scripts there should set `CONTINUITY_AUTOSAVE=0`. A forced
-headless run (`CONTINUITY_AUTOSAVE=1 claude -p …`) ends with the save answer as its
-final message.
+then carry a save line. Scripts there should set `CONTINUITY_AUTOSAVE=0`. A forced
+headless run (`CONTINUITY_AUTOSAVE=1 claude -p …`) ends its final message with the
+save line, or with the fallback save answer.
 
 With autosave off, both hooks exit right after dispatch. This costs about 5 ms over
 starting the CLI, and they write no files.
 
-## Why `Stop`
+## Why `PostToolUse` context and `Stop`
 
-Only one official hook in each provider can still involve the model at the end of
-work. This was verified against Claude Code 2.1.280, and Codex 0.156.1 and 0.157.0.
-Codex 0.157's `Stop` output offers `decision`, `continue`, `stopReason`,
-`suppressOutput` and `systemMessage`; none of them gives the model a turn without a
-visible continuation.
+Two official hooks in each provider can still reach the model during work. This was
+verified against Claude Code 2.1.280, and Codex 0.156.1 and 0.157.0.
 
 | Hook | Model-aware | Use |
 | --- | --- | --- |
-| `Stop` (Claude Code, Codex) | Yes: `{"decision":"block","reason":…}` makes the same model continue with the reason as its next instruction; `stop_hook_active` marks that continuation | Save request |
+| `PostToolUse` (both) | Yes: `hookSpecificOutput.additionalContext` reaches the model before it continues the turn; neither provider displays it | Edit flag and save offer |
+| `Stop` (Claude Code, Codex) | Yes: a continuation (Claude Code: Stop `additionalContext`, since 2.1.163; Codex: `{"decision":"block","reason":…}`) makes the same model continue; `stop_hook_active` marks it | Applies the save; fallback request |
 | `SessionEnd` (both) | No: runs after the model is gone, cannot block, short budget | Not used |
 | `PreCompact` (both) | Not reliably: no documented way to give the model a turn | Follow-up |
-| `PostToolUse` (both) | No: structured tool metadata only | Edit flag |
 
-`Stop` fires after every turn, so the request is gated:
+Any continuation is visible. Codex 0.157's `Stop` output offers `decision`,
+`continue`, `stopReason`, `suppressOutput` and `systemMessage`; its `suppressOutput`
+hides neither the `Blocked by hook` line nor the continuation. Claude Code shows a
+blocking reason as a red `Stop hook error`, and Stop `additionalContext` as a
+`Stop hook feedback` line. That is why the contract comes with the edit, and the save
+travels in the answer the user reads anyway.
 
-- only after file-edit tools ran in this session since the last request (Claude Code:
+The offer is gated:
+
+- only on file-edit tools of this session (Claude Code:
   `Edit|Write|MultiEdit|NotebookEdit`; Codex reports edits as `apply_patch`, including
   `tools.apply_patch(…)` calls from code mode's `exec` tool, which Codex 0.157 reports
   under the nested tool's name);
+- once per turn: the first edit gets it, and later edits of the turn are covered by it;
+- not for a sub-agent's edit, and not when edits span several projects or workspaces.
+
+`Stop` fires after every turn. It reads a save only if an offer or request is
+outstanding, and it applies the save only if the stop binds to the same project or
+workspace as the offer. The fallback request is gated further:
+
+- only when an offer went unanswered, or edits happened without an offer (a
+  sub-agent's);
 - only when the stop binds to the same project or workspace as the edits (a session that
   edited several, or moved elsewhere with `cd`, is not asked);
 - at most once per 15 minutes per session;
@@ -110,14 +139,20 @@ visible continuation.
 
 A question-only or read-only session sees nothing and writes nothing.
 
-## The save request
+## The save contract
 
-The request is the `Stop` reason, about 790 bytes and fixed. It asks for this and
-nothing else:
+The offer is `PostToolUse` additional context, about 1 KB (1.4 KB at most with an
+open handoff). It asks the model to
+end its final answer with an empty line and then this line, and not to mention it:
 
 ```text
-<continuity-save>{"memories":[],"handoff":null}</continuity-save>
+[continuity-save]: <{"memories":[],"handoff":null}>
 ```
+
+CommonMark treats that line as a link reference definition, which is not displayed.
+It must follow an empty line; otherwise it is a paragraph line and shows. The JSON stays
+on the one line, with `<` and `>` inside strings written as `<` and `>`. The
+parser also accepts a line without those escapes, which then renders visibly.
 
 - `memories`: 0–3 durable, non-obvious lessons or decisions
   (`key`, `kind` of `decision|experience|memory`, one-sentence `text`, and
@@ -128,15 +163,24 @@ nothing else:
   session (`goal`, `status` of `in_progress|blocked`, `remaining`, `decisions`,
   `risks`, `next`). Otherwise `null`.
 
-If the workspace has an open handoff, the request adds one line naming its goal (at
-most 160 characters, no id). The answer may then add `"close_handoff":true`, but
-only if that work is finished or a new handoff in the same answer fully replaces it.
+If the workspace has an open handoff, the offer adds one line naming its goal (at
+most 160 characters, no id). The save may then add `"close_handoff":true`, but
+only if that work is finished or a new handoff in the same save fully replaces it.
 If that replacement is not saved (invalid, or looks like a secret), the open
-handoff stays open and the hook reports it.
+handoff stays open.
 An open handoff that looks sensitive is not offered.
 
-The model answers without tool calls. Only the last tagged block in the answer to
-Continuity's own request is read; an untagged or unsolicited block is ignored.
+Only the last save line in the final answer of an offered turn, or in the answer to
+the fallback request, is read. A save line in any other answer is ignored. The
+`<continuity-save>{…}</continuity-save>` block of earlier releases is still accepted;
+if both appear, the last one wins.
+
+**Fallback request.** If the offered turn's final answer has no save line, `Stop` asks
+once: *"Continuity save check (automatic, once): reply with only the
+[continuity-save] line described earlier in this turn, and no tool calls."* After a
+sub-agent's edit, the model never saw the contract, so the request carries all of it
+(about 950 bytes, asking for a reply that is only the line). The answering stop
+applies the save.
 
 ## What the hook enforces
 
@@ -164,13 +208,19 @@ Before Core, the hook drops:
 
 Handoffs never carry `completed` or `files_changed` from autosave.
 
-A close applies only to the handoff id the host recorded when it sent the request.
-The model never supplies an id. Closing a handoff that is already closed is a quiet
-no-op.
+A close applies only to the handoff id the host recorded when it made the offer or
+request. The model never supplies an id. Closing a handoff that is already closed is
+a quiet no-op.
 
-A successful save is silent. If anything was rejected, quarantined, skipped or failed,
-the hook reports it in one `systemMessage` line, for example
-`Continuity autosave: 1 of 3 saved; memory 2: skipped: looks like a secret.`
+A save is silent, including an empty one. Policy outcomes are normal and also silent:
+a rejected, quarantined, duplicate or skipped item (a secret, a `rule`, a `done`
+handoff) is not reported. Conflicts appear in the next session start and in the
+Dashboard. Only a failure produces one `systemMessage` line, without item text and
+without a stack trace, for example:
+
+- `Continuity: save skipped — database busy.`
+- `Continuity: save incomplete — 1 of 2 not saved (database busy).`
+- `Continuity: save skipped — the session left the project where the files were edited.`
 
 ## Handoff closure
 
@@ -210,28 +260,29 @@ The same resolver as bootstrap binds the hook's `cwd`:
   `.claude/worktrees/<name>`, a submodule or a nested repository) gets nothing, because
   its files and evidence are a different tree. Register it as a workspace instead.
 
-The edit flag records a hash of the bound project and workspace. The answer is
-applied only if the answering stop binds to that same scope; otherwise the hook
-reports that nothing was saved.
+The edit flag records a hash of the bound project and workspace. The save is
+applied only if the stop binds to that same scope; otherwise the hook reports in one
+line that nothing was saved.
 
 Unregistered directories are silent and never written. Project, workspace and trust
 fields in the model's answer are ignored.
 
 ## Failure behaviour
 
-Hooks always exit 0 and block only with the explicit JSON decision. Continuity never
-blocks a provider exit. No output is produced when:
+Hooks always exit 0 and continue a turn only through the documented JSON output.
+Continuity never blocks a provider exit. No output is produced when:
 
 - Continuity state is missing;
 - the directory is unregistered;
 - the input is unreadable or over 1 MiB;
 - autosave is off for the session.
 
-The per-session flag is written before any database work, so a timeout or crash
-cannot cause a second request. If the database is locked past SQLite's busy timeout
-while a save is applied, the hook reports that the save did not complete. The edit
-hook opens the store to bind the edit. If the store is locked past the busy timeout,
-that edit is not flagged; this is an accepted residual, because provider
+The per-session flag is written before the offer is shown and before a save is
+applied, so a timeout or crash cannot cause a second request or apply an answer
+twice. If the database is locked past SQLite's busy timeout while a save is applied,
+the hook reports `Continuity: save skipped — database busy.` The edit hook opens the
+store to bind the edit. If the store is locked past the busy timeout, that edit is
+neither flagged nor offered; this is an accepted residual, because provider
 responsiveness wins over a longer wait. The `Stop` hook timeout is 60 seconds.
 
 Saving is best effort. A session interrupted with Ctrl+C, closed while the model is
@@ -252,18 +303,21 @@ Autosave does not archive chats:
 
 - The transcript and `transcript_path` are never opened, and tool inputs and outputs
   are never read.
-- The only text read is `last_assistant_message` on the stop that answers
-  Continuity's request.
+- The only text read is `last_assistant_message`, and only on a stop that ends an
+  offered turn or answers Continuity's request.
 - Autosave adds no tables, event logs or telemetry. Saved memories and handoffs
   record their author (agent and session id) like any attributed write, and a
   handoff's author session is also a row in the existing `sessions` table.
 
 Per session, the hook keeps one small file under `<continuity home>/hooks/autosave/`,
 named by a hash of provider and session id. It contains
-`{"dirty":…,"pending":…,"prompted_at":…,"scope":…,"close":…}` and nothing else:
+`{"dirty":…,"pending":…,"asked":…,"prompted_at":…,"scope":…,"close":…}` and nothing
+else:
 
+- `dirty`: edits not yet covered by an offer; `pending`: an offer or request is
+  outstanding; `asked`: it is a fallback request; `prompted_at`: the last request;
 - `scope` is a hash of the project and workspace ids;
-- `close` is the id of the offered handoff while a request is outstanding.
+- `close` is the id of the offered handoff while the offer or request is outstanding.
 
 A linked state directory is never written. Files older than seven days are removed.
 
@@ -307,7 +361,20 @@ refreshes the source snapshot once (`ProjectClient.proposeAll`), which is how ex
 source claims are verified. No sync, Doctor, semantic backend, network or external
 model is involved.
 
-With an open handoff offered, the save request is about 1.1 KB at most.
+These tables were measured with the earlier `Stop` request (ADR 012). The offer
+(ADR 014) was measured against it on the same small fixture (Windows, Node 24, runtime
+stopped, 7 runs each, medians and max):
+
+| Path | Before (`Stop` request) | Offer in the answer |
+| --- | --- | --- |
+| `PostToolUse` | 200 ms (207), edit flag | 203 ms (204), edit flag + offer |
+| `Stop` that asks | 204 ms (208), every edited turn | 200 ms (206), fallback only |
+| `Stop`, apply an empty save | 200 ms (209) | 199 ms (202) |
+| `PostToolUse`, autosave off | — | 195 ms (198) |
+| `continuity --version` (baseline) | — | 189 ms (192) |
+
+The offer reads the latest open handoff; the extra `Stop` round trip of every edited
+turn is gone.
 
 Codex paths, Windows, Node 24, 132-source project, 7 runs each, medians (max):
 
@@ -327,12 +394,29 @@ The mode check reads only environment variables.
 Opt-in runs, not CI, with Claude Code 2.1.280, and Codex 0.156.1 and 0.157.0. None of
 the prompts mentioned Continuity.
 
+**Save in the answer (ADR 014, 2026-09-26).** Isolated fixture and Continuity home,
+plain `claude` and plain `codex` (daemon), screens read, no transcripts:
+
+| Session | What the user saw | Saved |
+| --- | --- | --- |
+| Claude Code: add a key, user states that keys stay sorted | Normal answer, then one raw `[continuity-save]: <…>` line | Decision, `agent_observation`, Claude Code |
+| Claude Code: read-only question | Normal answer only | Nothing, no state file |
+| Claude Code: rename one value | Normal answer and an empty save line | Nothing |
+| `claude -p`, edit, reply `DONE-EDIT` | Exactly `DONE-EDIT` | Nothing, no state file |
+| Codex: add a key, user states an ASCII rule | Normal answer only | Nothing: the model chose an empty save (before "decisions the user stated" was added to the contract) |
+| Codex: add a key, user states snake_case keys | Normal answer only | Decision, `agent_observation`, Codex |
+| `codex exec`, edit, reply `DONE-EDIT` (hooks trusted and running) | Exactly `DONE-EDIT` | Nothing, no state file |
+
+No `Stop` continuation was needed in these runs. The fallback's rendering was checked
+with a probe hook: Claude Code shows `Stop hook feedback: …` and Codex
+`Blocked by hook └ …`, each followed by the reply.
+
 **Headless default.** A `claude -p` and a `codex exec` session each edited a file and
 were asked to reply `DONE-EDIT`:
 
 - Both final answers were exactly `DONE-EDIT`, and nothing was saved.
 - Forced with `CONTINUITY_AUTOSAVE=1`, both final answers were the save block, as
-  documented.
+  documented (ADR 012 flow).
 
 **Full lifecycle (Codex 0.156.1).** Scripted, with autosave forced on:
 

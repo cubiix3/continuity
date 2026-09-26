@@ -96,28 +96,32 @@ remain below current sources and do not gain source-authoritative trust.
 
 ## Provider hooks and autosave
 
-Provider hooks read only structured hook fields. The `Stop` hook reads
-`last_assistant_message` only on the stop that answers Continuity's own save
-request, and only from a tagged JSON block. Transcripts, transcript paths and tool
+Provider hooks read only structured hook fields. The `PostToolUse` hook reads the
+session id, cwd and whether a sub-agent made the edit (`agent_id`); it returns the
+fixed save contract as additional context. The `Stop` hook reads
+`last_assistant_message` only while Continuity's own offer or request is outstanding,
+and only its last save line (or legacy tagged block). Transcripts, transcript paths and tool
 payloads are never opened. Hook commands contain only absolute paths and fixed
 words, quoted literally for PowerShell and POSIX `sh`. Hooks never exit 2. They
-block a stop only with an explicit JSON decision, never on a continuation stop, so
-recursion is impossible.
+continue a turn only through the documented JSON output, never on a continuation
+stop, so recursion is impossible.
 
 Saved claims pass the normal memory policy with the provider's session as
 attribution. They cannot reach human-reviewed trust, choose a project or workspace,
 become project rules or override an accepted memory. A save is applied only in the
-project or workspace where the edits and the request happened; a `cd` elsewhere or a
+project or workspace where the edits and the offer happened; a `cd` elsewhere or a
 nested Git checkout gets nothing. Secret-looking content is checked per raw field
-and dropped before storage.
+and dropped before storage. A save line that the user or a source puts into an answer
+without an outstanding offer is ignored; with one, it is still only an attributed
+agent claim.
 
 A handoff close applies only to the open handoff the host offered in that session's
-request. It is bound to the same project and workspace, and it never rewrites the
+offer or request. It is bound to the same project and workspace, and it never rewrites the
 handoff. Autosave runs by default only in interactive sessions, so headless
 runs keep their final output. The mode comes from the hook's environment: Claude Code's
 session variables, and for Codex the app-server daemon marker without Codex's
 tool-command markers. Whoever controls that environment can switch autosave, as with
-`CONTINUITY_AUTOSAVE`. Switching it changes only whether a save is requested, never
+`CONTINUITY_AUTOSAVE`. Switching it changes only whether a save is offered, never
 trust, scope or attribution. A prompt-injected source can still lead the model to propose
 a false lesson; it is attributed as an agent observation, and sources and human
 review outrank it. See [agent lifecycle](agent-lifecycle.md).

@@ -2,7 +2,7 @@
 import { Command } from 'commander';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
@@ -138,8 +138,13 @@ const integrate = program.command('integrate').description('Explicit provider in
 // Same canonical form as the runtime's continuityHome(), without creating a missing home (hooks must stay side-effect free).
 const continuityHomePath = () => {
   const home = resolve(program.opts<{ home?: string }>().home ?? process.env.CONTINUITY_HOME ?? join(homedir(), '.continuity'));
-  // A home created later becomes lower-case on Windows; installed entries must already match that canonical form.
-  return existsSync(home) ? continuityHome(home) : process.platform === 'win32' ? home.toLowerCase() : home;
+  if (existsSync(home)) return continuityHome(home);
+  // A home created later is canonicalized by continuityHome() (real path, lower-case on Windows); installed entries must
+  // already match that form, so resolve the nearest existing ancestor (8.3 names, junctions) and append the rest.
+  let existing = home; const rest: string[] = [];
+  while (!existsSync(existing) && dirname(existing) !== existing) { rest.unshift(basename(existing)); existing = dirname(existing); }
+  const canonical = join(existsSync(existing) ? realpathSync.native(existing) : existing, ...rest);
+  return process.platform === 'win32' ? canonical.toLowerCase() : canonical;
 };
 /** Bounded provider hook input; oversized input is ignored rather than truncated. */
 async function hookStdin(limit: number) {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -291,14 +291,19 @@ test('no tool is promised where the session has none: a nested unregistered chec
   expect(start('claude', a)).toContain('Continuity · Alpha'); expect(start('claude', a)).not.toContain('continuity_context');
 });
 
-test('Windows: an install made before the home exists stays current once the home is created', (context) => {
-  if (process.platform !== 'win32') { context.skip(); return; }
-  const later = join(root, 'Later Home'), env = { ...process.env, CODEX_HOME: join(root, 'cx-case') };
-  const run = (...args: string[]) => spawnSync(process.execPath, ['--no-warnings', cli, '--home', later, '--json', ...args], { encoding: 'utf8', windowsHide: true, env });
-  expect(JSON.parse(run('integrate', 'codex', 'install').stdout)).toMatchObject({ state: 'installed' });
-  expect(existsSync(later)).toBe(false);
-  run('--project', a, 'init');
-  expect(JSON.parse(run('integrate', 'codex', 'status').stdout)).toMatchObject({ state: 'installed', mcp: 'installed' });
+test('an install made before the home exists stays current once the home is created (casing, junctions, 8.3 names)', (context) => {
+  // A junction makes the real path differ from the given one, as an 8.3 short name in a CI temp path does.
+  const real = join(root, 'Real Parent'); mkdirSync(real);
+  const linked = join(root, 'Linked Parent');
+  try { symlinkSync(real, linked, 'junction'); } catch { context.skip(); return; }
+  for (const later of [join(root, 'Later Home'), join(linked, 'Later Home')]) {
+    const env = { ...process.env, CODEX_HOME: join(root, `cx-${basename(dirname(later)).replace(/\W/g, '')}`) };
+    const run = (...args: string[]) => spawnSync(process.execPath, ['--no-warnings', cli, '--home', later, '--json', ...args], { encoding: 'utf8', windowsHide: true, env });
+    expect(JSON.parse(run('integrate', 'codex', 'install').stdout), later).toMatchObject({ state: 'installed' });
+    expect(existsSync(later)).toBe(false);
+    run('--project', a, 'init');
+    expect(JSON.parse(run('integrate', 'codex', 'status').stdout), later).toMatchObject({ state: 'installed', mcp: 'installed' });
+  }
 });
 
 test('real CLI: install, status and remove report hooks and MCP together for both providers', () => {

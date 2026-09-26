@@ -6,7 +6,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { openContinuity } from '../packages/sdk/src/index.js';
 import { renderBootstrap } from '../packages/core/src/index.js';
-import { PROMPT_INTERVAL_MS, SAVE_INSTRUCTION, applySave, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, removeHookIntegration, saveReport, stopDecision } from '../packages/adapter-hooks/src/index.js';
+import { PROMPT_INTERVAL_MS, SAVE_REQUEST, applySave, claudeHookTarget, codexHookTarget, editDecision, hookIntegrationStatus, installHookIntegration, parseSaveReply, removeHookIntegration, saveContract, saveReport, stopDecision } from '../packages/adapter-hooks/src/index.js';
 
 // Every hook call is a real CLI process; Windows CI runners need more than vitest's 5 s default.
 vi.setConfig({ testTimeout: 60_000 });
@@ -35,45 +35,104 @@ const run = (provider: Provider, event: 'tool-use' | 'stop' | 'session-start', i
   const result = spawnSync(process.execPath, ['--no-warnings', cli, '--home', useHome, 'integrate', provider, event], { input: typeof input === 'string' ? input : JSON.stringify(input), encoding: 'utf8', windowsHide: true, env: hookEnv(env) });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr, ms: Date.now() - started };
 };
-const save = (value: unknown) => `Done.\n<continuity-save>${JSON.stringify(value)}</continuity-save>`;
-/** One provider session: edit, stop (save request), answer, stop again. Returns every hook output. */
+/** The final answer of an edited turn: the normal text, an empty line, then the save line (hidden by CommonMark renderers). */
+const save = (value: unknown) => `Done.\n\n[continuity-save]: <${JSON.stringify(value)}>`;
+const edit = (provider: Provider, id: string, cwd: string, env: Record<string, string | undefined> = {}) => run(provider, 'tool-use', { session_id: id, cwd, tool_name: provider === 'claude' ? 'Edit' : 'apply_patch', tool_input: { secret: 'never read' } }, env);
+const offer = (goal?: string) => ({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: saveContract(goal) } });
+/** One edited provider turn: the edit gets the contract, and the turn's final answer carries the save. No extra turn. */
 function session(provider: Provider, cwd: string, reply: string, id = `s-${Math.random().toString(36).slice(2)}`) {
-  const edit = run(provider, 'tool-use', { session_id: id, cwd, tool_name: provider === 'claude' ? 'Edit' : 'apply_patch', tool_input: { secret: 'never read' } });
+  const changed = edit(provider, id, cwd);
+  const answer = run(provider, 'stop', { session_id: id, cwd, stop_hook_active: false, last_assistant_message: reply });
+  return { id, edit: changed, answer };
+}
+/** The fallback: the final answer has no save line, so Stop asks through a continuation, which answers. */
+function fallbackSession(provider: Provider, cwd: string, reply: string, id = `f-${Math.random().toString(36).slice(2)}`) {
+  const changed = edit(provider, id, cwd);
   const request = run(provider, 'stop', { session_id: id, cwd, stop_hook_active: false, last_assistant_message: 'Implemented the change.' });
   const answer = run(provider, 'stop', { session_id: id, cwd, stop_hook_active: true, last_assistant_message: reply });
-  return { id, edit, request, answer };
+  return { id, edit: changed, request, answer };
 }
 const active = (path = a) => host.project(path).memories().filter(m => ['persist', 'accepted'].includes(m.status));
 
-test('gating: no edits no request, one request per edited session, never blocks a continuation, rate limited', () => {
+test('gating: the first edit of a turn is offered, the answer is applied at that stop, the fallback asks once and never loops', () => {
   const idle = { dirty: false, pending: false };
-  expect(stopDecision(idle, false).action).toBe('none');
-  expect(stopDecision(idle, true).action).toBe('none');
-  const prompt = stopDecision({ dirty: true, pending: false }, false, 1000);
-  expect(prompt).toEqual({ action: 'prompt', state: { dirty: false, pending: true, prompted_at: 1000 } });
-  // A continuation stop never blocks again: either it answers our request or it is someone else's.
-  expect(stopDecision({ dirty: true, pending: false }, true).action).toBe('none');
-  expect(stopDecision(prompt.state, true)).toMatchObject({ action: 'apply', state: { pending: false } });
-  // An unanswered request expires at the next ordinary stop instead of looping.
-  expect(stopDecision({ dirty: false, pending: true, prompted_at: 1000 }, false, 2000)).toMatchObject({ action: 'none', state: { pending: false } });
-  expect(stopDecision({ dirty: true, pending: false, prompted_at: 1000 }, false, 1000 + PROMPT_INTERVAL_MS - 1).action).toBe('none');
-  expect(stopDecision({ dirty: true, pending: false, prompted_at: 1000 }, false, 1000 + PROMPT_INTERVAL_MS).action).toBe('prompt');
+  const offered = { dirty: false, pending: true, offered: true, turn: 't1', scope: 'x' };
+  expect(editDecision(idle, 'x', false, 't1')).toEqual({ offer: true, state: offered });
+  // Later edits of the turn are covered by the offer; an edit elsewhere makes the answer unusable.
+  expect(editDecision(offered, 'x', false, 't1')).toEqual({ offer: false, state: offered });
+  expect(editDecision(offered, 'y', false, 't1')).toEqual({ offer: false, state: { ...offered, scope: 'mixed' } });
+  // Without turn ids (older providers) one offer covers edits until its Stop.
+  expect(editDecision({ dirty: false, pending: true, offered: true, scope: 'x' }, 'x', false)).toMatchObject({ offer: false });
+  // A sub-agent's edit is recorded, not offered; edits in two scopes are never offered.
+  expect(editDecision(idle, 'x', true, 't1')).toEqual({ offer: false, state: { dirty: true, pending: false, scope: 'x' } });
+  expect(editDecision({ dirty: true, pending: false, scope: 'x' }, 'y', false)).toEqual({ offer: false, state: { dirty: true, pending: false, scope: 'mixed' } });
+  expect(stopDecision(idle, false, false).action).toBe('none');
+  expect(stopDecision(idle, true, true).action).toBe('none');
+  // An answered offer is applied at the turn's own stop; an unsolicited save is never applied.
+  expect(stopDecision(offered, false, true, 't1')).toEqual({ action: 'apply', state: { dirty: false, pending: false, scope: 'x' } });
+  // The line is missing: one continuation request, rate limited.
+  const request = stopDecision({ ...offered, close: 'handoff_1' }, false, false, 't1', 1000);
+  expect(request).toEqual({ action: 'request', state: { dirty: false, pending: true, asked: true, prompted_at: 1000, scope: 'x', close: 'handoff_1' } });
+  expect(stopDecision({ dirty: true, pending: false, scope: 'x' }, false, false, 't1', 1000).action).toBe('request');
+  expect(stopDecision({ ...offered, prompted_at: 1000 }, false, false, 't1', 1000 + PROMPT_INTERVAL_MS - 1)).toEqual({ action: 'none', state: { dirty: false, pending: false, prompted_at: 1000 } });
+  // Rate limited edits are dropped with their scope, so a kept `mixed` cannot block the next offers.
+  expect(stopDecision({ dirty: true, pending: false, scope: 'mixed', prompted_at: 1000 }, false, false, 't2', 2000)).toEqual({ action: 'none', state: { dirty: false, pending: false, prompted_at: 1000 } });
+  expect(stopDecision({ dirty: true, pending: false, prompted_at: 1000 }, false, false, 't1', 1000 + PROMPT_INTERVAL_MS).action).toBe('request');
+  // A continuation stop never blocks again: it answers the request, or the request expires.
+  expect(stopDecision(request.state, true, true)).toMatchObject({ action: 'apply', state: { pending: false } });
+  expect(stopDecision(request.state, true, false)).toEqual({ action: 'none', state: { dirty: false, pending: false, prompted_at: 1000, scope: 'x' } });
+  expect(stopDecision({ dirty: true, pending: false }, true, false).action).toBe('none');
+  // A request whose continuation never came (interrupted) expires at the next ordinary stop.
+  expect(stopDecision(request.state, false, false, 't2', 2000)).toMatchObject({ action: 'none', state: { pending: false } });
+  // An answer to the request without stop_hook_active (as Claude Code may report it) is applied too.
+  expect(stopDecision(request.state, false, true, 't1', 2000).action).toBe('apply');
 });
 
-test('the save instruction is short and states the contract; only the tagged answer is parsed', () => {
-  expect(Buffer.byteLength(SAVE_INSTRUCTION)).toBeLessThan(1200);
-  for (const phrase of ['<continuity-save>', 'no tool calls', 'Empty is normal', 'unfinished', 'secrets', 'verbatim']) expect(SAVE_INSTRUCTION).toContain(phrase);
+test('an interrupted turn: its offer expires silently, and the next edit is offered again', () => {
+  const stale = { dirty: false, pending: true, offered: true, turn: 't1', scope: 'x' };
+  // A read-only next turn: no request on a turn that made no edit, then or later. The next edited turn's offer covers
+  // the session, so the interrupted turn's edits leave nothing behind (no scope that could turn a later edit `mixed`).
+  expect(stopDecision(stale, false, false, 't2', 1000)).toEqual({ action: 'none', state: { dirty: false, pending: false } });
+  // An edit in the next turn gets a fresh offer, in whatever project it happens.
+  expect(editDecision(stale, 'x', false, 't2')).toEqual({ offer: true, state: { dirty: false, pending: true, offered: true, turn: 't2', scope: 'x' } });
+  expect(editDecision(stale, 'y', false, 't2')).toEqual({ offer: true, state: { dirty: false, pending: true, offered: true, turn: 't2', scope: 'y' } });
+  // A request pending from an earlier release was never an offer: it expires the same way, without a save.
+  expect(stopDecision({ dirty: false, pending: true, prompted_at: 5, scope: 'x' }, false, false, 't2', 1000)).toEqual({ action: 'none', state: { dirty: false, pending: false, prompted_at: 5 } });
+  expect(stopDecision({ dirty: false, pending: true, prompted_at: 5, scope: 'x' }, true, true).action).toBe('none');
+});
+
+test('the offer is complete, the fallback request is short and self-contained; only an unfenced save line is parsed', () => {
+  const text = saveContract();
+  expect(Buffer.byteLength(text)).toBeLessThan(1100);
+  for (const phrase of ['[continuity-save]: <{"memories":[],"handoff":null}>', 'End your final answer with an empty line', 'Empty is normal', 'unfinished', 'secrets', 'verbatim', '\\u003c']) expect(text).toContain(phrase);
+  // Shown to the user only as a fallback: short, and it carries the template for a model that never saw the offer.
+  expect(Buffer.byteLength(SAVE_REQUEST)).toBeLessThan(400);
+  for (const phrase of ['[continuity-save]: <{"memories":[],"handoff":null}>', 'no tool calls', 'left empty']) expect(SAVE_REQUEST).toContain(phrase);
   expect(parseSaveReply('I learned that the parser rejects tabs.')).toBeUndefined();
-  expect(parseSaveReply('<continuity-save>{not json</continuity-save>')).toBeUndefined();
-  expect(parseSaveReply('<continuity-save>{"memories":[{"key":"old"}]}</continuity-save> then <continuity-save>{"memories":[]}</continuity-save>')).toEqual({ memories: [], handoff: null });
-  expect(parseSaveReply('<continuity-save>\n```json\n{"memories":[],"handoff":null}\n```\n</continuity-save>')).toEqual({ memories: [], handoff: null });
+  expect(parseSaveReply('Done.\n\n[continuity-save]: <{not json>')).toBeUndefined();
+  expect(parseSaveReply('Done.\r\n\r\n[continuity-save]: <{"memories":[],"handoff":null}>\r\n')).toEqual({ memories: [], handoff: null });
+  // Escaped and unescaped angle brackets inside strings both parse; only the rendering differs.
+  expect(parseSaveReply('x\n\n[continuity-save]: <{"memories":[{"key":"a.b","kind":"memory","text":"Use \\u003cT\\u003e generics."}]}>')?.memories).toEqual([{ key: 'a.b', kind: 'memory', text: 'Use <T> generics.' }]);
+  expect(parseSaveReply('x\n\n   [continuity-save]: <{"memories":[{"key":"a.b","kind":"memory","text":"a > b"}]}>')?.memories).toHaveLength(1);
+  // CommonMark labels are case-insensitive; U+2028 inside a JSON string stays on the line.
+  expect(parseSaveReply('x\n\n[Continuity-Save]: <{"memories":[]}>')).toEqual({ memories: [], handoff: null });
+  expect(parseSaveReply('x\n\n[continuity-save]: <{"memories":[{"key":"a.b","kind":"memory","text":"one two"}]}>')?.memories).toHaveLength(1);
+  // Indented code (four spaces) and fenced code are quoted content, never the model's own save.
+  expect(parseSaveReply('x\n\n    [continuity-save]: <{"memories":[]}>')).toBeUndefined();
+  const fenced = '[continuity-save]: <{"memories":[{"key":"doc.example","kind":"memory","text":"An example from the docs."}],"close_handoff":true}>';
+  expect(parseSaveReply(`Here is the format:\n\n\`\`\`text\n${fenced}\n\`\`\`\n`)).toBeUndefined();
+  expect(parseSaveReply(`~~~~\n${fenced}\n~~~\nstill fenced\n~~~~\n`)).toBeUndefined();
+  expect(parseSaveReply(`\`\`\`\n${fenced}\n\`\`\`\n\n[continuity-save]: <{"memories":[]}>`)).toEqual({ memories: [], handoff: null });
+  // The earlier tagged block is no longer read.
+  expect(parseSaveReply('<continuity-save>{"memories":[]}</continuity-save>')).toBeUndefined();
+  // The last line wins.
+  expect(parseSaveReply('[continuity-save]: <{"memories":[{"key":"old"}]}>\n\n[continuity-save]: <{"memories":[]}>')).toEqual({ memories: [], handoff: null });
 });
 
-test('completed task: one attributed lesson, no handoff, silent success, exit 0 throughout', () => {
-  const { id, edit, request, answer } = session('claude', a, save({ memories: [{ key: 'locale.blank-lines', kind: 'experience', text: 'Locale files must not contain blank lines; the loader rejects them.' }], handoff: null }));
-  for (const step of [edit, request, answer]) { expect(step.status).toBe(0); expect(step.stderr).toBe(''); }
-  expect(edit.stdout).toBe('');
-  expect(JSON.parse(request.stdout)).toEqual({ decision: 'block', reason: SAVE_INSTRUCTION });
+test('completed task: one attributed lesson, no handoff, no extra turn, silent success, exit 0 throughout', () => {
+  const { id, edit: changed, answer } = session('claude', a, save({ memories: [{ key: 'locale.blank-lines', kind: 'experience', text: 'Locale files must not contain blank lines; the loader rejects them.' }], handoff: null }));
+  for (const step of [changed, answer]) { expect(step.status).toBe(0); expect(step.stderr).toBe(''); }
+  expect(JSON.parse(changed.stdout)).toEqual(offer());
   expect(answer.stdout).toBe('');
   const [memory] = active();
   expect(active()).toHaveLength(1);
@@ -82,6 +141,84 @@ test('completed task: one attributed lesson, no handoff, silent success, exit 0 
   // Answered: the next stop in the same session is silent until new edits.
   expect(run('claude', 'stop', { session_id: id, cwd: a, stop_hook_active: false }).stdout).toBe('');
   expect(renderBootstrap(host.bootstrap(a)!)).toContain('agent observation');
+});
+
+test.each(['claude', 'codex'] as const)('%s matrix: completed, unfinished, trivial and read-only turns add no visible output', provider => {
+  const env = provider === 'claude' ? { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_SESSION_ATTENDED: '1', CLAUDE_CODE_ENTRYPOINT: 'cli' } : CODEX_TUI;
+  const turn = (id: string, message: string, edited = true) => {
+    const changed = edited ? edit(provider, id, a, env) : undefined;
+    const stop = run(provider, 'stop', { session_id: id, cwd: a, stop_hook_active: false, last_assistant_message: message }, env);
+    for (const step of [changed, stop]) if (step) { expect(step.status).toBe(0); expect(step.stderr).toBe(''); }
+    return { offered: changed?.stdout ?? '', stop: stop.stdout };
+  };
+  // Meaningful completed work: one lesson, silent.
+  expect(turn(`${provider}-done`, save({ memories: [{ key: `${provider}.lesson`, kind: 'experience', text: 'The loader caches parsed locale files per process.' }], handoff: null }))).toMatchObject({ stop: '' });
+  // Unfinished work: a handoff, silent.
+  expect(turn(`${provider}-open`, save({ memories: [], handoff: { goal: `${provider} migration`, status: 'in_progress', remaining: ['fr_FR'], next: 'Convert fr_FR.' } })).stop).toBe('');
+  // Trivial edit (a rename): the model saves nothing, and nothing is shown.
+  expect(turn(`${provider}-trivial`, save({ memories: [], handoff: null }))).toMatchObject({ stop: '' });
+  // Read-only turn: no edit, no offer, nothing read from the answer even if it contains a save line.
+  expect(turn(`${provider}-read`, save({ memories: [{ key: 'unsolicited.fact', kind: 'experience', text: 'Unsolicited save lines are never applied.' }] }), false)).toEqual({ offered: '', stop: '' });
+  expect(active().map(m => m.key)).toEqual([`${provider}.lesson`]);
+  expect(host.project(a).latestHandoff()?.task.goal).toBe(`${provider} migration`);
+  // Each edited turn gets its own offer; an answered turn leaves no request behind.
+  expect(turn(`${provider}-done`, save({ memories: [], handoff: null }))).toMatchObject({ stop: '' });
+  expect(run(provider, 'stop', { session_id: `${provider}-done`, cwd: a, stop_hook_active: false, last_assistant_message: 'Anything else?' }, env).stdout).toBe('');
+});
+
+test.each(['claude', 'codex'] as const)('%s fallback: a missing save line gets one short request; the continuation is applied and never blocked', provider => {
+  const env = provider === 'claude' ? { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_SESSION_ATTENDED: '1' } : CODEX_TUI;
+  expect(edit(provider, 'late', a, env).stdout).toContain('additionalContext');
+  const request = run(provider, 'stop', { session_id: 'late', cwd: a, stop_hook_active: false, last_assistant_message: 'Fixed the loader.' }, env);
+  // Claude Code shows Stop additionalContext as hook feedback, not as a hook error; Codex only has decision:block.
+  expect(JSON.parse(request.stdout)).toEqual(provider === 'claude' ? { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: SAVE_REQUEST } } : { decision: 'block', reason: SAVE_REQUEST });
+  const answer = run(provider, 'stop', { session_id: 'late', cwd: a, stop_hook_active: true, last_assistant_message: `[continuity-save]: <${JSON.stringify({ memories: [{ key: 'loader.late', kind: 'experience', text: 'The loader resolves locales lazily on first use.' }] })}>` }, env);
+  expect(answer).toMatchObject({ status: 0, stdout: '' });
+  expect(active().map(m => m.key)).toEqual(['loader.late']);
+  // Rate limited: a second unanswered turn within the interval gets no second request and never loops.
+  edit(provider, 'late', a, env);
+  expect(run(provider, 'stop', { session_id: 'late', cwd: a, stop_hook_active: false, last_assistant_message: 'Done again.' }, env).stdout).toBe('');
+  // A request whose continuation does not answer expires without another block.
+  edit(provider, 'late2', a, env);
+  expect(run(provider, 'stop', { session_id: 'late2', cwd: a, stop_hook_active: false }, env).stdout).not.toBe('');
+  expect(run(provider, 'stop', { session_id: 'late2', cwd: a, stop_hook_active: true, last_assistant_message: 'I have nothing to add.' }, env).stdout).toBe('');
+  expect(run(provider, 'stop', { session_id: 'late2', cwd: a, stop_hook_active: false }, env).stdout).toBe('');
+  // The answer arriving on a stop without stop_hook_active is still the answer to the request.
+  edit(provider, 'late3', a, env);
+  expect(run(provider, 'stop', { session_id: 'late3', cwd: a, stop_hook_active: false }, env).stdout).not.toBe('');
+  expect(run(provider, 'stop', { session_id: 'late3', cwd: a, stop_hook_active: false, last_assistant_message: `[continuity-save]: <${JSON.stringify({ memories: [{ key: 'loader.late3', kind: 'experience', text: 'Locale fallbacks resolve to en_US.' }] })}>` }, env).stdout).toBe('');
+  expect(active().map(m => m.key).sort()).toEqual(['loader.late', 'loader.late3']);
+});
+
+test.each(['claude', 'codex'] as const)('%s interrupted turn: the next read-only turn stays silent, the next edited turn is offered again', provider => {
+  const env = provider === 'claude' ? { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_SESSION_ATTENDED: '1' } : CODEX_TUI;
+  const id = `${provider}-interrupted`, turnField = provider === 'claude' ? 'prompt_id' : 'turn_id';
+  const editIn = (turn: string) => run(provider, 'tool-use', { session_id: id, cwd: a, [turnField]: turn }, env);
+  expect(editIn('turn-1').stdout).toContain('additionalContext');
+  // Turn 1 is interrupted: its Stop never runs. Turn 2 only reads.
+  expect(run(provider, 'stop', { session_id: id, cwd: a, stop_hook_active: false, [turnField]: 'turn-2', last_assistant_message: 'The loader lives in src/locale.' }, env).stdout).toBe('');
+  // Turn 3 edits again and gets the contract again; its save covers the earlier edits too.
+  expect(editIn('turn-3').stdout).toContain('additionalContext');
+  expect(run(provider, 'stop', { session_id: id, cwd: a, stop_hook_active: false, [turnField]: 'turn-3', last_assistant_message: save({ memories: [{ key: 'loader.location', kind: 'memory', text: 'The locale loader lives in src/locale and owns file parsing.' }] }) }, env).stdout).toBe('');
+  expect(active().map(m => m.key)).toEqual(['loader.location']);
+  // Interrupted, then two read-only turns: never asked.
+  const quiet = `${id}-quiet`;
+  expect(run(provider, 'tool-use', { session_id: quiet, cwd: a, [turnField]: 'q1' }, env).stdout).toContain('additionalContext');
+  for (const turn of ['q2', 'q3']) expect(run(provider, 'stop', { session_id: quiet, cwd: a, stop_hook_active: false, [turnField]: turn, last_assistant_message: 'Only a question.' }, env).stdout).toBe('');
+  // Interrupted in Alpha, then an edit in Beta: Beta gets its own offer and its save is stored.
+  const moved = `${id}-moved`;
+  expect(run(provider, 'tool-use', { session_id: moved, cwd: a, [turnField]: 'm1' }, env).stdout).toContain('additionalContext');
+  expect(run(provider, 'tool-use', { session_id: moved, cwd: b, [turnField]: 'm2' }, env).stdout).toContain('additionalContext');
+  expect(run(provider, 'stop', { session_id: moved, cwd: b, stop_hook_active: false, [turnField]: 'm2', last_assistant_message: save({ memories: [{ key: 'beta.invoices', kind: 'decision', text: 'Beta stores invoice totals in integer cents.' }] }) }, env).stdout).toBe('');
+  expect(active(b).map(m => m.key)).toEqual(['beta.invoices']); expect(active(a).map(m => m.key)).toEqual(['loader.location']);
+});
+
+test('model mistakes stay silent; a handoff without a next action uses its first remaining item', () => {
+  const invalid = session('claude', a, save({ memories: [{ key: 'bad.kind', kind: 'opinion', text: 'Not a valid memory kind at all.' }], handoff: { goal: 'Half done', status: 'maybe', next: 'x' } }));
+  expect(invalid.answer.stdout).toBe('');
+  expect(applySave(host.session(a)!, 'claude', 's', { memories: [{ key: 'bad.kind', kind: 'opinion', text: 'Not a valid memory kind at all.' }], handoff: null })).toEqual([{ item: 'memory bad.kind', outcome: 'skipped: invalid memory' }]);
+  session('codex', a, save({ handoff: { goal: 'Convert fr_FR', status: 'in_progress', remaining: ['Convert fr_FR plural rules.'] } }));
+  expect(host.project(a).latestHandoff()).toMatchObject({ task: { goal: 'Convert fr_FR' }, recommended_next_action: 'Convert fr_FR plural rules.' });
 });
 
 test('unfinished work: the handoff is shown by the next session start', () => {
@@ -99,14 +236,12 @@ test('trivial session: no edits means no save request and no writes', () => {
   expect(existsSync(join(home, 'hooks'))).toBe(false);
 });
 
-test('secrets are neither saved nor shown, and partial success is reported honestly', () => {
+test('secrets are neither saved nor shown; policy skips stay silent', () => {
   const { answer } = session('codex', a, save({ memories: [
     { key: 'deploy.token', kind: 'memory', text: 'Staging deploys use api_key = "sk-live-abcdefghijklmnopqrstuv".' },
     { key: 'locale.blank-lines', kind: 'experience', text: 'Locale files must not contain blank lines; the loader rejects them.' },
   ], handoff: { goal: 'Rotate deploy credentials', status: 'blocked', next: 'Set password = hunter2hunter2 in CI.' } }));
-  expect(answer.status).toBe(0);
-  const message = JSON.parse(answer.stdout).systemMessage as string;
-  expect(message).toMatch(/1 of 3 saved/); expect(message).toContain('looks like a secret'); expect(message).not.toContain('sk-live'); expect(message).not.toContain('hunter2');
+  expect(answer).toMatchObject({ status: 0, stdout: '', stderr: '' });
   const db = readFileSync(join(home, 'continuity.db')).toString('latin1');
   expect(db).not.toContain('sk-live-abcdefghijklmnopqrstuv'); expect(db).not.toContain('hunter2hunter2');
   expect(host.project(a).latestHandoff()).toBeNull();
@@ -136,14 +271,22 @@ test.each(scenarios)('quality contract: $name', ({ reply, expect: check }) => {
     expect(['agent_observation', 'derived', 'untrusted']).toContain(memory.provenance.trust);
     expect(memory.status).not.toBe('accepted');
   }
-  expect(saveReport(outcomes) === undefined).toBe(outcomes.every(o => ['persisted', 'created'].includes(o.outcome)));
+  // Policy outcomes are normal, never a user-facing message.
+  expect(saveReport(outcomes)).toBeUndefined();
 });
 
-test('a conflicting lesson is quarantined, never overrides a human-accepted memory, and shows at the next start', () => {
+test('the report is one short line, only for failures, without item text', () => {
+  expect(saveReport([{ item: 'memory a', outcome: 'persisted' }, { item: 'memory b', outcome: 'rejected' }, { item: 'handoff', outcome: 'skipped: looks like a secret' }])).toBeUndefined();
+  expect(saveReport([{ item: 'memory a', outcome: 'persisted' }, { item: 'memory secret.key', outcome: 'failed: database is locked' }])).toBe('Continuity: save incomplete — 1 of 2 not saved (database busy).');
+  const long = saveReport([{ item: 'memory x', outcome: `failed: ${'y'.repeat(500)}` }])!;
+  expect(long.length).toBeLessThan(160); expect(long).not.toContain('\n'); expect(long).not.toContain('memory x');
+});
+
+test('a conflicting lesson is quarantined silently, never overrides a human-accepted memory, and shows at the next start', () => {
   const pending = host.project(a).propose({ key: 'release.branch', kind: 'decision', text: 'Releases are cut from the release branch.' });
   host.review(a, pending.id, 'accepted', 'Maintainer');
   const { answer } = session('claude', a, save({ memories: [{ key: 'release.branch', kind: 'decision', text: 'Releases are cut directly from main.' }] }));
-  expect(JSON.parse(answer.stdout).systemMessage).toContain('quarantined');
+  expect(answer.stdout).toBe('');
   const memories = host.project(a).memories();
   expect(memories.find(m => m.id === pending.id)).toMatchObject({ status: 'accepted', text: 'Releases are cut from the release branch.' });
   expect(memories.find(m => m.text.includes('directly from main'))).toMatchObject({ status: 'needs_attention' });
@@ -153,7 +296,7 @@ test('a conflicting lesson is quarantined, never overrides a human-accepted memo
 test('binding: unregistered, nested, cross-project and missing homes stay isolated and silent', () => {
   const outside = join(root, 'scratch'); mkdirSync(outside);
   const unbound = session('claude', outside, save({ memories: [{ key: 'x.y', kind: 'experience', text: 'Would leak into some other project.' }] }));
-  expect([unbound.request.stdout, unbound.answer.stdout]).toEqual(['', '']);
+  expect([unbound.edit.stdout, unbound.answer.stdout]).toEqual(['', '']);
   const nested = join(a, 'packages', 'inner'); mkdirSync(nested, { recursive: true }); host.init(nested, 'Inner');
   session('claude', join(nested), save({ memories: [{ key: 'inner.fact', kind: 'experience', text: 'The inner package owns its own release cadence.' }] }));
   session('codex', join(a, 'packages'), save({ memories: [{ key: 'alpha.fact', kind: 'experience', text: 'Alpha packages share one lockfile at the root.' }] }));
@@ -178,7 +321,7 @@ test('hook input edge cases never block or exit 2; the kill switch keeps session
     run('claude', 'tool-use', { session_id: 'off2', cwd: a }, env);
     expect(run('claude', 'stop', { session_id: 'off2', cwd: a, stop_hook_active: false }, env).stdout).toBe('');
   }
-  expect(off.request.stdout).not.toBe('');
+  expect(off.edit.stdout).not.toBe('');
   const huge = run('claude', 'stop', JSON.stringify({ session_id: 's', cwd: a, last_assistant_message: 'x'.repeat(1024 * 1024 + 1) }));
   expect(huge).toMatchObject({ status: 0, stdout: '' });
 });
@@ -192,7 +335,7 @@ test('attached worktrees save into their workspace; a detached registered root g
   expect(host.bootstrap(feature)?.latest_handoff?.goal).toBe('FEATURE work'); expect(host.bootstrap(a)?.latest_handoff).toBeUndefined();
   renameSync(join(a, '.git', 'worktrees', 'alpha-feature'), join(root, 'pruned'));
   const detached = session('claude', feature, save({ handoff: { goal: 'WRONG scope', status: 'in_progress', next: 'Must not be stored.' } }));
-  expect(detached.request.stdout).toBe(''); expect(host.bootstrap(a)?.latest_handoff).toBeUndefined();
+  expect([detached.edit.stdout, detached.answer.stdout]).toEqual(['', '']); expect(host.bootstrap(a)?.latest_handoff).toBeUndefined();
 });
 
 test('roundtrip: Claude session A saves, Codex session B loads; B hands off, Claude session C loads', () => {
@@ -204,23 +347,35 @@ test('roundtrip: Claude session A saves, Codex session B loads; B hands off, Cla
   expect(c).toContain('Codex · in progress'); expect(c).toContain('Validate every locale file'); expect(c).toContain('Locale files must not contain blank lines');
   // Flags only: the per-session state holds no content and disappears once answered.
   const states = existsSync(join(home, 'hooks', 'autosave')) ? readdirSync(join(home, 'hooks', 'autosave')) : [];
-  for (const file of states) expect(readFileSync(join(home, 'hooks', 'autosave', file), 'utf8')).toMatch(/^\{"dirty":(true|false),"pending":(true|false)(,"prompted_at":\d+)?(,"scope":"([0-9a-f]{24}|mixed)")?\}$/);
+  for (const file of states) expect(readFileSync(join(home, 'hooks', 'autosave', file), 'utf8')).toMatch(/^\{"dirty":(true|false),"pending":(true|false)(,"offered":true)?(,"asked":true)?(,"turn":"[0-9a-f]{16}")?(,"prompted_at":\d+)?(,"scope":"([0-9a-f]{24}|mixed)")?\}$/);
 });
 
-test('a locked database never blocks the stop; a lost save is reported, not silent', async () => {
-  const id = 'locked';
-  run('claude', 'tool-use', { session_id: id, cwd: a });
-  expect(run('claude', 'stop', { session_id: id, cwd: a, stop_hook_active: false }).stdout).toContain('block');
+/** Runs a hook while another connection holds the database's write lock. */
+async function whileLocked(provider: Provider, event: 'tool-use' | 'stop', input: unknown) {
   const lock = new DatabaseSync(join(home, 'continuity.db')); lock.exec('BEGIN IMMEDIATE');
   try {
-    const child = spawn(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', 'claude', 'stop'], { windowsHide: true, env: hookEnv() });
-    let stdout = ''; child.stdout.on('data', chunk => { stdout += chunk; });
-    child.stdin.end(JSON.stringify({ session_id: id, cwd: a, stop_hook_active: true, last_assistant_message: save({ memories: [{ key: 'k.lock', kind: 'experience', text: 'Written while the database was locked.' }] }) }));
+    const child = spawn(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', provider, event], { windowsHide: true, env: hookEnv() });
+    let stdout = '', stderr = ''; child.stdout.on('data', chunk => { stdout += chunk; }); child.stderr.on('data', chunk => { stderr += chunk; });
+    child.stdin.end(JSON.stringify(input));
     const started = Date.now(), code = await new Promise<number | null>(done => child.on('exit', done));
-    expect(code).toBe(0); expect(Date.now() - started).toBeLessThan(30_000);
-    expect(JSON.parse(stdout).systemMessage).toMatch(/did not complete/);
+    return { code, stdout, stderr, ms: Date.now() - started };
   } finally { lock.exec('ROLLBACK'); lock.close(); }
+}
+
+test('a locked database never blocks the stop; a lost save is one short line, never a stack trace', async () => {
+  const id = 'locked';
+  expect(edit('claude', id, a).stdout).not.toBe('');
+  const result = await whileLocked('claude', 'stop', { session_id: id, cwd: a, stop_hook_active: false, last_assistant_message: save({ memories: [{ key: 'k.lock', kind: 'experience', text: 'Written while the database was locked.' }] }) });
+  expect(result.code).toBe(0); expect(result.ms).toBeLessThan(30_000); expect(result.stderr).toBe('');
+  expect(JSON.parse(result.stdout)).toEqual({ systemMessage: 'Continuity: save skipped — database busy.' });
+  // The answer was consumed: no retry loop, no second request.
   expect(run('claude', 'stop', { session_id: id, cwd: a, stop_hook_active: false }).stdout).toBe('');
+  expect(active()).toEqual([]);
+});
+
+test('a locked database during an edit stays silent and offers nothing', async () => {
+  const result = await whileLocked('codex', 'tool-use', { session_id: 'locked-edit', cwd: a, tool_name: 'apply_patch' });
+  expect(result).toMatchObject({ code: 0, stdout: '', stderr: '' });
 });
 
 test('install adds startup and autosave hooks once, upgrades bootstrap-only installs, downgrades and removes only Continuity', () => {
@@ -268,28 +423,31 @@ test('Codex install: Stop and apply_patch hooks, PowerShell-safe commands, real 
 test('secrets are caught per field, including quoted values that serialization would escape', () => {
   const { answer } = session('claude', a, save({ memories: [{ key: 'db.creds', kind: 'memory', text: 'Staging uses password: "hunter2hunter2" for the database.' }],
     handoff: { goal: 'Rotate creds', status: 'blocked', risks: ['Staging DB password: "hunter2hunter2"'], next: 'Use api_key="abcdefghijkl" in CI' } }));
-  expect(JSON.parse(answer.stdout).systemMessage).toMatch(/0 of 2 saved/);
+  expect(answer.stdout).toBe('');
   expect(host.project(a).latestHandoff()).toBeNull(); expect(host.project(a).memories()).toHaveLength(0);
   expect(readFileSync(join(home, 'continuity.db')).toString('latin1')).not.toContain('hunter2hunter2');
 });
 
 test('a save cannot follow the agent into another project, workspace or nested checkout', () => {
   const reply = save({ memories: [{ key: 'alpha.design', kind: 'decision', text: 'Alpha keeps its design notes private to Alpha.' }] });
-  // Edited Alpha, stopped in Beta: no request at all.
-  run('claude', 'tool-use', { session_id: 'moved', cwd: a });
+  // Edited Alpha, stopped in Beta without a save line: no request at all.
+  edit('claude', 'moved', a);
   expect(run('claude', 'stop', { session_id: 'moved', cwd: b, stop_hook_active: false }).stdout).toBe('');
-  // Requested in Alpha, answered from Beta: reported, nothing saved.
-  run('claude', 'tool-use', { session_id: 'moved2', cwd: a });
-  expect(run('claude', 'stop', { session_id: 'moved2', cwd: a, stop_hook_active: false }).stdout).toContain('block');
-  const answer = run('claude', 'stop', { session_id: 'moved2', cwd: b, stop_hook_active: true, last_assistant_message: reply });
-  expect(JSON.parse(answer.stdout).systemMessage).toMatch(/nothing saved/);
-  // Edits in two projects: no request.
-  run('claude', 'tool-use', { session_id: 'mixed', cwd: a }); run('claude', 'tool-use', { session_id: 'mixed', cwd: b });
+  // Offered in Alpha, answered from Beta: one line, nothing saved.
+  expect(edit('claude', 'moved2', a).stdout).not.toBe('');
+  const answer = run('claude', 'stop', { session_id: 'moved2', cwd: b, stop_hook_active: false, last_assistant_message: reply });
+  expect(JSON.parse(answer.stdout)).toEqual({ systemMessage: 'Continuity: save skipped — the session moved to another project or workspace.' });
+  // The same through the fallback request.
+  edit('claude', 'moved3', a);
+  expect(run('claude', 'stop', { session_id: 'moved3', cwd: a, stop_hook_active: false }).stdout).toContain('additionalContext');
+  expect(JSON.parse(run('claude', 'stop', { session_id: 'moved3', cwd: b, stop_hook_active: true, last_assistant_message: reply }).stdout).systemMessage).toMatch(/save skipped/);
+  // Edits in two projects: the answer is unusable and there is no request.
+  edit('claude', 'mixed', a); edit('claude', 'mixed', b);
   expect(run('claude', 'stop', { session_id: 'mixed', cwd: a, stop_hook_active: false }).stdout).toBe('');
   // A Git checkout nested in the project (e.g. an unregistered .claude/worktrees entry) is a different tree.
   const nested = join(a, '.claude', 'worktrees', 'feat'); mkdirSync(nested, { recursive: true }); writeFileSync(join(nested, '.git'), 'gitdir: ../../../.git/worktrees/feat\n');
   const inWorktree = session('claude', nested, save({ handoff: { goal: 'Worktree task', status: 'in_progress', next: 'Continue in the worktree.' } }));
-  expect(inWorktree.request.stdout).toBe('');
+  expect([inWorktree.edit.stdout, inWorktree.answer.stdout]).toEqual(['', '']);
   expect(active(a)).toEqual([]); expect(active(b)).toEqual([]); expect(host.project(a).latestHandoff()).toBeNull();
   // Unregistered directories leave no state behind.
   const outside = join(root, 'scratch'); mkdirSync(outside); run('claude', 'tool-use', { session_id: 'out', cwd: outside });
@@ -305,25 +463,29 @@ test('proposeAll refreshes once and fails invalid items alone', () => {
 test('a linked autosave state directory is never written or cleaned', (context) => {
   const elsewhere = join(root, 'elsewhere'); mkdirSync(elsewhere); writeFileSync(join(elsewhere, 'keep.json'), '{}');
   try { symlinkSync(elsewhere, join(home, 'hooks'), 'junction'); } catch { context.skip(); return; }
-  const result = session('claude', a, save({ memories: [] }));
-  expect([result.edit.status, result.request.status, result.answer.status]).toEqual([0, 0, 0]); expect(result.request.stdout).toBe('');
+  const result = fallbackSession('claude', a, save({ memories: [] }));
+  expect([result.edit.status, result.request.status, result.answer.status]).toEqual([0, 0, 0]);
+  expect([result.edit.stdout, result.request.stdout, result.answer.stdout]).toEqual(['', '', '']);
   expect(readdirSync(elsewhere)).toEqual(['keep.json']);
 });
 
-test('an edit elsewhere during the save turn cannot redirect the outstanding request', () => {
-  run('claude', 'tool-use', { session_id: 'redirect', cwd: a });
-  expect(run('claude', 'stop', { session_id: 'redirect', cwd: a, stop_hook_active: false }).stdout).toContain('block');
-  run('claude', 'tool-use', { session_id: 'redirect', cwd: b });
-  const answer = run('claude', 'stop', { session_id: 'redirect', cwd: b, stop_hook_active: true, last_assistant_message: save({ memories: [{ key: 'm2b.key', kind: 'experience', text: 'Learned in Alpha, must never land in Beta.' }] }) });
-  expect(JSON.parse(answer.stdout).systemMessage).toMatch(/nothing saved/);
+test('an edit elsewhere during the save turn cannot redirect the outstanding offer or request', () => {
+  const learned = save({ memories: [{ key: 'm2b.key', kind: 'experience', text: 'Learned in Alpha, must never land in Beta.' }] });
+  edit('claude', 'redirect', a); edit('claude', 'redirect', b);
+  expect(JSON.parse(run('claude', 'stop', { session_id: 'redirect', cwd: b, stop_hook_active: false, last_assistant_message: learned }).stdout)).toEqual({ systemMessage: 'Continuity: save skipped — this turn edited more than one project or workspace.' });
+  edit('claude', 'redirect2', a);
+  expect(run('claude', 'stop', { session_id: 'redirect2', cwd: a, stop_hook_active: false }).stdout).toContain('additionalContext');
+  edit('claude', 'redirect2', b);
+  expect(JSON.parse(run('claude', 'stop', { session_id: 'redirect2', cwd: b, stop_hook_active: true, last_assistant_message: learned }).stdout).systemMessage).toMatch(/save skipped/);
   expect(active(b)).toEqual([]); expect(active(a)).toEqual([]);
 });
 
 test('a secret straddling the list item length limit is still refused', () => {
   const item = `${'x'.repeat(495)} api_key = "abcdefghijklmnop"`;
   const { answer } = session('claude', a, save({ handoff: { goal: 'Long notes', status: 'in_progress', risks: [item], next: 'Continue.' } }));
-  expect(JSON.parse(answer.stdout).systemMessage).toContain('looks like a secret');
+  expect(answer.stdout).toBe('');
   expect(host.project(a).latestHandoff()).toBeNull();
+  expect(readFileSync(join(home, 'continuity.db')).toString('latin1')).not.toContain('abcdefghijklmnop');
 });
 
 test('mode: interactive Claude and daemon-hosted Codex sessions save by default; print, SDK, exec and unknown sessions do not', () => {
@@ -352,12 +514,15 @@ test('mode: interactive Claude and daemon-hosted Codex sessions save by default;
     ['codex', { CONTINUITY_AUTOSAVE: '1', CODEX_DAEMON_SHUTDOWN_SOCKET: '1', CODEX_CI: '1', CODEX_THREAD_ID: 'thr' }, true],
   ];
   cases.forEach(([provider, env, expected], i) => {
-    const id = `mode-${i}`;
-    const edit = run(provider, 'tool-use', { session_id: id, cwd: a }, env);
+    const id = `mode-${i}`, label = `${provider} ${JSON.stringify(env)}`;
+    const changed = run(provider, 'tool-use', { session_id: id, cwd: a }, env);
     const stop = run(provider, 'stop', { session_id: id, cwd: a, stop_hook_active: false, last_assistant_message: 'Final answer for the script.' }, env);
-    expect([edit.status, stop.status], JSON.stringify(env)).toEqual([0, 0]);
-    expect(stop.stdout.includes('"decision":"block"'), `${provider} ${JSON.stringify(env)}`).toBe(expected);
-    if (!expected) expect(stop.stdout, `${provider} ${JSON.stringify(env)}`).toBe('');
+    expect([changed.status, stop.status], label).toEqual([0, 0]);
+    expect(changed.stdout.includes('"additionalContext"'), label).toBe(expected);
+    // Without a save line in the final answer, an interactive session gets the one fallback request.
+    expect(stop.stdout.includes(provider === 'claude' ? '"hookEventName":"Stop"' : '"decision":"block"'), label).toBe(expected);
+    // Headless runs (claude -p, codex exec) keep their exact output: nothing is added on any channel.
+    if (!expected) expect([changed.stdout, stop.stdout, changed.stderr, stop.stderr], label).toEqual(['', '', '', '']);
   });
   // Disabled sessions leave no flag files: only the six enabled cases wrote state.
   expect(readdirSync(join(home, 'hooks', 'autosave'))).toHaveLength(6);
@@ -370,10 +535,9 @@ const codexEdit = (session_id: string, cwd: string) => ({ session_id, cwd, hook_
 const flagCount = () => existsSync(join(home, 'hooks', 'autosave')) ? readdirSync(join(home, 'hooks', 'autosave')).length : 0;
 
 test('Codex 0.157: an interactive session saves with no override; codex exec and a nested exec keep their answer and write nothing', () => {
-  expect(run('codex', 'tool-use', codexEdit('tui', a), CODEX_TUI)).toMatchObject({ status: 0, stdout: '' });
-  const request = run('codex', 'stop', { session_id: 'tui', cwd: a, hook_event_name: 'Stop', turn_id: 'turn-1', stop_hook_active: false, last_assistant_message: 'Renamed the heading.' }, CODEX_TUI);
-  expect(JSON.parse(request.stdout)).toEqual({ decision: 'block', reason: SAVE_INSTRUCTION });
-  const answer = run('codex', 'stop', { session_id: 'tui', cwd: a, stop_hook_active: true, last_assistant_message: save({ memories: [{ key: 'readme.heading', kind: 'decision', text: 'The README heading names the loader, not the product.' }] }) }, CODEX_TUI);
+  const changed = run('codex', 'tool-use', codexEdit('tui', a), CODEX_TUI);
+  expect(changed).toMatchObject({ status: 0, stderr: '' }); expect(JSON.parse(changed.stdout)).toEqual(offer());
+  const answer = run('codex', 'stop', { session_id: 'tui', cwd: a, hook_event_name: 'Stop', turn_id: 'turn-1', stop_hook_active: false, last_assistant_message: save({ memories: [{ key: 'readme.heading', kind: 'decision', text: 'The README heading names the loader, not the product.' }] }) }, CODEX_TUI);
   expect(answer).toMatchObject({ status: 0, stdout: '' });
   expect(active()).toMatchObject([{ key: 'readme.heading', from: { agent: 'Codex', session: 'tui' }, provenance: { trust: 'agent_observation' } }]);
   const flags = flagCount();
@@ -387,7 +551,7 @@ test('Codex 0.157: an interactive session saves with no override; codex exec and
 });
 
 test('attribution: only the session whose own edit tool ran is asked, never another session, provider or an outside change', () => {
-  run('codex', 'tool-use', codexEdit('writer', a), CODEX_TUI);
+  expect(run('codex', 'tool-use', codexEdit('writer', a), CODEX_TUI).stdout).toContain('additionalContext');
   // A second Codex session in the same workspace only read.
   expect(run('codex', 'stop', { session_id: 'reader', cwd: a, stop_hook_active: false }, CODEX_TUI).stdout).toBe('');
   // A Claude session is a different session even if the provider ids collide.
@@ -400,12 +564,21 @@ test('attribution: only the session whose own edit tool ran is asked, never anot
   expect(codexHookTarget(process.execPath, cli, home).entries.find(e => e.event === 'PostToolUse')?.matcher).toBe('apply_patch');
 });
 
-test('Codex sub-agents: their edits arrive under the parent session and only the parent is asked', () => {
-  // Codex 0.157 reports a sub-agent's edit with the parent's session_id plus agent_id/agent_type. A sub-agent ends with
-  // SubagentStop, which Continuity does not install, so it never gets a save request and its result reaches the parent.
+test('sub-agents: their edits arrive under the parent session, get no offer, and only the parent is asked', () => {
+  // Both providers report a sub-agent's edit with the parent's session_id plus agent_id/agent_type. A sub-agent ends with
+  // SubagentStop, which Continuity does not install; an offer would reach the sub-agent, not the model ending the turn.
   expect(run('codex', 'tool-use', { ...codexEdit('parent', a), agent_id: 'agent-1', agent_type: 'default', turn_id: 'sub-turn' }, CODEX_TUI).stdout).toBe('');
   expect(codexHookTarget(process.execPath, cli, home).entries.map(e => e.event)).toEqual(['SessionStart', 'PostToolUse', 'Stop']);
-  expect(run('codex', 'stop', { session_id: 'parent', cwd: a, turn_id: 'parent-turn', stop_hook_active: false, last_assistant_message: 'The sub-agent added the function.' }, CODEX_TUI).stdout).toContain('"decision":"block"');
+  const request = run('codex', 'stop', { session_id: 'parent', cwd: a, turn_id: 'parent-turn', stop_hook_active: false, last_assistant_message: 'The sub-agent added the function.' }, CODEX_TUI);
+  // The parent never saw the contract, so the request carries all of it.
+  expect(JSON.parse(request.stdout)).toEqual({ decision: 'block', reason: SAVE_REQUEST });
+  expect(run('claude', 'tool-use', { session_id: 'claude-parent', cwd: a, tool_name: 'Write', agent_id: 'a1b2', agent_type: 'general-purpose' }).stdout).toBe('');
+  // Traced with Codex 0.157: a sub-agent runs its own turn_id inside the parent's turn. Its edits must not expire the
+  // parent's outstanding offer, whose save line then arrives with the parent's Stop.
+  expect(run('codex', 'tool-use', { ...codexEdit('parent2', a), turn_id: 'parent-turn' }, CODEX_TUI).stdout).toContain('additionalContext');
+  expect(run('codex', 'tool-use', { ...codexEdit('parent2', a), agent_id: 'agent-2', agent_type: 'default', turn_id: 'sub-turn' }, CODEX_TUI).stdout).toBe('');
+  expect(run('codex', 'stop', { session_id: 'parent2', cwd: a, turn_id: 'parent-turn', stop_hook_active: false, last_assistant_message: save({ memories: [{ key: 'sub.lesson', kind: 'experience', text: 'The sub-agent found that locale keys are case-sensitive.' }] }) }, CODEX_TUI).stdout).toBe('');
+  expect(active().map(m => m.key)).toContain('sub.lesson');
 });
 
 test('session flags stay content-free and abandoned ones are removed after a week', () => {
@@ -416,7 +589,7 @@ test('session flags stay content-free and abandoned ones are removed after a wee
   const files = readdirSync(dir);
   expect(files).toHaveLength(1); expect(existsSync(stale)).toBe(false);
   const flag = readFileSync(join(dir, files[0]!), 'utf8');
-  expect(flag).toMatch(/^\{"dirty":true,"pending":false,"scope":"[0-9a-f]{24}"\}$/);
+  expect(flag).toMatch(/^\{"dirty":false,"pending":true,"offered":true,"turn":"[0-9a-f]{16}","scope":"[0-9a-f]{24}"\}$/);
   for (const content of ['README.md', 'Begin Patch', 'fresh', 'Alpha']) expect(flag).not.toContain(content);
 });
 
@@ -424,11 +597,11 @@ test('handoff closure: offered in the request, closed by the answer, history kep
   session('codex', a, save({ handoff: { goal: 'Migrate locale files to UTF-8', status: 'in_progress', remaining: ['de_DE', 'fr_FR'], next: 'Convert de_DE first.' } }));
   const h1 = host.project(a).latestHandoff()!;
   expect(renderBootstrap(host.bootstrap(a)!)).toContain('Migrate locale files to UTF-8');
-  // A later session edits; its save request names the open handoff by goal, never by id.
-  run('claude', 'tool-use', { session_id: 'finisher', cwd: a });
-  const request = JSON.parse(run('claude', 'stop', { session_id: 'finisher', cwd: a, stop_hook_active: false }).stdout);
-  expect(request.reason).toContain('Open handoff in this project: "Migrate locale files to UTF-8"'); expect(request.reason).not.toContain(h1.id);
-  const answer = run('claude', 'stop', { session_id: 'finisher', cwd: a, stop_hook_active: true, last_assistant_message: save({ memories: [{ key: 'locale.encoding', kind: 'decision', text: 'All locale files are stored as UTF-8 without BOM.' }], handoff: null, close_handoff: true }) });
+  // A later session edits; its offer names the open handoff by goal, never by id.
+  const offered = JSON.parse(edit('claude', 'finisher', a).stdout);
+  expect(offered).toEqual(offer('Migrate locale files to UTF-8')); expect(JSON.stringify(offered)).not.toContain(h1.id);
+  expect(offered.hookSpecificOutput.additionalContext).toContain('Open handoff in this project: "Migrate locale files to UTF-8"');
+  const answer = run('claude', 'stop', { session_id: 'finisher', cwd: a, stop_hook_active: false, last_assistant_message: save({ memories: [{ key: 'locale.encoding', kind: 'decision', text: 'All locale files are stored as UTF-8 without BOM.' }], handoff: null, close_handoff: true }) });
   expect(answer.stdout).toBe('');
   expect(host.project(a).handoff(h1.id)).toMatchObject({ task: { goal: 'Migrate locale files to UTF-8', status: 'in_progress' }, remaining: ['de_DE', 'fr_FR'], closure: { status: 'done', closed_by: { agent: 'Claude Code', session: 'finisher' } } });
   const next = renderBootstrap(host.bootstrap(a)!);
@@ -448,10 +621,11 @@ test('handoff closure: offered in the request, closed by the answer, history kep
 test('handoff closure authorization: only the offered handoff, only in its own scope', () => {
   session('claude', b, save({ handoff: { goal: 'Beta work', status: 'in_progress', next: 'Continue beta.' } }));
   const beta = host.project(b).latestHandoff()!;
-  // Alpha has no open handoff: a close request is reported, and nothing in Beta changes.
+  // Alpha has no open handoff: a close request is a quiet no-op, and nothing in Beta changes.
   const alpha = session('claude', a, save({ memories: [], close_handoff: true }));
-  expect(JSON.parse(alpha.answer.stdout).systemMessage).toContain('no open handoff was offered');
+  expect(alpha.answer.stdout).toBe('');
   expect(host.project(b).handoff(beta.id).closure).toBeUndefined();
+  expect(applySave(host.session(a)!, 'claude', 's', { memories: [], handoff: null, close_handoff: true })).toEqual([{ item: 'handoff close', outcome: 'skipped: no open handoff was offered' }]);
   expect(() => host.project(a).closeHandoff({ id: beta.id, from: { agent: 'Claude Code', session: 's' } })).toThrow(/not found/);
   // Newest open work wins; after it is closed, the older still-open handoff is shown again.
   session('claude', b, save({ handoff: { goal: 'Beta follow-up', status: 'blocked', next: 'Wait for review.' } }));
@@ -464,9 +638,12 @@ test('a sensitive open handoff is neither offered for closure nor replaced by an
   const client = host.project(a), base = { completed: [], remaining: [], decisions: [], files_changed: [], risks: [] };
   client.createHandoff({ ...base, from: { agent: 'Codex', session: 'x' }, task: { goal: 'Older open work', status: 'in_progress' }, recommended_next_action: 'Continue.' });
   client.createHandoff({ ...base, from: { agent: 'Codex', session: 'y' }, task: { goal: 'Rotate keys', status: 'in_progress' }, recommended_next_action: 'Use api_key = "abcd1234efgh5678".' });
-  run('claude', 'tool-use', { session_id: 'sens', cwd: a });
-  const request = JSON.parse(run('claude', 'stop', { session_id: 'sens', cwd: a, stop_hook_active: false }).stdout);
-  expect(request.reason).not.toContain('Open handoff'); expect(request.reason).not.toContain('abcd1234');
+  const offered = edit('claude', 'sens', a).stdout;
+  expect(JSON.parse(offered)).toEqual(offer()); expect(offered).not.toContain('Open handoff'); expect(offered).not.toContain('abcd1234');
+  // The full fallback request (after a sub-agent's edit) withholds it too.
+  expect(run('claude', 'tool-use', { session_id: 'sens2', cwd: a, agent_id: 'sub-1' }).stdout).toBe('');
+  const request = run('claude', 'stop', { session_id: 'sens2', cwd: a, stop_hook_active: false }).stdout;
+  expect(JSON.parse(request)).toEqual({ hookSpecificOutput: { hookEventName: 'Stop', additionalContext: SAVE_REQUEST } }); expect(request).not.toContain('abcd1234');
   const start = renderBootstrap(host.bootstrap(a)!); expect(start).not.toContain('Older open work'); expect(start).not.toContain('Rotate keys');
 });
 
@@ -491,7 +668,7 @@ test('a Git submodule checkout inside a project is a different tree and gets no 
   const lib = join(root, 'lib'); mkdirSync(lib); writeFileSync(join(lib, 'README.md'), '# Lib\n'); git(lib, 'init'); git(lib, 'add', '.'); git(lib, 'commit', '-m', 'lib');
   git(a, 'init'); git(a, 'add', '.'); git(a, 'commit', '-m', 'alpha'); git(a, 'submodule', 'add', lib, 'vendor/lib');
   const inside = session('claude', join(a, 'vendor', 'lib'), save({ memories: [{ key: 'lib.fact', kind: 'experience', text: 'Learned inside the vendored submodule checkout.' }] }));
-  expect([inside.request.stdout, inside.answer.stdout]).toEqual(['', '']);
+  expect([inside.edit.stdout, inside.answer.stdout]).toEqual(['', '']);
   expect(active(a)).toEqual([]);
 });
 
@@ -499,9 +676,9 @@ test('a dropped replacement never closes the offered handoff', () => {
   session('codex', a, save({ handoff: { goal: 'Feature X', status: 'in_progress', next: 'Build X.' } }));
   const x = host.project(a).latestHandoff()!;
   const secret = session('claude', a, save({ handoff: { goal: 'Feature X follow-up', status: 'in_progress', remaining: ['Use api_key = "abcd1234efgh5678"'], next: 'Continue.' }, close_handoff: true }));
-  expect(JSON.parse(secret.answer.stdout).systemMessage).toContain('the replacement handoff was not saved');
   const invalid = session('claude', a, save({ handoff: { goal: 'Feature X follow-up', status: 'in_progress' }, close_handoff: true }));
-  expect(JSON.parse(invalid.answer.stdout).systemMessage).toContain('the replacement handoff was not saved');
+  expect([secret.answer.stdout, invalid.answer.stdout]).toEqual(['', '']);
+  expect(applySave(host.session(a)!, 'claude', 's', { memories: [], handoff: { goal: 'Feature X follow-up', status: 'in_progress' }, close_handoff: true }, x.id)).toContainEqual({ item: 'handoff close', outcome: 'skipped: the replacement handoff was not saved' });
   expect(host.project(a).handoff(x.id).closure).toBeUndefined(); expect(host.bootstrap(a)?.latest_handoff?.goal).toBe('Feature X');
 });
 

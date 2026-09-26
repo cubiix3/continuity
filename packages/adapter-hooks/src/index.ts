@@ -149,7 +149,7 @@ export function hookIntegrationStatus(target: HookTarget): HookIntegrationStatus
   const partial = events.SessionStart === 'installed' && values.every(v => v === 'installed' || v === 'absent' || v === 'missing');
   const state = !entries ? 'missing' : current && base.executable_available && base.cli_available ? 'installed' : partial && base.executable_available && base.cli_available ? 'partial' : 'stale';
   return { ...base, state, installed: entries > 0, current, entries, events,
-    message: state === 'installed' ? `${name} sessions in registered projects receive Continuity startup context${!target.autosave ? '' : target.provider === 'claude' ? ' and, in interactive sessions, a save check after file edits' : ' and, in interactive sessions (the shared app-server, not codex exec or --no-daemon), a save check after file edits'}${trust}.`
+    message: state === 'installed' ? `${name} sessions in registered projects receive Continuity startup context${!target.autosave ? '' : target.provider === 'claude' ? ' and, in interactive sessions, an automatic save after file edits' : ' and, in interactive sessions (the shared app-server, not codex exec or --no-daemon), an automatic save after file edits'}${trust}.`
       : state === 'missing' ? `Not installed. Run continuity integrate ${target.provider} install.`
       : state === 'partial' ? `Startup context is installed; the session autosave hooks are missing. Run continuity integrate ${target.provider} install to add them, or pass --no-autosave to keep startup context only.`
       : `An installed hook points to another Continuity command or home, is duplicated, or its executable is missing. Run continuity integrate ${target.provider} install${target.autosave ? '' : ' --no-autosave'} to repair.` };

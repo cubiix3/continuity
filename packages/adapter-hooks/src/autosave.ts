@@ -6,30 +6,46 @@ import { looksSensitive } from '../../core/src/security/sensitive.js';
 import type { HookProviderName } from './index.js';
 
 /**
- * Model-aware session autosave. Provider `Stop` hooks can return `decision: block` so the same model continues one
- * turn; `SessionEnd` cannot involve the model. The model deliberately answers a save request with one tagged JSON
- * block, and only that answer is read — never the transcript. Core policy decides what becomes durable.
+ * Model-aware session autosave without an extra visible turn. After the first file edit of a turn, the PostToolUse hook
+ * gives the same model the save contract as additional context, which neither provider displays. The model ends its
+ * final answer with one Markdown link reference definition that carries the save as JSON. CommonMark renderers do not
+ * display such a definition: Codex hides it, while Claude Code 2.1 shows it as one raw line. Stop reads only that final
+ * answer (`last_assistant_message`), never the transcript, and Core policy decides what becomes durable. If the line is
+ * missing, Stop asks once through a provider continuation instead. `SessionEnd` cannot involve the model.
  */
 export const AGENT_NAME: Record<HookProviderName, string> = { claude: 'Claude Code', codex: 'Codex' };
-export const SAVE_TAG = 'continuity-save';
-/** One save request per session at most this often, and only after file edits since the previous request. */
+export const SAVE_LABEL = 'continuity-save';
+/** A continuation request (the fallback, which the user sees) at most this often per session. */
 export const PROMPT_INTERVAL_MS = 15 * 60 * 1000;
 const STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_MEMORIES = 5;
 const MAX_LIST = 10;
 const MAX_ITEM = 500;
 
-export const SAVE_INSTRUCTION = [
-  'Continuity save check (automatic, once). Decide what a future agent in this project must know, then reply with only this block and no tool calls:',
-  `<${SAVE_TAG}>{"memories":[],"handoff":null}</${SAVE_TAG}>`,
-  'memories: 0-3 durable, non-obvious lessons or decisions, each {"key":"area.topic","kind":"decision|experience|memory","text":"one factual sentence"}; add "source_path" only if that project file contains the text verbatim. Never: test/build results, changed-file lists, generic advice, guesses, secrets, chat. Empty is normal.',
+const SAVE_LINE = `[${SAVE_LABEL}]: <{"memories":[],"handoff":null}>`;
+const SAVE_FIELDS = [
+  'memories: 0-3 durable, non-obvious lessons or decisions (including decisions the user stated) that a future agent in this project must know, each {"key":"area.topic","kind":"decision|experience|memory","text":"one factual sentence"}; add "source_path" only if that project file contains the text verbatim. Never: test/build results, changed-file lists, generic advice, guesses, secrets, chat. Empty is normal.',
   'handoff: only if meaningful work is left unfinished (including parts deferred to a later session), {"goal":"...","status":"in_progress|blocked","remaining":["..."],"decisions":["..."],"risks":["..."],"next":"one concrete next action"}; otherwise null.',
+  'Keep the JSON on that one line; write < and > inside strings as \\u003c and \\u003e.',
+];
+/** The contract, given with the first edit of a turn: the save line ends the final answer. */
+export function saveContract(openHandoffGoal?: string) {
+  const lead = 'Continuity save (automatic, not from the user): files changed in this turn. Decide what a future agent in this project must know. End your final answer with an empty line and then this single line; do not mention it:';
+  return [lead, SAVE_LINE, ...SAVE_FIELDS, ...(openHandoffGoal ? [closeOffer(openHandoffGoal)] : [])].join('\n');
+}
+/**
+ * The fallback request, shown to the user, so it stays short. It carries the template itself: the model may never have
+ * seen the contract (a sub-agent's edit) or may have lost it (compaction).
+ */
+export const SAVE_REQUEST = [
+  'Continuity save check (automatic, once): reply with only this line, filled in or left empty, and no tool calls:',
+  SAVE_LINE,
+  'memories: 0-3 durable lessons or decisions a future agent must know, {"key":"area.topic","kind":"decision|experience|memory","text":"..."}; handoff: unfinished work {"goal":"...","status":"in_progress|blocked","next":"..."} or null.',
 ].join('\n');
 /** With an open handoff, the model may close it; it never names an id, and a finished task is never a new handoff. */
-export function saveInstruction(openHandoffGoal?: string) {
-  if (!openHandoffGoal) return SAVE_INSTRUCTION;
+function closeOffer(openHandoffGoal: string) {
   const goal = Array.from(openHandoffGoal.replace(/\s+/g, ' ').replace(/"/g, "'").trim()).slice(0, 160).join('');
-  return `${SAVE_INSTRUCTION}\nOpen handoff in this project: "${goal}". Add "close_handoff":true only if its work is now finished or your new handoff fully replaces it; never create a handoff just to say work is done.`;
+  return `Open handoff in this project: "${goal}". Add "close_handoff":true only if its work is now finished or your new handoff fully replaces it; never create a handoff just to say work is done.`;
 }
 
 /**
@@ -41,8 +57,8 @@ export const CODEX_DAEMON_MARKER = 'CODEX_DAEMON_SHUTDOWN_SOCKET';
 export const CODEX_TOOL_MARKERS = ['CODEX_CI', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID'] as const;
 
 /**
- * Autosave replaces the provider's final answer with a save turn, so it runs by default only in sessions the provider
- * reports as interactive. CONTINUITY_AUTOSAVE=1 forces it on; any other non-empty value forces it off.
+ * Autosave adds a line to the provider's final answer (and may add a save turn), so it runs by default only in sessions
+ * the provider reports as interactive. CONTINUITY_AUTOSAVE=1 forces it on; any other non-empty value forces it off.
  * Claude Code sets CLAUDE_CODE_SESSION_ATTENDED (1 interactive, 0 for -p/SDK) and CLAUDE_CODE_ENTRYPOINT (cli vs
  * sdk-*) for its hooks. Codex hook input is identical in the TUI and `codex exec`; only the daemon host differs.
  * Every signal is verified but undocumented, so anything unknown means off.
@@ -62,37 +78,47 @@ export function offerableGoal(handoff: { from: { agent: string }; task: { goal: 
   return [fields.join('\n'), ...fields].some(looksSensitive) ? undefined : handoff.task.goal;
 }
 
-export interface StopInput { session: string; cwd: string; active: boolean; message: string }
-/** Official Stop input (Claude Code and Codex): session_id, cwd, stop_hook_active, last_assistant_message. */
+/**
+ * The provider's id for the current turn, hashed: Codex `turn_id`, Claude Code `prompt_id` (one id per user prompt,
+ * kept through Stop continuations). Absent in older versions, which then keep one offer until its Stop.
+ */
+const turnKey = (value: unknown) => typeof value === 'string' && value && value.length <= 200 ? createHash('sha256').update(value).digest('hex').slice(0, 16) : undefined;
+export interface StopInput { session: string; cwd: string; active: boolean; message: string; turn?: string }
+/** Official Stop input (Claude Code and Codex): session_id, cwd, stop_hook_active, last_assistant_message, turn id. */
 export function stopInput(stdin: string): StopInput | undefined {
   try {
     const input = JSON.parse(stdin) as Record<string, unknown>;
     const session = typeof input.session_id === 'string' ? input.session_id.trim() : '';
-    const cwd = input.cwd;
+    const cwd = input.cwd, turn = turnKey(input.turn_id ?? input.prompt_id);
     if (!session || session.length > 100 || typeof cwd !== 'string' || !cwd || cwd.length >= 4096) return undefined;
-    return { session, cwd, active: input.stop_hook_active === true, message: typeof input.last_assistant_message === 'string' ? input.last_assistant_message : '' };
+    return { session, cwd, active: input.stop_hook_active === true, message: typeof input.last_assistant_message === 'string' ? input.last_assistant_message : '', ...(turn ? { turn } : {}) };
   } catch { return undefined; }
 }
-/** PostToolUse input: only session id and cwd are used; tool input/output is never read or stored. */
-export function toolUseInput(stdin: string): { session: string; cwd: string } | undefined {
+/**
+ * PostToolUse input: only session id, cwd, the turn id and whether a sub-agent made the edit (both providers add
+ * `agent_id` inside a sub-agent) are used; tool input/output is never read or stored.
+ */
+export function toolUseInput(stdin: string): { session: string; cwd: string; subagent: boolean; turn?: string } | undefined {
   try {
-    const { session_id: session, cwd } = JSON.parse(stdin) as { session_id?: unknown; cwd?: unknown };
-    return typeof session === 'string' && session.trim() && session.length <= 100 && typeof cwd === 'string' && cwd && cwd.length < 4096 ? { session: session.trim(), cwd } : undefined;
+    const { session_id: session, cwd, agent_id: agent, turn_id: turnId, prompt_id: promptId } = JSON.parse(stdin) as Record<string, unknown>;
+    const turn = turnKey(turnId ?? promptId);
+    return typeof session === 'string' && session.trim() && session.length <= 100 && typeof cwd === 'string' && cwd && cwd.length < 4096 ? { session: session.trim(), cwd, subagent: typeof agent === 'string' && agent !== '', ...(turn ? { turn } : {}) } : undefined;
   } catch { return undefined; }
 }
 
 /**
- * Ephemeral per-session flags, no content: whether edits happened, whether a save request is outstanding, and a hash of
- * the project/workspace the edits and the request belong to (`mixed` when edits spanned several).
+ * Ephemeral per-session flags, no content: edits not yet covered by an offer (`dirty`); an outstanding offer (`pending`
+ * with `offered`, and the hashed `turn` it was made in) or continuation request (`pending` with `asked`); when the last
+ * request was made; and a hash of the project/workspace the edits and the offer belong to (`mixed` for several).
  */
-export interface SessionState { dirty: boolean; pending: boolean; prompted_at?: number; scope?: string; close?: string }
+export interface SessionState { dirty: boolean; pending: boolean; offered?: boolean; asked?: boolean; turn?: string; prompted_at?: number; scope?: string; close?: string }
 export const scopeKey = (projectId: string, workspaceId = '') => createHash('sha256').update(`${projectId}\0${workspaceId}`).digest('hex').slice(0, 24);
 const stateDir = (home: string) => join(home, 'hooks', 'autosave');
 const stateFile = (home: string, provider: HookProviderName, session: string) => join(stateDir(home), `${createHash('sha256').update(`${provider}\0${session}`).digest('hex').slice(0, 40)}.json`);
 export function readSessionState(home: string, provider: HookProviderName, session: string): SessionState {
   try {
     const value = JSON.parse(readFileSync(stateFile(home, provider, session), 'utf8')) as Partial<SessionState>;
-    return { dirty: value.dirty === true, pending: value.pending === true, ...(typeof value.prompted_at === 'number' ? { prompted_at: value.prompted_at } : {}), ...(typeof value.scope === 'string' && /^([0-9a-f]{24}|mixed)$/.test(value.scope) ? { scope: value.scope } : {}), ...(typeof value.close === 'string' && /^handoff_[0-9a-f-]{36}$/.test(value.close) ? { close: value.close } : {}) };
+    return { dirty: value.dirty === true, pending: value.pending === true, ...(value.offered === true && value.pending === true ? { offered: true } : {}), ...(value.asked === true && value.pending === true ? { asked: true } : {}), ...(typeof value.turn === 'string' && /^[0-9a-f]{16}$/.test(value.turn) ? { turn: value.turn } : {}), ...(typeof value.prompted_at === 'number' ? { prompted_at: value.prompted_at } : {}), ...(typeof value.scope === 'string' && /^([0-9a-f]{24}|mixed)$/.test(value.scope) ? { scope: value.scope } : {}), ...(typeof value.close === 'string' && /^handoff_[0-9a-f-]{36}$/.test(value.close) ? { close: value.close } : {}) };
   } catch { return { dirty: false, pending: false }; }
 }
 export function writeSessionState(home: string, provider: HookProviderName, session: string, state: SessionState, now = Date.now()) {
@@ -109,26 +135,65 @@ export function writeSessionState(home: string, provider: HookProviderName, sess
   }
 }
 
-export type StopDecision = { action: 'prompt'; state: SessionState } | { action: 'apply'; state: SessionState } | { action: 'none'; state: SessionState };
+/** Ends an offer or request; `dirty` keeps its edits for the next offer. The offered handoff id lives only as long. */
+const settled = (state: SessionState, dirty: boolean, keepScope = true): SessionState => ({ dirty, pending: false, ...(keepScope && state.scope ? { scope: state.scope } : {}), ...(state.prompted_at !== undefined ? { prompted_at: state.prompted_at } : {}) });
 /**
- * Never blocks a stop that is already a continuation (`stop_hook_active`), so Continuity cannot loop. A request is
- * answered on the next stop; an unanswered one expires. Save requests follow file edits and are rate limited.
+ * An offer from a turn that ended without its Stop (interrupted, failed) no longer covers the current turn, and a
+ * request left by an earlier release was never an offer; their edits wait for the next offer.
  */
-export function stopDecision(state: SessionState, active: boolean, now = Date.now()): StopDecision {
-  // The offered handoff id lives only as long as its request.
-  const settle = (): SessionState => { const next = { ...state, pending: false }; delete next.close; return next; };
-  if (active) return state.pending ? { action: 'apply', state: settle() } : { action: 'none', state };
-  const cleared = settle();
-  if (!cleared.dirty || (cleared.prompted_at !== undefined && now - cleared.prompted_at < PROMPT_INTERVAL_MS)) return { action: 'none', state: cleared };
-  return { action: 'prompt', state: { dirty: false, pending: true, prompted_at: now } };
+const expired = (state: SessionState, turn?: string) => state.pending && !state.asked && (!state.offered || (turn !== undefined && state.turn !== undefined && state.turn !== turn));
+/**
+ * A file edit of this session in `scope`. The first edit of a turn gets the contract; later edits of the turn are covered
+ * by it. An outstanding offer keeps its scope: an edit elsewhere makes the answer unusable, never redirects it. A
+ * sub-agent's edit is only recorded: an offer would reach the sub-agent, not the model that ends the turn.
+ */
+export function editDecision(state: SessionState, scope: string, subagent: boolean, turn?: string): { offer: boolean; state: SessionState } {
+  // A sub-agent runs its own turn (Codex gives it another turn_id) inside the parent's turn: it never expires an offer.
+  const current = !subagent && expired(state, turn) ? settled(state, false, false) : state;
+  if (current.pending) return { offer: false, state: current.scope && current.scope !== scope ? { ...current, scope: 'mixed' } : current };
+  const next: SessionState = { ...current, dirty: true, scope: current.dirty && current.scope && current.scope !== scope ? 'mixed' : scope };
+  if (subagent || next.scope === 'mixed') return { offer: false, state: next };
+  return { offer: true, state: { dirty: false, pending: true, offered: true, ...(turn ? { turn } : {}), scope, ...(state.prompted_at !== undefined ? { prompted_at: state.prompted_at } : {}) } };
+}
+
+export type StopDecision = { action: 'apply' | 'request' | 'none'; state: SessionState };
+/**
+ * `answered`: the final answer carries a save. Only an answer to Continuity's own outstanding offer or request is
+ * applied. A continuation stop (`stop_hook_active`) is never blocked, so Continuity cannot loop; an unanswered request
+ * expires. Without a save line, Stop asks once through a continuation, at most every PROMPT_INTERVAL_MS; a stale
+ * offer on a turn that made no edit of its own is never asked about.
+ */
+export function stopDecision(state: SessionState, active: boolean, answered: boolean, turn?: string, now = Date.now()): StopDecision {
+  if (state.pending && answered && (state.offered || state.asked)) return { action: 'apply', state: settled(state, false) };
+  if (active) return { action: 'none', state: state.asked ? settled(state, state.dirty) : state };
+  if (state.asked) return { action: 'none', state: settled(state, state.dirty) };
+  if (expired(state, turn)) return { action: 'none', state: settled(state, false, false) };
+  if (!state.pending && !state.dirty) return { action: 'none', state };
+  // Rate limited: these edits are dropped, scope included, so a kept `mixed` scope cannot block later offers.
+  if (state.prompted_at !== undefined && now - state.prompted_at < PROMPT_INTERVAL_MS) return { action: 'none', state: settled(state, false, false) };
+  return { action: 'request', state: { dirty: false, pending: true, asked: true, prompted_at: now, ...(state.scope ? { scope: state.scope } : {}), ...(state.close ? { close: state.close } : {}) } };
 }
 
 export type Outcome = { item: string; outcome: string };
 interface SaveReply { memories: unknown[]; handoff: unknown; close_handoff?: boolean }
-/** Only the last tagged block of the model's answer to the save request; anything else means "no save". */
+/** Lines inside fenced code (``` or ~~~, CommonMark rules) are quoted content, never the model's own save. */
+function unfenced(message: string) {
+  const kept: string[] = [];
+  let fence: string | undefined;
+  for (const line of message.split('\n')) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence) { if (marker && marker[0] === fence[0] && marker.length >= fence.length && !line.trim().slice(marker.length).trim()) fence = undefined; kept.push(''); }
+    else if (marker) { fence = marker; kept.push(''); }
+    else kept.push(line);
+  }
+  return kept.join('\n');
+}
+/**
+ * Only the last `[continuity-save]: <json>` line outside fenced code (the label is case-insensitive, like any CommonMark
+ * link label). Anything else means "no save".
+ */
 export function parseSaveReply(message: string): SaveReply | undefined {
-  const blocks = [...message.matchAll(new RegExp(`<${SAVE_TAG}>([\\s\\S]*?)</${SAVE_TAG}>`, 'g'))];
-  const body = blocks.at(-1)?.[1]?.trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+  const body = [...unfenced(message).matchAll(new RegExp(`^ {0,3}\\[${SAVE_LABEL}\\]:[ \\t]*<([^\\r\\n]*)>[ \\t]*\\r?$`, 'gim'))].at(-1)?.[1];
   if (body === undefined) return undefined;
   try {
     const value = JSON.parse(body) as Record<string, unknown>;
@@ -162,13 +227,14 @@ export function applySave(client: ProjectClient, provider: HookProviderName, ses
     const results = client.proposeAll(proposals.map(p => p.candidate));
     proposals.forEach((p, i) => {
       const result = results[i]!;
-      outcomes[p.at]!.outcome = result instanceof Error ? `failed: ${result.name !== 'ZodError' ? result.message.slice(0, 120) : 'invalid memory'}` : result.outcome;
+      // A malformed item is the model's mistake, not a failure the user can act on.
+      outcomes[p.at]!.outcome = result instanceof Error ? (result.name === 'ZodError' ? 'skipped: invalid memory' : `failed: ${result.message.slice(0, 120)}`) : result.outcome;
     });
   }
   if (reply.handoff && typeof reply.handoff === 'object') {
     const h = reply.handoff as Record<string, unknown>;
     const remaining = list(h.remaining), decisions = list(h.decisions), risks = list(h.risks);
-    const handoff = { from, task: { goal: text(h.goal), status: h.status }, completed: [], remaining: clip(remaining), decisions: clip(decisions), files_changed: [], risks: clip(risks), recommended_next_action: text(h.next ?? h.recommended_next_action) };
+    const handoff = { from, task: { goal: text(h.goal), status: h.status }, completed: [], remaining: clip(remaining), decisions: clip(decisions), files_changed: [], risks: clip(risks), recommended_next_action: text(h.next ?? h.recommended_next_action) || clip(remaining)[0] || '' };
     // Checked before clipping, so a cut cannot leave an undetectable fragment of a secret.
     const fields = [handoff.task.goal, handoff.recommended_next_action, ...remaining, ...decisions, ...risks];
     if (h.status !== 'in_progress' && h.status !== 'blocked') outcomes.push({ item: 'handoff', outcome: 'skipped: only unfinished work is handed off' });
@@ -176,7 +242,7 @@ export function applySave(client: ProjectClient, provider: HookProviderName, ses
     else if (fields.some(looksSensitive)) outcomes.push({ item: 'handoff', outcome: 'skipped: looks like a secret' });
     else {
       try { created = client.createHandoff(handoff).id; outcomes.push({ item: 'handoff', outcome: 'created' }); }
-      catch (error) { outcomes.push({ item: 'handoff', outcome: `failed: ${error instanceof Error && error.name !== 'ZodError' ? error.message.slice(0, 120) : 'invalid handoff'}` }); }
+      catch (error) { outcomes.push({ item: 'handoff', outcome: error instanceof Error && error.name !== 'ZodError' ? `failed: ${error.message.slice(0, 120)}` : 'skipped: invalid handoff' }); }
     }
   }
   // Only the open handoff the host named in its request can be closed; the model never supplies an id. A handoff created
@@ -187,18 +253,32 @@ export function applySave(client: ProjectClient, provider: HookProviderName, ses
     else if (reply.handoff && typeof reply.handoff === 'object' && !created) outcomes.push({ item: 'handoff close', outcome: 'skipped: the replacement handoff was not saved' });
     else {
       try { outcomes.push({ item: 'handoff close', outcome: client.closeHandoff({ id: offered, from, ...(created ? { replaced_by: created } : {}) }).outcome }); }
-      catch (error) { outcomes.push({ item: 'handoff close', outcome: `failed: ${error instanceof Error && error.name !== 'ZodError' ? error.message.slice(0, 120) : 'invalid close'}` }); }
+      catch (error) { outcomes.push({ item: 'handoff close', outcome: error instanceof Error && error.name !== 'ZodError' ? `failed: ${error.message.slice(0, 120)}` : 'skipped: invalid close' }); }
     }
   }
   return outcomes;
 }
-/** Silent on success; anything not saved as requested is reported in one line. */
+/**
+ * Silent unless something failed. Policy outcomes (rejected, quarantined, skipped) are normal and stay silent; conflicts
+ * surface in the next startup context and the Dashboard. A failure is one short line without item text.
+ */
 export function saveReport(outcomes: readonly Outcome[]) {
-  const notable = outcomes.filter(o => !['persisted', 'duplicate', 'superseded', 'created', 'closed', 'already_closed'].includes(o.outcome));
-  if (!notable.length) return undefined;
-  const saved = outcomes.length - notable.length;
-  return `Continuity autosave: ${saved} of ${outcomes.length} saved; ${notable.map(o => `${o.item}: ${o.outcome}`).join('; ')}.`.replace(/\s+/g, ' ').slice(0, 600);
+  const failed = outcomes.filter(o => o.outcome.startsWith('failed'));
+  if (!failed.length) return undefined;
+  return `Continuity: save incomplete — ${failed.length} of ${outcomes.length} not saved (${failureReason(failed[0]!.outcome.replace(/^failed:\s*/, ''))}).`;
+}
+/** A short reason for the one-line report; a busy database is the common case. */
+export function failureReason(message: string) {
+  return /database is locked|SQLITE_BUSY/i.test(message) ? 'database busy' : message.replace(/\s+/g, ' ').slice(0, 80);
+}
+/** PostToolUse output: the contract as additional context for the model (same shape for Claude Code and Codex). */
+export const saveOffer = (openHandoffGoal?: string) => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: saveContract(openHandoffGoal) } });
+/**
+ * The fallback continuation. Claude Code: Stop additionalContext, shown as hook feedback rather than a hook error.
+ * Codex has no Stop additionalContext and uses decision:block.
+ */
+export function stopRequest(provider: HookProviderName) {
+  return JSON.stringify(provider === 'claude' ? { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: SAVE_REQUEST } } : { decision: 'block', reason: SAVE_REQUEST });
 }
 /** Stop output shared by both providers (Codex requires JSON or nothing on stdout). */
-export const stopBlock = (openHandoffGoal?: string) => JSON.stringify({ decision: 'block', reason: saveInstruction(openHandoffGoal) });
 export const stopMessage = (message: string) => JSON.stringify({ systemMessage: message });

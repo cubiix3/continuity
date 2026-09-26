@@ -145,5 +145,5 @@ available. Do not keep rewording a claim to bypass quarantine. Do not turn every
 handoff, observation, test result or chat message into memory.
 
 There are no Claude/Codex/ORCA hooks in Core and no automatic transcript extraction. Provider
-[autosave](agent-lifecycle.md) asks the model itself for this decision at the end of an
-editing turn and submits its answer through the same policy.
+[autosave](agent-lifecycle.md) lets the model itself make this decision in an editing turn
+and submits its answer through the same policy.

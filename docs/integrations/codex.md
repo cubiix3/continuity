@@ -63,11 +63,19 @@ test run only). See [agent bootstrap](../agent-bootstrap.md).
 The same install adds the `PostToolUse` (`apply_patch`) and `Stop` hooks. Interactive
 `codex` saves by default; nothing needs to be set:
 
+- After an edit, the model ends its final answer with a `[continuity-save]: <…>` line.
+  Codex renders it as a Markdown link reference definition and does not display it, so
+  an edited turn looks like any other turn. Only if the line is missing does a
+  short `Blocked by hook` request follow (see [ADR 014](../adr/014-autosave-in-the-final-answer.md)).
 - Codex 0.157 runs interactive sessions in a shared app-server daemon, and their hooks
-  run there. `codex exec` runs its hooks in its own process. Continuity asks for a
+  run there. `codex exec` runs its hooks in its own process. Continuity offers a
   save only in the daemon, so scripted `codex exec` answers stay unchanged.
 - Code mode (`exec` tool) edits are reported to hooks as `apply_patch`. Sub-agent
   edits count toward the parent session, and only the parent is asked.
+- On Windows, Codex's daemon opens a console window for each command it starts,
+  including its own `git` calls and every hook command (observed with 0.157.1 when
+  Windows Terminal is the default terminal). This is Codex behaviour; each Continuity
+  hook call adds one such window.
 - `codex --no-daemon` looks exactly like `codex exec` to hooks and does not autosave
   unless started with `CONTINUITY_AUTOSAVE=1`.
 - The daemon keeps the environment of the launch that started it, for every session

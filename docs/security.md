@@ -97,10 +97,11 @@ remain below current sources and do not gain source-authoritative trust.
 ## Provider hooks and autosave
 
 Provider hooks read only structured hook fields. The `PostToolUse` hook reads the
-session id, cwd and whether a sub-agent made the edit (`agent_id`); it returns the
-fixed save contract as additional context. The `Stop` hook reads
-`last_assistant_message` only while Continuity's own offer or request is outstanding,
-and only its last save line (or legacy tagged block). Transcripts, transcript paths and tool
+session id, cwd, the turn id (`turn_id` or `prompt_id`, stored only as a hash) and
+whether a sub-agent made the edit (`agent_id`); it returns the fixed save contract as
+additional context. The `Stop` hook reads the same ids and `last_assistant_message`, the
+latter only while Continuity's own offer or request is outstanding,
+and only its last save line outside fenced code. Transcripts, transcript paths and tool
 payloads are never opened. Hook commands contain only absolute paths and fixed
 words, quoted literally for PowerShell and POSIX `sh`. Hooks never exit 2. They
 continue a turn only through the documented JSON output, never on a continuation

@@ -66,7 +66,7 @@ The same install adds the `PostToolUse` (`apply_patch`) and `Stop` hooks. Intera
 - After an edit, the model ends its final answer with a `[continuity-save]: <…>` line.
   Codex renders it as a Markdown link reference definition and does not display it, so
   an edited turn looks like any other turn. Only if the line is missing does a
-  one-line `Blocked by hook` request follow (see [ADR 014](../adr/014-autosave-in-the-final-answer.md)).
+  short `Blocked by hook` request follow (see [ADR 014](../adr/014-autosave-in-the-final-answer.md)).
 - Codex 0.157 runs interactive sessions in a shared app-server daemon, and their hooks
   run there. `codex exec` runs its hooks in its own process. Continuity offers a
   save only in the daemon, so scripted `codex exec` answers stay unchanged.

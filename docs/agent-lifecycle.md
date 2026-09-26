@@ -19,8 +19,8 @@ What the user sees after an edited turn:
 
 | Provider | Normal case | Fallback (save line missing) |
 | --- | --- | --- |
-| Codex 0.157 TUI | Only the normal answer: the save line is a Markdown link reference definition, which Codex does not display | `Blocked by hook` with a one-line reason, then nothing |
-| Claude Code 2.1.280 | The normal answer plus the save line as one raw line at its end | One `Stop hook feedback` line, then the save line |
+| Codex 0.157 TUI | Only the normal answer: the save line is a Markdown link reference definition, which Codex does not display | `Blocked by hook` with a three-line request, then nothing |
+| Claude Code 2.1.280 | The normal answer plus the save line as one raw line at its end | A three-line `Stop hook feedback` request, then the save line |
 
 Claude Code renders every assistant text, including link reference definitions and
 HTML comments, and its Stop `suppressOutput` does not hide the continuation. Its
@@ -67,7 +67,9 @@ A sub-agent's edit reaches `PostToolUse` with the parent's `session_id` (plus
 `agent_id`, in both providers), so it counts toward the parent session. It gets no
 offer, which would reach the sub-agent rather than the model that ends the turn. A
 sub-agent ends with `SubagentStop`, which Continuity does not install, so only the
-parent is asked, through the fallback request with the full contract.
+parent is asked: its own offer covers the turn, or the short fallback request follows.
+A Codex sub-agent runs under its own `turn_id` (traced with 0.157), so a sub-agent's edit
+never expires the parent's offer.
 
 Codex documents that the daemon shares the environment it started with across all
 of its sessions. A variable set when you launch `codex` reaches daemon-hosted hooks
@@ -122,18 +124,22 @@ The offer is gated:
   `Edit|Write|MultiEdit|NotebookEdit`; Codex reports edits as `apply_patch`, including
   `tools.apply_patch(…)` calls from code mode's `exec` tool, which Codex 0.157 reports
   under the nested tool's name);
-- once per turn: the first edit gets it, and later edits of the turn are covered by it;
+- once per turn: the first edit gets it, and later edits of the turn are covered by it.
+  The offer remembers a hash of the turn (Codex `turn_id`, Claude Code `prompt_id`). An
+  offer whose turn ended without a `Stop` (an interrupted turn) no longer counts: the
+  next edit is offered again, and a turn without edits of its own is never asked;
 - not for a sub-agent's edit, and not when edits span several projects or workspaces.
 
 `Stop` fires after every turn. It reads a save only if an offer or request is
 outstanding, and it applies the save only if the stop binds to the same project or
 workspace as the offer. The fallback request is gated further:
 
-- only when an offer went unanswered, or edits happened without an offer (a
-  sub-agent's);
+- only when the offered turn's own answer has no save line, or edits happened without
+  an offer (a sub-agent's);
 - only when the stop binds to the same project or workspace as the edits (a session that
   edited several, or moved elsewhere with `cd`, is not asked);
-- at most once per 15 minutes per session;
+- at most once per 15 minutes per session. Edits that fall into that window without a
+  save are dropped, rather than asked about on a later turn;
 - never on a stop that is already a continuation (`stop_hook_active`). Continuity can
   therefore not loop, and it never re-blocks another hook's continuation.
 
@@ -151,8 +157,8 @@ end its final answer with an empty line and then this line, and not to mention i
 
 CommonMark treats that line as a link reference definition, which is not displayed.
 It must follow an empty line; otherwise it is a paragraph line and shows. The JSON stays
-on the one line, with `<` and `>` inside strings written as `<` and `>`. The
-parser also accepts a line without those escapes, which then renders visibly.
+on the one line, with `<` and `>` inside strings written as `<` and `>`.
+The parser also accepts a line without those escapes, which then renders visibly.
 
 - `memories`: 0–3 durable, non-obvious lessons or decisions
   (`key`, `kind` of `decision|experience|memory`, one-sentence `text`, and
@@ -171,16 +177,24 @@ handoff stays open.
 An open handoff that looks sensitive is not offered.
 
 Only the last save line in the final answer of an offered turn, or in the answer to
-the fallback request, is read. A save line in any other answer is ignored. The
-`<continuity-save>{…}</continuity-save>` block of earlier releases is still accepted;
-if both appear, the last one wins.
+the fallback request, is read. A save line in any other answer is ignored, and so is
+one inside fenced code (quoted content, such as an example). The label is
+case-insensitive, as in CommonMark. The `<continuity-save>{…}</continuity-save>`
+block of earlier releases is no longer read; a request left outstanding by an earlier
+release expires silently.
 
-**Fallback request.** If the offered turn's final answer has no save line, `Stop` asks
-once: *"Continuity save check (automatic, once): reply with only the
-[continuity-save] line described earlier in this turn, and no tool calls."* After a
-sub-agent's edit, the model never saw the contract, so the request carries all of it
-(about 950 bytes, asking for a reply that is only the line). The answering stop
-applies the save.
+**Fallback request.** If the offered turn's final answer has no save line, or a
+sub-agent's edit was never offered, `Stop` asks once, in 396 bytes. The request
+carries its own template, because the model may never have seen the offer or may
+have lost it to compaction:
+
+```text
+Continuity save check (automatic, once): reply with only this line, filled in or left empty, and no tool calls:
+[continuity-save]: <{"memories":[],"handoff":null}>
+memories: 0-3 durable lessons or decisions a future agent must know, {"key":"area.topic","kind":"decision|experience|memory","text":"..."}; handoff: unfinished work {"goal":"...","status":"in_progress|blocked","next":"..."} or null.
+```
+
+The answering stop applies the save, with or without `stop_hook_active`.
 
 ## What the hook enforces
 
@@ -204,8 +218,10 @@ Before Core, the hook drops:
 - `rule`-kind memories (project rules come from project files);
 - `done` handoffs (a finished task is not a handoff);
 - more than five memories;
-- anything that looks like a secret, checked per raw field.
+- anything that looks like a secret, checked per raw field;
+- items the model malformed (an unknown `kind`, an invalid handoff status).
 
+A handoff without `next` uses its first `remaining` item as the next action.
 Handoffs never carry `completed` or `files_changed` from autosave.
 
 A close applies only to the handoff id the host recorded when it made the offer or
@@ -214,13 +230,14 @@ a quiet no-op.
 
 A save is silent, including an empty one. Policy outcomes are normal and also silent:
 a rejected, quarantined, duplicate or skipped item (a secret, a `rule`, a `done`
-handoff) is not reported. Conflicts appear in the next session start and in the
+handoff, a malformed item) is not reported, because the user cannot act on it. Conflicts appear in the next session start and in the
 Dashboard. Only a failure produces one `systemMessage` line, without item text and
 without a stack trace, for example:
 
 - `Continuity: save skipped — database busy.`
 - `Continuity: save incomplete — 1 of 2 not saved (database busy).`
-- `Continuity: save skipped — the session left the project where the files were edited.`
+- `Continuity: save skipped — the session moved to another project or workspace.`
+- `Continuity: save skipped — this turn edited more than one project or workspace.`
 
 ## Handoff closure
 
@@ -311,11 +328,12 @@ Autosave does not archive chats:
 
 Per session, the hook keeps one small file under `<continuity home>/hooks/autosave/`,
 named by a hash of provider and session id. It contains
-`{"dirty":…,"pending":…,"asked":…,"prompted_at":…,"scope":…,"close":…}` and nothing
+`{"dirty":…,"pending":…,"offered":…,"asked":…,"turn":…,"prompted_at":…,"scope":…,"close":…}` and nothing
 else:
 
-- `dirty`: edits not yet covered by an offer; `pending`: an offer or request is
-  outstanding; `asked`: it is a fallback request; `prompted_at`: the last request;
+- `dirty`: edits not yet covered by an offer; `pending`: an offer (`offered`) or a
+  fallback request (`asked`) is outstanding; `turn`: a hash of the turn id the offer
+  was made in; `prompted_at`: the last request;
 - `scope` is a hash of the project and workspace ids;
 - `close` is the id of the offered handoff while the offer or request is outstanding.
 

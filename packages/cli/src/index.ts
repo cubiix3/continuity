@@ -179,7 +179,7 @@ for (const provider of ['claude', 'codex'] as const) {
       const client = runtime().session(input.cwd);
       if (!client) return;
       const home = continuityHomePath(), state = readSessionState(home, provider, input.session);
-      const decision = editDecision(state, scopeOf(client), input.subagent);
+      const decision = editDecision(state, scopeOf(client), input.subagent, input.turn);
       if (!decision.offer) { if (JSON.stringify(decision.state) !== JSON.stringify(state)) writeSessionState(home, provider, input.session, decision.state); return; }
       // The latest open handoff in this scope may be closed by the answer; only its id is kept, never text.
       const open = client.activeHandoff(), goal = open ? offerableGoal(open) : undefined;
@@ -198,24 +198,21 @@ for (const provider of ['claude', 'codex'] as const) {
       const home = continuityHomePath(), state = readSessionState(home, provider, input.session);
       // Only the final answer is read, and only a save in it; without an outstanding offer it is ignored.
       const reply = state.pending ? parseSaveReply(input.message) : undefined;
-      const decision = stopDecision(state, input.active, reply !== undefined);
+      const decision = stopDecision(state, input.active, reply !== undefined, input.turn);
       const write = (next: typeof state) => { if (JSON.stringify(next) !== JSON.stringify(state)) writeSessionState(home, provider, input.session, next); };
       if (decision.action === 'none') { write(decision.state); return; }
       if (decision.action === 'request') {
         // Ask only where the edits happened: this stop must bind to the same project/workspace as the edits.
         const client = runtime().session(input.cwd);
         if (!client || scopeOf(client) !== state.scope) { write({ dirty: false, pending: false, ...(state.prompted_at !== undefined ? { prompted_at: state.prompted_at } : {}) }); return; }
-        let goal: string | undefined, close = decision.state.close;
-        if (!decision.offered) { const open = client.activeHandoff(); goal = open ? offerableGoal(open) : undefined; close = open && goal ? open.id : undefined; }
-        const next = { ...decision.state }; delete next.close;
-        write({ ...next, ...(close ? { close } : {}) });
-        process.stdout.write(stopRequest(provider, decision.offered, goal)); return;
+        write(decision.state);
+        process.stdout.write(stopRequest(provider)); return;
       }
       // Persist first: a crash or timeout below can never cause a second request or a loop.
       write(decision.state);
       applying = true;
       const client = runtime().session(input.cwd);
-      if (!client || scopeOf(client) !== state.scope) { process.stdout.write(stopMessage('Continuity: save skipped — the session left the project where the files were edited.')); return; }
+      if (!client || scopeOf(client) !== state.scope) { process.stdout.write(stopMessage(state.scope === 'mixed' ? 'Continuity: save skipped — this turn edited more than one project or workspace.' : 'Continuity: save skipped — the session moved to another project or workspace.')); return; }
       const report = saveReport(applySave(client, provider, input.session, reply!, state.close));
       if (report) process.stdout.write(stopMessage(report));
     } catch (error) {

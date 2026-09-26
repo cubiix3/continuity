@@ -38,15 +38,20 @@ can carry the save without a continuation.
   `[continuity-save]: <{json}>`. That is a CommonMark link reference definition:
   Codex does not display it; Claude Code shows it as one raw line.
 - **Apply at the turn's own stop.** `Stop` reads `last_assistant_message` only while an
-  offer or request is outstanding, applies the last save line (or legacy tagged block)
-  through the same Core calls, and is silent.
+  offer or request is outstanding, applies the last save line outside fenced code through
+  the same Core calls, and is silent. The earlier tagged block is no longer read.
 - **Fallback.** If the offered turn has no save line, or edits happened without an
   offer, `Stop` asks once through a continuation. Claude Code gets Stop
-  `additionalContext`, Codex gets `decision: block`. After an offer, the request is a
-  one-line reminder; otherwise it carries the full contract. It is rate-limited to once
-  per 15 minutes, and it is never made on a continuation stop.
-- **Quiet reporting.** Policy outcomes (rejected, quarantined, duplicate, skipped) are
-  silent. Only a failure produces one `systemMessage` line without item text, for
+  `additionalContext`, Codex gets `decision: block`. The request is three lines (396 bytes)
+  and carries its own template, so it also works when the model never saw the offer
+  (a sub-agent's edit) or lost it (compaction). It is rate-limited to once per 15
+  minutes; edits in that window are dropped rather than asked about later. It is never
+  made on a continuation stop.
+- **Turns.** An offer records a hash of the provider's turn id (Codex `turn_id`,
+  Claude Code `prompt_id`). An offer whose turn ended without a `Stop` (interrupted)
+  expires: the next edit is offered again, and a turn without edits is never asked.
+- **Quiet reporting.** Policy outcomes (rejected, quarantined, duplicate, skipped,
+  malformed) are silent. Only a failure produces one `systemMessage` line without item text, for
   example `Continuity: save skipped — database busy.`
 
 Unchanged: mode gating (attended Claude Code, daemon-hosted Codex), scope binding,
@@ -79,6 +84,9 @@ content-free session flags, no transcript access.
   line is displayed; it is still parsed.
 - A model that ignores the offer gets the visible fallback at most every 15 minutes;
   the edits in between are not asked about again.
+- Parallel edit hooks in one turn can each return the offer before the first writes
+  its state; the only cost is repeated context.
+- A request outstanding from an earlier release at upgrade time expires without a save.
 - Claude Code before 2.1.163 has no Stop `additionalContext`; there the fallback does
   nothing, while the offer path still works.
 - Headless runs are unaffected: no offer, no request, exact final answer.

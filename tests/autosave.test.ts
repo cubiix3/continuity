@@ -6,7 +6,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { openContinuity } from '../packages/sdk/src/index.js';
 import { renderBootstrap } from '../packages/core/src/index.js';
-import { PROMPT_INTERVAL_MS, SAVE_REMINDER, applySave, claudeHookTarget, codexHookTarget, editDecision, hookIntegrationStatus, installHookIntegration, parseSaveReply, removeHookIntegration, saveContract, saveReport, stopDecision } from '../packages/adapter-hooks/src/index.js';
+import { PROMPT_INTERVAL_MS, SAVE_REQUEST, applySave, claudeHookTarget, codexHookTarget, editDecision, hookIntegrationStatus, installHookIntegration, parseSaveReply, removeHookIntegration, saveContract, saveReport, stopDecision } from '../packages/adapter-hooks/src/index.js';
 
 // Every hook call is a real CLI process; Windows CI runners need more than vitest's 5 s default.
 vi.setConfig({ testTimeout: 60_000 });
@@ -37,9 +37,8 @@ const run = (provider: Provider, event: 'tool-use' | 'stop' | 'session-start', i
 };
 /** The final answer of an edited turn: the normal text, an empty line, then the save line (hidden by CommonMark renderers). */
 const save = (value: unknown) => `Done.\n\n[continuity-save]: <${JSON.stringify(value)}>`;
-const legacySave = (value: unknown) => `Done.\n<continuity-save>${JSON.stringify(value)}</continuity-save>`;
 const edit = (provider: Provider, id: string, cwd: string, env: Record<string, string | undefined> = {}) => run(provider, 'tool-use', { session_id: id, cwd, tool_name: provider === 'claude' ? 'Edit' : 'apply_patch', tool_input: { secret: 'never read' } }, env);
-const offer = (goal?: string) => ({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: saveContract('append', goal) } });
+const offer = (goal?: string) => ({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: saveContract(goal) } });
 /** One edited provider turn: the edit gets the contract, and the turn's final answer carries the save. No extra turn. */
 function session(provider: Provider, cwd: string, reply: string, id = `s-${Math.random().toString(36).slice(2)}`) {
   const changed = edit(provider, id, cwd);
@@ -57,52 +56,75 @@ const active = (path = a) => host.project(path).memories().filter(m => ['persist
 
 test('gating: the first edit of a turn is offered, the answer is applied at that stop, the fallback asks once and never loops', () => {
   const idle = { dirty: false, pending: false };
-  expect(editDecision(idle, 'x', false)).toEqual({ offer: true, state: { dirty: false, pending: true, scope: 'x' } });
+  const offered = { dirty: false, pending: true, offered: true, turn: 't1', scope: 'x' };
+  expect(editDecision(idle, 'x', false, 't1')).toEqual({ offer: true, state: offered });
   // Later edits of the turn are covered by the offer; an edit elsewhere makes the answer unusable.
-  const offered = { dirty: false, pending: true, scope: 'x' };
-  expect(editDecision(offered, 'x', false)).toEqual({ offer: false, state: offered });
-  expect(editDecision(offered, 'y', false)).toEqual({ offer: false, state: { ...offered, scope: 'mixed' } });
+  expect(editDecision(offered, 'x', false, 't1')).toEqual({ offer: false, state: offered });
+  expect(editDecision(offered, 'y', false, 't1')).toEqual({ offer: false, state: { ...offered, scope: 'mixed' } });
+  // Without turn ids (older providers) one offer covers edits until its Stop.
+  expect(editDecision({ dirty: false, pending: true, offered: true, scope: 'x' }, 'x', false)).toMatchObject({ offer: false });
   // A sub-agent's edit is recorded, not offered; edits in two scopes are never offered.
-  expect(editDecision(idle, 'x', true)).toEqual({ offer: false, state: { dirty: true, pending: false, scope: 'x' } });
+  expect(editDecision(idle, 'x', true, 't1')).toEqual({ offer: false, state: { dirty: true, pending: false, scope: 'x' } });
   expect(editDecision({ dirty: true, pending: false, scope: 'x' }, 'y', false)).toEqual({ offer: false, state: { dirty: true, pending: false, scope: 'mixed' } });
   expect(stopDecision(idle, false, false).action).toBe('none');
   expect(stopDecision(idle, true, true).action).toBe('none');
   // An answered offer is applied at the turn's own stop; an unsolicited save is never applied.
-  expect(stopDecision(offered, false, true)).toEqual({ action: 'apply', state: { dirty: false, pending: false, scope: 'x' } });
-  // The line is missing: one continuation request, rate limited, remembering that the contract was already given.
-  const request = stopDecision({ ...offered, close: 'handoff_1' }, false, false, 1000);
-  expect(request).toEqual({ action: 'request', offered: true, state: { dirty: false, pending: true, asked: true, prompted_at: 1000, scope: 'x', close: 'handoff_1' } });
-  expect(stopDecision({ dirty: true, pending: false, scope: 'x' }, false, false, 1000)).toMatchObject({ action: 'request', offered: false });
-  expect(stopDecision({ ...offered, prompted_at: 1000 }, false, false, 1000 + PROMPT_INTERVAL_MS - 1)).toEqual({ action: 'none', state: { dirty: false, pending: false, scope: 'x', prompted_at: 1000 } });
-  expect(stopDecision({ dirty: true, pending: false, prompted_at: 1000 }, false, false, 1000 + PROMPT_INTERVAL_MS).action).toBe('request');
+  expect(stopDecision(offered, false, true, 't1')).toEqual({ action: 'apply', state: { dirty: false, pending: false, scope: 'x' } });
+  // The line is missing: one continuation request, rate limited.
+  const request = stopDecision({ ...offered, close: 'handoff_1' }, false, false, 't1', 1000);
+  expect(request).toEqual({ action: 'request', state: { dirty: false, pending: true, asked: true, prompted_at: 1000, scope: 'x', close: 'handoff_1' } });
+  expect(stopDecision({ dirty: true, pending: false, scope: 'x' }, false, false, 't1', 1000).action).toBe('request');
+  expect(stopDecision({ ...offered, prompted_at: 1000 }, false, false, 't1', 1000 + PROMPT_INTERVAL_MS - 1)).toEqual({ action: 'none', state: { dirty: false, pending: false, prompted_at: 1000 } });
+  // Rate limited edits are dropped with their scope, so a kept `mixed` cannot block the next offers.
+  expect(stopDecision({ dirty: true, pending: false, scope: 'mixed', prompted_at: 1000 }, false, false, 't2', 2000)).toEqual({ action: 'none', state: { dirty: false, pending: false, prompted_at: 1000 } });
+  expect(stopDecision({ dirty: true, pending: false, prompted_at: 1000 }, false, false, 't1', 1000 + PROMPT_INTERVAL_MS).action).toBe('request');
   // A continuation stop never blocks again: it answers the request, or the request expires.
   expect(stopDecision(request.state, true, true)).toMatchObject({ action: 'apply', state: { pending: false } });
   expect(stopDecision(request.state, true, false)).toEqual({ action: 'none', state: { dirty: false, pending: false, prompted_at: 1000, scope: 'x' } });
   expect(stopDecision({ dirty: true, pending: false }, true, false).action).toBe('none');
   // A request whose continuation never came (interrupted) expires at the next ordinary stop.
-  expect(stopDecision(request.state, false, false, 2000)).toMatchObject({ action: 'none', state: { pending: false } });
+  expect(stopDecision(request.state, false, false, 't2', 2000)).toMatchObject({ action: 'none', state: { pending: false } });
+  // An answer to the request without stop_hook_active (as Claude Code may report it) is applied too.
+  expect(stopDecision(request.state, false, true, 't1', 2000).action).toBe('apply');
 });
 
-test('the contract is short and complete; only a save line or legacy block is parsed, the last one wins', () => {
-  for (const mode of ['append', 'reply'] as const) {
-    const text = saveContract(mode);
-    expect(Buffer.byteLength(text)).toBeLessThan(1100);
-    for (const phrase of ['[continuity-save]: <{"memories":[],"handoff":null}>', 'Empty is normal', 'unfinished', 'secrets', 'verbatim', '\\u003c']) expect(text).toContain(phrase);
-  }
-  expect(saveContract('append')).toContain('End your final answer with an empty line'); expect(saveContract('reply')).toContain('no tool calls');
-  expect(Buffer.byteLength(SAVE_REMINDER)).toBeLessThan(200);
+test('an interrupted turn: its offer expires silently, and the next edit is offered again', () => {
+  const stale = { dirty: false, pending: true, offered: true, turn: 't1', scope: 'x' };
+  // A read-only next turn: no request on a turn that made no edit; the old edits wait for the next offer.
+  expect(stopDecision(stale, false, false, 't2', 1000)).toEqual({ action: 'none', state: { dirty: true, pending: false, scope: 'x' } });
+  // An edit in the next turn gets a fresh offer.
+  expect(editDecision(stale, 'x', false, 't2')).toEqual({ offer: true, state: { dirty: false, pending: true, offered: true, turn: 't2', scope: 'x' } });
+  // A request pending from an earlier release was never an offer: it expires the same way.
+  expect(stopDecision({ dirty: false, pending: true, prompted_at: 5, scope: 'x' }, false, false, 't2', 1000)).toEqual({ action: 'none', state: { dirty: true, pending: false, scope: 'x', prompted_at: 5 } });
+  expect(stopDecision({ dirty: false, pending: true, prompted_at: 5, scope: 'x' }, true, true).action).toBe('none');
+});
+
+test('the offer is complete, the fallback request is short and self-contained; only an unfenced save line is parsed', () => {
+  const text = saveContract();
+  expect(Buffer.byteLength(text)).toBeLessThan(1100);
+  for (const phrase of ['[continuity-save]: <{"memories":[],"handoff":null}>', 'End your final answer with an empty line', 'Empty is normal', 'unfinished', 'secrets', 'verbatim', '\\u003c']) expect(text).toContain(phrase);
+  // Shown to the user only as a fallback: short, and it carries the template for a model that never saw the offer.
+  expect(Buffer.byteLength(SAVE_REQUEST)).toBeLessThan(400);
+  for (const phrase of ['[continuity-save]: <{"memories":[],"handoff":null}>', 'no tool calls', 'left empty']) expect(SAVE_REQUEST).toContain(phrase);
   expect(parseSaveReply('I learned that the parser rejects tabs.')).toBeUndefined();
   expect(parseSaveReply('Done.\n\n[continuity-save]: <{not json>')).toBeUndefined();
-  expect(parseSaveReply('<continuity-save>{not json</continuity-save>')).toBeUndefined();
   expect(parseSaveReply('Done.\r\n\r\n[continuity-save]: <{"memories":[],"handoff":null}>\r\n')).toEqual({ memories: [], handoff: null });
   // Escaped and unescaped angle brackets inside strings both parse; only the rendering differs.
   expect(parseSaveReply('x\n\n[continuity-save]: <{"memories":[{"key":"a.b","kind":"memory","text":"Use \\u003cT\\u003e generics."}]}>')?.memories).toEqual([{ key: 'a.b', kind: 'memory', text: 'Use <T> generics.' }]);
   expect(parseSaveReply('x\n\n   [continuity-save]: <{"memories":[{"key":"a.b","kind":"memory","text":"a > b"}]}>')?.memories).toHaveLength(1);
-  // Indented code (four spaces) is not a definition.
+  // CommonMark labels are case-insensitive; U+2028 inside a JSON string stays on the line.
+  expect(parseSaveReply('x\n\n[Continuity-Save]: <{"memories":[]}>')).toEqual({ memories: [], handoff: null });
+  expect(parseSaveReply('x\n\n[continuity-save]: <{"memories":[{"key":"a.b","kind":"memory","text":"one two"}]}>')?.memories).toHaveLength(1);
+  // Indented code (four spaces) and fenced code are quoted content, never the model's own save.
   expect(parseSaveReply('x\n\n    [continuity-save]: <{"memories":[]}>')).toBeUndefined();
-  expect(parseSaveReply('<continuity-save>{"memories":[{"key":"old"}]}</continuity-save>\n\n[continuity-save]: <{"memories":[]}>')).toEqual({ memories: [], handoff: null });
-  expect(parseSaveReply('[continuity-save]: <{"memories":[{"key":"old"}]}>\n<continuity-save>{"memories":[]}</continuity-save>')).toEqual({ memories: [], handoff: null });
-  expect(parseSaveReply('<continuity-save>\n```json\n{"memories":[],"handoff":null}\n```\n</continuity-save>')).toEqual({ memories: [], handoff: null });
+  const fenced = '[continuity-save]: <{"memories":[{"key":"doc.example","kind":"memory","text":"An example from the docs."}],"close_handoff":true}>';
+  expect(parseSaveReply(`Here is the format:\n\n\`\`\`text\n${fenced}\n\`\`\`\n`)).toBeUndefined();
+  expect(parseSaveReply(`~~~~\n${fenced}\n~~~\nstill fenced\n~~~~\n`)).toBeUndefined();
+  expect(parseSaveReply(`\`\`\`\n${fenced}\n\`\`\`\n\n[continuity-save]: <{"memories":[]}>`)).toEqual({ memories: [], handoff: null });
+  // The earlier tagged block is no longer read.
+  expect(parseSaveReply('<continuity-save>{"memories":[]}</continuity-save>')).toBeUndefined();
+  // The last line wins.
+  expect(parseSaveReply('[continuity-save]: <{"memories":[{"key":"old"}]}>\n\n[continuity-save]: <{"memories":[]}>')).toEqual({ memories: [], handoff: null });
 });
 
 test('completed task: one attributed lesson, no handoff, no extra turn, silent success, exit 0 throughout', () => {
@@ -147,7 +169,7 @@ test.each(['claude', 'codex'] as const)('%s fallback: a missing save line gets o
   expect(edit(provider, 'late', a, env).stdout).toContain('additionalContext');
   const request = run(provider, 'stop', { session_id: 'late', cwd: a, stop_hook_active: false, last_assistant_message: 'Fixed the loader.' }, env);
   // Claude Code shows Stop additionalContext as hook feedback, not as a hook error; Codex only has decision:block.
-  expect(JSON.parse(request.stdout)).toEqual(provider === 'claude' ? { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: SAVE_REMINDER } } : { decision: 'block', reason: SAVE_REMINDER });
+  expect(JSON.parse(request.stdout)).toEqual(provider === 'claude' ? { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: SAVE_REQUEST } } : { decision: 'block', reason: SAVE_REQUEST });
   const answer = run(provider, 'stop', { session_id: 'late', cwd: a, stop_hook_active: true, last_assistant_message: `[continuity-save]: <${JSON.stringify({ memories: [{ key: 'loader.late', kind: 'experience', text: 'The loader resolves locales lazily on first use.' }] })}>` }, env);
   expect(answer).toMatchObject({ status: 0, stdout: '' });
   expect(active().map(m => m.key)).toEqual(['loader.late']);
@@ -159,11 +181,32 @@ test.each(['claude', 'codex'] as const)('%s fallback: a missing save line gets o
   expect(run(provider, 'stop', { session_id: 'late2', cwd: a, stop_hook_active: false }, env).stdout).not.toBe('');
   expect(run(provider, 'stop', { session_id: 'late2', cwd: a, stop_hook_active: true, last_assistant_message: 'I have nothing to add.' }, env).stdout).toBe('');
   expect(run(provider, 'stop', { session_id: 'late2', cwd: a, stop_hook_active: false }, env).stdout).toBe('');
+  // The answer arriving on a stop without stop_hook_active is still the answer to the request.
+  edit(provider, 'late3', a, env);
+  expect(run(provider, 'stop', { session_id: 'late3', cwd: a, stop_hook_active: false }, env).stdout).not.toBe('');
+  expect(run(provider, 'stop', { session_id: 'late3', cwd: a, stop_hook_active: false, last_assistant_message: `[continuity-save]: <${JSON.stringify({ memories: [{ key: 'loader.late3', kind: 'experience', text: 'Locale fallbacks resolve to en_US.' }] })}>` }, env).stdout).toBe('');
+  expect(active().map(m => m.key).sort()).toEqual(['loader.late', 'loader.late3']);
 });
 
-test('an answer in the earlier tagged form is still applied', () => {
-  const { answer } = session('codex', a, legacySave({ memories: [{ key: 'legacy.form', kind: 'decision', text: 'Locale keys use dotted lower-case names.' }] }));
-  expect(answer.stdout).toBe(''); expect(active().map(m => m.key)).toEqual(['legacy.form']);
+test.each(['claude', 'codex'] as const)('%s interrupted turn: the next read-only turn stays silent, the next edited turn is offered again', provider => {
+  const env = provider === 'claude' ? { CONTINUITY_AUTOSAVE: undefined, CLAUDE_CODE_SESSION_ATTENDED: '1' } : CODEX_TUI;
+  const id = `${provider}-interrupted`, turnField = provider === 'claude' ? 'prompt_id' : 'turn_id';
+  const editIn = (turn: string) => run(provider, 'tool-use', { session_id: id, cwd: a, [turnField]: turn }, env);
+  expect(editIn('turn-1').stdout).toContain('additionalContext');
+  // Turn 1 is interrupted: its Stop never runs. Turn 2 only reads.
+  expect(run(provider, 'stop', { session_id: id, cwd: a, stop_hook_active: false, [turnField]: 'turn-2', last_assistant_message: 'The loader lives in src/locale.' }, env).stdout).toBe('');
+  // Turn 3 edits again and gets the contract again; its save covers the earlier edits too.
+  expect(editIn('turn-3').stdout).toContain('additionalContext');
+  expect(run(provider, 'stop', { session_id: id, cwd: a, stop_hook_active: false, [turnField]: 'turn-3', last_assistant_message: save({ memories: [{ key: 'loader.location', kind: 'memory', text: 'The locale loader lives in src/locale and owns file parsing.' }] }) }, env).stdout).toBe('');
+  expect(active().map(m => m.key)).toEqual(['loader.location']);
+});
+
+test('model mistakes stay silent; a handoff without a next action uses its first remaining item', () => {
+  const invalid = session('claude', a, save({ memories: [{ key: 'bad.kind', kind: 'opinion', text: 'Not a valid memory kind at all.' }], handoff: { goal: 'Half done', status: 'maybe', next: 'x' } }));
+  expect(invalid.answer.stdout).toBe('');
+  expect(applySave(host.session(a)!, 'claude', 's', { memories: [{ key: 'bad.kind', kind: 'opinion', text: 'Not a valid memory kind at all.' }], handoff: null })).toEqual([{ item: 'memory bad.kind', outcome: 'skipped: invalid memory' }]);
+  session('codex', a, save({ handoff: { goal: 'Convert fr_FR', status: 'in_progress', remaining: ['Convert fr_FR plural rules.'] } }));
+  expect(host.project(a).latestHandoff()).toMatchObject({ task: { goal: 'Convert fr_FR' }, recommended_next_action: 'Convert fr_FR plural rules.' });
 });
 
 test('unfinished work: the handoff is shown by the next session start', () => {
@@ -292,7 +335,7 @@ test('roundtrip: Claude session A saves, Codex session B loads; B hands off, Cla
   expect(c).toContain('Codex · in progress'); expect(c).toContain('Validate every locale file'); expect(c).toContain('Locale files must not contain blank lines');
   // Flags only: the per-session state holds no content and disappears once answered.
   const states = existsSync(join(home, 'hooks', 'autosave')) ? readdirSync(join(home, 'hooks', 'autosave')) : [];
-  for (const file of states) expect(readFileSync(join(home, 'hooks', 'autosave', file), 'utf8')).toMatch(/^\{"dirty":(true|false),"pending":(true|false)(,"asked":true)?(,"prompted_at":\d+)?(,"scope":"([0-9a-f]{24}|mixed)")?\}$/);
+  for (const file of states) expect(readFileSync(join(home, 'hooks', 'autosave', file), 'utf8')).toMatch(/^\{"dirty":(true|false),"pending":(true|false)(,"offered":true)?(,"asked":true)?(,"turn":"[0-9a-f]{16}")?(,"prompted_at":\d+)?(,"scope":"([0-9a-f]{24}|mixed)")?\}$/);
 });
 
 /** Runs a hook while another connection holds the database's write lock. */
@@ -381,7 +424,7 @@ test('a save cannot follow the agent into another project, workspace or nested c
   // Offered in Alpha, answered from Beta: one line, nothing saved.
   expect(edit('claude', 'moved2', a).stdout).not.toBe('');
   const answer = run('claude', 'stop', { session_id: 'moved2', cwd: b, stop_hook_active: false, last_assistant_message: reply });
-  expect(JSON.parse(answer.stdout)).toEqual({ systemMessage: 'Continuity: save skipped — the session left the project where the files were edited.' });
+  expect(JSON.parse(answer.stdout)).toEqual({ systemMessage: 'Continuity: save skipped — the session moved to another project or workspace.' });
   // The same through the fallback request.
   edit('claude', 'moved3', a);
   expect(run('claude', 'stop', { session_id: 'moved3', cwd: a, stop_hook_active: false }).stdout).toContain('additionalContext');
@@ -417,7 +460,7 @@ test('a linked autosave state directory is never written or cleaned', (context) 
 test('an edit elsewhere during the save turn cannot redirect the outstanding offer or request', () => {
   const learned = save({ memories: [{ key: 'm2b.key', kind: 'experience', text: 'Learned in Alpha, must never land in Beta.' }] });
   edit('claude', 'redirect', a); edit('claude', 'redirect', b);
-  expect(JSON.parse(run('claude', 'stop', { session_id: 'redirect', cwd: b, stop_hook_active: false, last_assistant_message: learned }).stdout).systemMessage).toMatch(/save skipped/);
+  expect(JSON.parse(run('claude', 'stop', { session_id: 'redirect', cwd: b, stop_hook_active: false, last_assistant_message: learned }).stdout)).toEqual({ systemMessage: 'Continuity: save skipped — this turn edited more than one project or workspace.' });
   edit('claude', 'redirect2', a);
   expect(run('claude', 'stop', { session_id: 'redirect2', cwd: a, stop_hook_active: false }).stdout).toContain('additionalContext');
   edit('claude', 'redirect2', b);
@@ -516,8 +559,14 @@ test('sub-agents: their edits arrive under the parent session, get no offer, and
   expect(codexHookTarget(process.execPath, cli, home).entries.map(e => e.event)).toEqual(['SessionStart', 'PostToolUse', 'Stop']);
   const request = run('codex', 'stop', { session_id: 'parent', cwd: a, turn_id: 'parent-turn', stop_hook_active: false, last_assistant_message: 'The sub-agent added the function.' }, CODEX_TUI);
   // The parent never saw the contract, so the request carries all of it.
-  expect(JSON.parse(request.stdout)).toEqual({ decision: 'block', reason: saveContract('reply') });
+  expect(JSON.parse(request.stdout)).toEqual({ decision: 'block', reason: SAVE_REQUEST });
   expect(run('claude', 'tool-use', { session_id: 'claude-parent', cwd: a, tool_name: 'Write', agent_id: 'a1b2', agent_type: 'general-purpose' }).stdout).toBe('');
+  // Traced with Codex 0.157: a sub-agent runs its own turn_id inside the parent's turn. Its edits must not expire the
+  // parent's outstanding offer, whose save line then arrives with the parent's Stop.
+  expect(run('codex', 'tool-use', { ...codexEdit('parent2', a), turn_id: 'parent-turn' }, CODEX_TUI).stdout).toContain('additionalContext');
+  expect(run('codex', 'tool-use', { ...codexEdit('parent2', a), agent_id: 'agent-2', agent_type: 'default', turn_id: 'sub-turn' }, CODEX_TUI).stdout).toBe('');
+  expect(run('codex', 'stop', { session_id: 'parent2', cwd: a, turn_id: 'parent-turn', stop_hook_active: false, last_assistant_message: save({ memories: [{ key: 'sub.lesson', kind: 'experience', text: 'The sub-agent found that locale keys are case-sensitive.' }] }) }, CODEX_TUI).stdout).toBe('');
+  expect(active().map(m => m.key)).toContain('sub.lesson');
 });
 
 test('session flags stay content-free and abandoned ones are removed after a week', () => {
@@ -528,7 +577,7 @@ test('session flags stay content-free and abandoned ones are removed after a wee
   const files = readdirSync(dir);
   expect(files).toHaveLength(1); expect(existsSync(stale)).toBe(false);
   const flag = readFileSync(join(dir, files[0]!), 'utf8');
-  expect(flag).toMatch(/^\{"dirty":false,"pending":true,"scope":"[0-9a-f]{24}"\}$/);
+  expect(flag).toMatch(/^\{"dirty":false,"pending":true,"offered":true,"turn":"[0-9a-f]{16}","scope":"[0-9a-f]{24}"\}$/);
   for (const content of ['README.md', 'Begin Patch', 'fresh', 'Alpha']) expect(flag).not.toContain(content);
 });
 
@@ -582,7 +631,7 @@ test('a sensitive open handoff is neither offered for closure nor replaced by an
   // The full fallback request (after a sub-agent's edit) withholds it too.
   expect(run('claude', 'tool-use', { session_id: 'sens2', cwd: a, agent_id: 'sub-1' }).stdout).toBe('');
   const request = run('claude', 'stop', { session_id: 'sens2', cwd: a, stop_hook_active: false }).stdout;
-  expect(JSON.parse(request)).toEqual({ hookSpecificOutput: { hookEventName: 'Stop', additionalContext: saveContract('reply') } }); expect(request).not.toContain('abcd1234');
+  expect(JSON.parse(request)).toEqual({ hookSpecificOutput: { hookEventName: 'Stop', additionalContext: SAVE_REQUEST } }); expect(request).not.toContain('abcd1234');
   const start = renderBootstrap(host.bootstrap(a)!); expect(start).not.toContain('Older open work'); expect(start).not.toContain('Rotate keys');
 });
 

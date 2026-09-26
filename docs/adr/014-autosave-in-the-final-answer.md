@@ -49,7 +49,8 @@ can carry the save without a continuation.
   made on a continuation stop.
 - **Turns.** An offer records a hash of the provider's turn id (Codex `turn_id`,
   Claude Code `prompt_id`). An offer whose turn ended without a `Stop` (interrupted)
-  expires: the next edit is offered again, and a turn without edits is never asked.
+  expires: the next edit is offered again (in any project), and a turn without edits is
+  never asked. If no edit follows, the interrupted turn's edits are not asked about.
 - **Quiet reporting.** Policy outcomes (rejected, quarantined, duplicate, skipped,
   malformed) are silent. Only a failure produces one `systemMessage` line without item text, for
   example `Continuity: save skipped — database busy.`

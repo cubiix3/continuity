@@ -90,12 +90,14 @@ test('gating: the first edit of a turn is offered, the answer is applied at that
 
 test('an interrupted turn: its offer expires silently, and the next edit is offered again', () => {
   const stale = { dirty: false, pending: true, offered: true, turn: 't1', scope: 'x' };
-  // A read-only next turn: no request on a turn that made no edit; the old edits wait for the next offer.
-  expect(stopDecision(stale, false, false, 't2', 1000)).toEqual({ action: 'none', state: { dirty: true, pending: false, scope: 'x' } });
-  // An edit in the next turn gets a fresh offer.
+  // A read-only next turn: no request on a turn that made no edit, then or later. The next edited turn's offer covers
+  // the session, so the interrupted turn's edits leave nothing behind (no scope that could turn a later edit `mixed`).
+  expect(stopDecision(stale, false, false, 't2', 1000)).toEqual({ action: 'none', state: { dirty: false, pending: false } });
+  // An edit in the next turn gets a fresh offer, in whatever project it happens.
   expect(editDecision(stale, 'x', false, 't2')).toEqual({ offer: true, state: { dirty: false, pending: true, offered: true, turn: 't2', scope: 'x' } });
-  // A request pending from an earlier release was never an offer: it expires the same way.
-  expect(stopDecision({ dirty: false, pending: true, prompted_at: 5, scope: 'x' }, false, false, 't2', 1000)).toEqual({ action: 'none', state: { dirty: true, pending: false, scope: 'x', prompted_at: 5 } });
+  expect(editDecision(stale, 'y', false, 't2')).toEqual({ offer: true, state: { dirty: false, pending: true, offered: true, turn: 't2', scope: 'y' } });
+  // A request pending from an earlier release was never an offer: it expires the same way, without a save.
+  expect(stopDecision({ dirty: false, pending: true, prompted_at: 5, scope: 'x' }, false, false, 't2', 1000)).toEqual({ action: 'none', state: { dirty: false, pending: false, prompted_at: 5 } });
   expect(stopDecision({ dirty: false, pending: true, prompted_at: 5, scope: 'x' }, true, true).action).toBe('none');
 });
 
@@ -199,6 +201,16 @@ test.each(['claude', 'codex'] as const)('%s interrupted turn: the next read-only
   expect(editIn('turn-3').stdout).toContain('additionalContext');
   expect(run(provider, 'stop', { session_id: id, cwd: a, stop_hook_active: false, [turnField]: 'turn-3', last_assistant_message: save({ memories: [{ key: 'loader.location', kind: 'memory', text: 'The locale loader lives in src/locale and owns file parsing.' }] }) }, env).stdout).toBe('');
   expect(active().map(m => m.key)).toEqual(['loader.location']);
+  // Interrupted, then two read-only turns: never asked.
+  const quiet = `${id}-quiet`;
+  expect(run(provider, 'tool-use', { session_id: quiet, cwd: a, [turnField]: 'q1' }, env).stdout).toContain('additionalContext');
+  for (const turn of ['q2', 'q3']) expect(run(provider, 'stop', { session_id: quiet, cwd: a, stop_hook_active: false, [turnField]: turn, last_assistant_message: 'Only a question.' }, env).stdout).toBe('');
+  // Interrupted in Alpha, then an edit in Beta: Beta gets its own offer and its save is stored.
+  const moved = `${id}-moved`;
+  expect(run(provider, 'tool-use', { session_id: moved, cwd: a, [turnField]: 'm1' }, env).stdout).toContain('additionalContext');
+  expect(run(provider, 'tool-use', { session_id: moved, cwd: b, [turnField]: 'm2' }, env).stdout).toContain('additionalContext');
+  expect(run(provider, 'stop', { session_id: moved, cwd: b, stop_hook_active: false, [turnField]: 'm2', last_assistant_message: save({ memories: [{ key: 'beta.invoices', kind: 'decision', text: 'Beta stores invoice totals in integer cents.' }] }) }, env).stdout).toBe('');
+  expect(active(b).map(m => m.key)).toEqual(['beta.invoices']); expect(active(a).map(m => m.key)).toEqual(['loader.location']);
 });
 
 test('model mistakes stay silent; a handoff without a next action uses its first remaining item', () => {

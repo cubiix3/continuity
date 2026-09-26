@@ -149,7 +149,7 @@ const expired = (state: SessionState, turn?: string) => state.pending && !state.
  */
 export function editDecision(state: SessionState, scope: string, subagent: boolean, turn?: string): { offer: boolean; state: SessionState } {
   // A sub-agent runs its own turn (Codex gives it another turn_id) inside the parent's turn: it never expires an offer.
-  const current = !subagent && expired(state, turn) ? settled(state, true) : state;
+  const current = !subagent && expired(state, turn) ? settled(state, false, false) : state;
   if (current.pending) return { offer: false, state: current.scope && current.scope !== scope ? { ...current, scope: 'mixed' } : current };
   const next: SessionState = { ...current, dirty: true, scope: current.dirty && current.scope && current.scope !== scope ? 'mixed' : scope };
   if (subagent || next.scope === 'mixed') return { offer: false, state: next };
@@ -167,7 +167,7 @@ export function stopDecision(state: SessionState, active: boolean, answered: boo
   if (state.pending && answered && (state.offered || state.asked)) return { action: 'apply', state: settled(state, false) };
   if (active) return { action: 'none', state: state.asked ? settled(state, state.dirty) : state };
   if (state.asked) return { action: 'none', state: settled(state, state.dirty) };
-  if (expired(state, turn)) return { action: 'none', state: settled(state, true) };
+  if (expired(state, turn)) return { action: 'none', state: settled(state, false, false) };
   if (!state.pending && !state.dirty) return { action: 'none', state };
   // Rate limited: these edits are dropped, scope included, so a kept `mixed` scope cannot block later offers.
   if (state.prompted_at !== undefined && now - state.prompted_at < PROMPT_INTERVAL_MS) return { action: 'none', state: settled(state, false, false) };
@@ -234,7 +234,7 @@ export function applySave(client: ProjectClient, provider: HookProviderName, ses
   if (reply.handoff && typeof reply.handoff === 'object') {
     const h = reply.handoff as Record<string, unknown>;
     const remaining = list(h.remaining), decisions = list(h.decisions), risks = list(h.risks);
-    const handoff = { from, task: { goal: text(h.goal), status: h.status }, completed: [], remaining: clip(remaining), decisions: clip(decisions), files_changed: [], risks: clip(risks), recommended_next_action: text(h.next ?? h.recommended_next_action) || remaining[0] || '' };
+    const handoff = { from, task: { goal: text(h.goal), status: h.status }, completed: [], remaining: clip(remaining), decisions: clip(decisions), files_changed: [], risks: clip(risks), recommended_next_action: text(h.next ?? h.recommended_next_action) || clip(remaining)[0] || '' };
     // Checked before clipping, so a cut cannot leave an undetectable fragment of a secret.
     const fields = [handoff.task.goal, handoff.recommended_next_action, ...remaining, ...decisions, ...risks];
     if (h.status !== 'in_progress' && h.status !== 'blocked') outcomes.push({ item: 'handoff', outcome: 'skipped: only unfinished work is handed off' });

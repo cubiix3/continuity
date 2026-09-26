@@ -127,7 +127,9 @@ The offer is gated:
 - once per turn: the first edit gets it, and later edits of the turn are covered by it.
   The offer remembers a hash of the turn (Codex `turn_id`, Claude Code `prompt_id`). An
   offer whose turn ended without a `Stop` (an interrupted turn) no longer counts: the
-  next edit is offered again, and a turn without edits of its own is never asked;
+  next edit is offered again, and a turn without edits of its own is never asked. The
+  next edited turn's save covers the session; if no edit follows, the interrupted
+  turn's edits are not asked about;
 - not for a sub-agent's edit, and not when edits span several projects or workspaces.
 
 `Stop` fires after every turn. It reads a save only if an offer or request is
@@ -157,7 +159,7 @@ end its final answer with an empty line and then this line, and not to mention i
 
 CommonMark treats that line as a link reference definition, which is not displayed.
 It must follow an empty line; otherwise it is a paragraph line and shows. The JSON stays
-on the one line, with `<` and `>` inside strings written as `<` and `>`.
+on the one line, with `<` and `>` inside strings written as `\u003c` and `\u003e`.
 The parser also accepts a line without those escapes, which then renders visibly.
 
 - `memories`: 0–3 durable, non-obvious lessons or decisions

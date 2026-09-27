@@ -18,12 +18,15 @@ export async function runtimeRequest(home: string, command = 'status') {
   try { return await exchange(ipcAddress(home, 'runtime'), { token, command }) as Record<string, unknown>; }
   catch (error) { if (['ECONNREFUSED', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '')) return { running: false }; throw error; }
 }
+/** A failed `runtime start`, with a fixed category for the persisted start record (never the message itself). */
+export type StartFailure = 'spawn_failed' | 'runtime_exited' | 'start_timeout';
+const startFailure = (error: Error, category: StartFailure) => Object.assign(error, { category });
 export async function startBackground(home: string, cli: string, port = 4783, autoSync = true) {
   home = continuityHome(home); const existing = await runtimeRequest(home); if (existing.running) return { ...existing, message: 'Continuity is already running.' };
   const child = spawn(process.execPath, [cli, '--home', home, 'runtime', 'run', '--port', String(port), ...(!autoSync ? ['--no-auto-sync'] : [])], { detached: true, windowsHide: true, stdio: 'ignore' });
   let failure: Error | undefined; child.on('error', error => { failure = error; }); child.unref();
-  for (let i = 0; i < 100; i++) { await delay(100); if (failure) throw failure; const status = await runtimeRequest(home); if (status.running) return status; if (child.exitCode !== null) break; }
-  throw new Error('Runtime did not start. Port may be occupied; inspect logs/runtime.log or run continuity runtime run.');
+  for (let i = 0; i < 100; i++) { await delay(100); if (failure) throw startFailure(failure, 'spawn_failed'); const status = await runtimeRequest(home); if (status.running) return status; if (child.exitCode !== null) break; }
+  throw startFailure(new Error('Runtime did not start. Port may be occupied; inspect logs/runtime.log or run continuity runtime run.'), child.exitCode !== null ? 'runtime_exited' : 'start_timeout');
 }
 export async function stopBackground(home: string) {
   const response = await runtimeRequest(home, 'stop');

@@ -22,6 +22,36 @@ No Windows service, password, execution-policy bypass, or elevated task is insta
 The runtime has no console window, and the Git processes it starts for workspace
 checks start hidden too, so syncing a worktree opens no window (#31).
 
+Sign-in opens no window either ([ADR 018](adr/018-headless-sign-in-startup.md)). The task
+runs `conhost.exe --headless` from the Windows system directory, which runs exactly
+`node.exe <cli> --home <home> runtime start --port <port>` in a console that has no window.
+This needs Windows 10 version 1809 (build 17763) or later. On older builds
+`startup install` refuses and installs nothing. It also refuses in two other cases:
+- **"Use legacy console" is on** (`HKCU\Console\ForceV2 = 0`), because the console host
+  then refuses to run headless and would start nothing;
+- **a Node, CLI or home path contains `%`**, because Windows would expand it.
+
+The task's one-minute limit now ends only the console host, so `runtime start` ends
+itself after 45 seconds at most.
+
+`continuity startup status` shows whether the last sign-in start worked. `startup_result`
+comes from a small record that each `runtime start` writes to `runtime-start.json` in the
+home. It holds the time, the outcome (`started`, `already_running`, `failed`), the exit
+code and, for a failure, a category, but never a message or path. `startup_result` shows
+only the task's last run:
+- an older record never stands in for it;
+- a run that left no record reads `no_result` (for example, a removed CLI);
+- after `startup install` replaces the task, its earlier runs no longer count, and the
+  result reads `not_run` until the next run;
+- a manual `runtime start` within a minute after a task run counts as that run's result.
+
+Task Scheduler's own "Last Run Result" is the console host's exit code, which is 0 even
+when the runtime failed; status shows it as `task.launcher_result`.
+
+After upgrading from a version whose task started `node.exe` directly, status reports
+`launcher: direct …` and `current_command: false`; run `continuity startup install` once to
+replace the task.
+
 ```powershell
 continuity runtime stop
 continuity startup remove

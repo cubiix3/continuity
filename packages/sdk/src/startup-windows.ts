@@ -38,19 +38,23 @@ export function startupRegistration(action: 'install' | 'status' | 'remove', hom
   // Fixed, versioned adapter logic; dynamic paths cross as JSON data, never PowerShell code.
   const script = `
 $ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('startup:entry')
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
 $service = New-Object -ComObject Schedule.Service
 $service.Connect()
+[Console]::Error.WriteLine('startup:connected')
 $folder = $service.GetFolder('\\')
 $task = $null
 try { $task = $folder.GetTask($p.name) } catch { if ($_.Exception.HResult -ne -2147024894) { throw } }
+[Console]::Error.WriteLine('startup:lookup')
 if ($task -and $task.Definition.RegistrationInfo.Description -ne $p.marker) { throw 'Startup name is owned by another registration.' }
 if ($p.action -eq 'remove') { if ($task) { $folder.DeleteTask($p.name, 0) }; @{ installed = $false; mechanism = 'Task Scheduler'; name = $p.name } | ConvertTo-Json -Compress; exit }
 # "Use legacy console" (ForceV2 = 0) makes the console host refuse --headless and start nothing.
 $legacy = $false
 # Like the console host, only a DWORD value of 0 counts; another type is ignored.
 if ($null -ne $p.legacy) { $legacy = [bool]$p.legacy } else { try { $v = (Get-ItemProperty -LiteralPath 'HKCU:\\Console' -Name ForceV2 -ErrorAction Stop).ForceV2; $legacy = ($v -is [int]) -and $v -eq 0 } catch { $legacy = $false } }
+[Console]::Error.WriteLine('startup:registry')
 if ($p.action -eq 'install') {
   if ($legacy) { @{ refused = 'legacy_console' } | ConvertTo-Json -Compress; exit }
   # The console host must be the one in the Windows system directory, however the environment names it.
@@ -91,7 +95,8 @@ $registered = $null; try { $registered = [DateTime]::Parse($task.Definition.Regi
   catch (error) {
     if (process.env.CI) {
       const failure = error as Error & { code?: string; status?: number; signal?: string; stderr?: Buffer };
-      console.error('Startup helper failure', { code: failure.code, status: failure.status, signal: failure.signal, stderr: failure.stderr?.toString('utf8').slice(0, 1000) });
+      const phases = failure.stderr?.toString('utf8').match(/startup:(?:entry|connected|lookup|registry)/g) ?? [];
+      console.error('Startup helper failure', { code: failure.code, status: failure.status, signal: failure.signal, phases });
     }
     // eslint-disable-next-line preserve-caught-error -- Temporary CI diagnosis; keep the public error stable.
     throw new Error('User startup registration failed. Check Task Scheduler permissions and the Continuity task; no elevation or alternate registration was attempted.');

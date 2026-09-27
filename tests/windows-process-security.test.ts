@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -26,6 +26,7 @@ test.skipIf(process.platform !== 'win32')('repository executables and poisoned p
     host = openContinuity(join(root, 'state'));
     host.init(project);
     host.workspace(project, workspace);
+    const canonicalWorkspace = realpathSync.native(workspace).toLowerCase();
 
     const source = `using System.IO; class Marker { public static int Main(string[] args) { File.WriteAllText(${JSON.stringify(marker)}, "executed"); return 0; } }`;
     const compile = `Add-Type -TypeDefinition ${quote(source)} -OutputType ConsoleApplication -OutputAssembly ${quote(program)}`;
@@ -47,15 +48,15 @@ test.skipIf(process.platform !== 'win32')('repository executables and poisoned p
     process.env.GIT_CONFIG_VALUE_0 = join(project, 'git.exe');
     process.env.GIT_CONFIG_GLOBAL = join(project, 'git.exe');
 
-    expect(verifyWorkspace(project, workspace).toLowerCase()).toBe(workspace.toLowerCase());
-    expect((await verifyWorkspaceAsync(project, workspace)).toLowerCase()).toBe(workspace.toLowerCase());
+    expect(verifyWorkspace(project, workspace).toLowerCase()).toBe(canonicalWorkspace);
+    expect((await verifyWorkspaceAsync(project, workspace)).toLowerCase()).toBe(canonicalWorkspace);
     expect((await host.doctor()).problems).toEqual([]);
     expect(startupRegistration('status', join(root, 'startup-home'), resolve('dist/packages/cli/src/index.js')).installed).toBe(false);
     expect(existsSync(marker)).toBe(false);
 
     rmSync(join(project, 'git.exe'));
-    expect(verifyWorkspace(project, workspace).toLowerCase()).toBe(workspace.toLowerCase());
-    expect((await verifyWorkspaceAsync(project, workspace)).toLowerCase()).toBe(workspace.toLowerCase());
+    expect(verifyWorkspace(project, workspace).toLowerCase()).toBe(canonicalWorkspace);
+    expect((await verifyWorkspaceAsync(project, workspace)).toLowerCase()).toBe(canonicalWorkspace);
     expect(existsSync(marker)).toBe(false);
 
     const fakeSystem = join(project, 'fake-system');
@@ -64,8 +65,8 @@ test.skipIf(process.platform !== 'win32')('repository executables and poisoned p
     copyFileSync(program, join(fakeSystem, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'));
     process.env.SystemRoot = fakeSystem;
     expect(windowsSystemDirectory()).toMatch(/\\Windows\\System32$/i);
-    expect(verifyWorkspace(project, workspace).toLowerCase()).toBe(workspace.toLowerCase());
-    expect((await verifyWorkspaceAsync(project, workspace)).toLowerCase()).toBe(workspace.toLowerCase());
+    expect(verifyWorkspace(project, workspace).toLowerCase()).toBe(canonicalWorkspace);
+    expect((await verifyWorkspaceAsync(project, workspace)).toLowerCase()).toBe(canonicalWorkspace);
     expect(() => startupRegistration('install', join(root, 'startup-home'), resolve('dist/packages/cli/src/index.js'))).toThrow();
     expect(existsSync(marker)).toBe(false);
   } finally {

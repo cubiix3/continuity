@@ -8,8 +8,8 @@ import { openContinuity } from '../packages/sdk/src/index.js';
 import { saveContract, scopeKey } from '../packages/adapter-hooks/src/index.js';
 import { FileSources } from '../packages/source-files/src/index.js';
 
-// Every hook call is a real CLI process; Windows CI runners need more than vitest's 5 s default.
-vi.setConfig({ testTimeout: 60_000 });
+// Real CLI calls and Git-backed setup can exceed Vitest's defaults on Windows CI.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 const cli = resolve('dist/packages/cli/src/index.js');
 let root: string, a: string, b: string, plain: string, home: string, host: ReturnType<typeof openContinuity>, ids: Record<'a' | 'b' | 'plain', string>;
 const git = (path: string, ...args: string[]) => execFileSync('git', ['-C', path, ...args], { stdio: 'pipe' });

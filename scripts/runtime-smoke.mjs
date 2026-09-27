@@ -25,9 +25,13 @@ try {
   if (process.platform === 'win32') {
     const installed = command('startup', 'install', '--port', String(port)); startupInstalled = true;
     assert(installed.installed); assert(command('startup', 'status', '--port', String(port)).current_command);
+    // The installed package's stable paths, run by the headless console host (no window at sign-in, #44).
+    assert.equal(installed.launcher, 'conhost --headless'); assert.match(installed.executable, /\\System32\\conhost\.exe$/i);
+    assert(installed.arguments.startsWith(`--headless "${process.execPath}" "`) && /continuity-local\\dist\\packages\\cli\\src\\index\.js" "--home" /.test(installed.arguments));
     execFileSync('schtasks.exe', ['/Run', '/TN', installed.name], { windowsHide: true, stdio: 'pipe' });
   } else command('runtime', 'start', '--port', String(port));
   await until(() => command('runtime', 'status').running);
+  if (process.platform === 'win32') await until(() => command('startup', 'status', '--port', String(port)).startup_result?.state === 'started');
   const status = command('runtime', 'status'); assert.equal(status.dashboard, `http://127.0.0.1:${port}`);
   if (process.platform === 'win32') {
     const bindings = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-NetTCPConnection -OwningProcess ${Number(status.pid)} -State Listen | Select-Object -ExpandProperty LocalAddress`], { encoding: 'utf8', windowsHide: true }).trim().split(/\r?\n/);

@@ -1,5 +1,8 @@
 # 008 — User background runtime and bounded source reconciliation
 
+Amended by [ADR 018](018-headless-sign-in-startup.md): the task action runs the same command through the headless
+console host, so sign-in opens no window.
+
 ## Decision
 
 Use a Windows Task Scheduler **current-user InteractiveToken / least-privilege**

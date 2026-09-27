@@ -1,17 +1,37 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { release } from 'node:os';
+import { win32 } from 'node:path';
 import { continuityHome } from './local-ipc.js';
+import { readStart, taskStartResult } from './start-record.js';
 
 /** Windows argv quoting, not shell interpolation. Task Scheduler launches the executable directly. */
 export function windowsArgument(value: string) { return '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"'; }
 export function startupName(home: string) { return `Continuity-${createHash('sha256').update(home).digest('hex').slice(0, 24)}`; }
-export function startupRegistration(action: 'install' | 'status' | 'remove', home: string, cli: string, port = 4783, autoSync = true) {
+/** `conhost.exe --headless`, the console host without a window that ConPTY uses, first shipped with Windows 10 1809. */
+export const HEADLESS_CONSOLE_BUILD = 17763;
+/**
+ * The sign-in task's action (#44). Node is a console program, so a task that starts it directly opens a console
+ * window at every sign-in. The console host started headless gives it a console without a window and runs exactly
+ * `node.exe <cli> --home <home> runtime start --port <port>`. No shell, script host or launcher of Continuity's own.
+ */
+export function startupAction(systemDirectory: string, node: string, cli: string, home: string, port: number, autoSync: boolean) {
+  const command = [node, cli, '--home', home, 'runtime', 'start', '--port', String(port), ...(!autoSync ? ['--no-auto-sync'] : [])];
+  return { executable: win32.join(systemDirectory, 'conhost.exe'), arguments: `--headless ${command.map(windowsArgument).join(' ')}` };
+}
+/** The Windows build from the kernel version string, which application compatibility settings do not change. */
+const windowsBuild = () => Number(release().split('.')[2]);
+export function startupRegistration(action: 'install' | 'status' | 'remove', home: string, cli: string, port = 4783, autoSync = true, platform = { build: windowsBuild(), systemRoot: process.env.SystemRoot }) {
   if (process.platform !== 'win32') throw new Error('Automatic startup installation is not implemented on this platform.');
   home = continuityHome(home);
   const name = startupName(home), marker = `Continuity user startup ${name}`;
-  const args = [cli, '--home', home, 'runtime', 'start', '--port', String(port), ...(!autoSync ? ['--no-auto-sync'] : [])].map(windowsArgument).join(' ');
-  const payload = Buffer.from(JSON.stringify({ action, name, marker, executable: process.execPath, args }), 'utf8').toString('base64');
+  const systemDirectory = platform.systemRoot ? win32.join(platform.systemRoot, 'System32') : '';
+  const supported = Number.isInteger(platform.build) && platform.build >= HEADLESS_CONSOLE_BUILD && !!systemDirectory && existsSync(win32.join(systemDirectory, 'conhost.exe'));
+  // No silent fallback to a task that opens a window: an older Windows gets no sign-in startup and says why.
+  if (action === 'install' && !supported) throw new Error('Sign-in startup needs Windows 10 version 1809 (build 17763) or later, whose console host can run without a window. Nothing was installed; run continuity runtime start instead.');
+  const expected = supported ? startupAction(systemDirectory, process.execPath, cli, home, port, autoSync) : { executable: '', arguments: '' };
+  const payload = Buffer.from(JSON.stringify({ action, name, marker, executable: expected.executable, args: expected.arguments }), 'utf8').toString('base64');
   // Fixed, versioned adapter logic; dynamic paths cross as JSON data, never PowerShell code.
   const script = `
 $ErrorActionPreference = 'Stop'
@@ -25,6 +45,8 @@ try { $task = $folder.GetTask($p.name) } catch { if ($_.Exception.HResult -ne -2
 if ($task -and $task.Definition.RegistrationInfo.Description -ne $p.marker) { throw 'Startup name is owned by another registration.' }
 if ($p.action -eq 'remove') { if ($task) { $folder.DeleteTask($p.name, 0) }; @{ installed = $false; mechanism = 'Task Scheduler'; name = $p.name } | ConvertTo-Json -Compress; exit }
 if ($p.action -eq 'install') {
+  # The console host must be the one in the Windows system directory, however the environment names it.
+  if (-not [string]::Equals($p.executable, (Join-Path ([Environment]::SystemDirectory) 'conhost.exe'), [StringComparison]::OrdinalIgnoreCase)) { throw 'Console host is not the Windows system copy.' }
   $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
   $definition = $service.NewTask(0)
   $definition.RegistrationInfo.Description = $p.marker
@@ -47,13 +69,36 @@ if ($p.action -eq 'install') {
 }
 if (!$task) { @{ installed = $false; mechanism = 'Task Scheduler'; name = $p.name } | ConvertTo-Json -Compress; exit }
 $entry = $task.Definition.Actions.Item(1)
-@{ installed = $true; mechanism = 'Task Scheduler'; name = $p.name; executable = $entry.Path; arguments = $entry.Arguments; current_command = ($entry.Path -eq $p.executable -and $entry.Arguments -eq $p.args); enabled = $task.Enabled } | ConvertTo-Json -Compress
+$principal = $task.Definition.Principal
+# Current only as exactly one action: this executable, exactly these arguments (case-sensitive), no working directory.
+$current = $task.Definition.Actions.Count -eq 1 -and $entry.Type -eq 0 -and $p.executable -ne '' -and [string]::Equals($entry.Path, $p.executable, [StringComparison]::OrdinalIgnoreCase) -and $entry.Arguments -ceq $p.args -and [string]::IsNullOrEmpty($entry.WorkingDirectory)
+$lastRun = $null; if ($task.LastRunTime.Year -ge 2000) { $lastRun = $task.LastRunTime.ToUniversalTime().ToString('o') }
+@{ installed = $true; mechanism = 'Task Scheduler'; name = $p.name; executable = $entry.Path; arguments = $entry.Arguments; current_command = $current; enabled = $task.Enabled; logon_type = $principal.LogonType; run_level = $principal.RunLevel; last_run = $lastRun; task_state = $task.State; launcher_result = $task.LastTaskResult } | ConvertTo-Json -Compress
 `;
   let output: string;
   try { output = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout: 20000, maxBuffer: 65536, stdio: ['ignore', 'pipe', 'pipe'] }); }
   catch { throw new Error('User startup registration failed. Check Task Scheduler permissions and the Continuity task; no elevation or alternate registration was attempted.'); }
-  const result = JSON.parse(output.trim()) as { installed: boolean; name: string; mechanism: string; executable?: string; arguments?: string; current_command?: boolean; enabled?: boolean };
+  const result = JSON.parse(output.trim()) as { installed: boolean; name: string; mechanism: string; executable?: string; arguments?: string; current_command?: boolean; enabled?: boolean; logon_type?: number; run_level?: number; last_run?: string | null; task_state?: number; launcher_result?: number };
   const installedArgs = typeof result.arguments === 'string' ? result.arguments : '';
   const installedPort = installedArgs.match(/"--port" "(\d+)"/)?.[1];
-  return { ...result, home, dashboard: installedPort ? `http://127.0.0.1:${installedPort}` : null, executable_available: !result.installed || (typeof result.executable === 'string' && existsSync(result.executable)), installed_cli_available: !result.installed || existsSync(installedArgs.match(/^"([^"]+)"/)?.[1] ?? ''), ...(action === 'install' ? { message: 'Continuity will start automatically after Windows sign-in. No browser is opened.' } : {}) };
+  // A headless task quotes Node and then the CLI; an older direct task quotes the CLI first.
+  const headless = /\\conhost\.exe$/i.test(result.executable ?? '') && installedArgs.startsWith('--headless ');
+  const tokens = [...installedArgs.matchAll(/"([^"]*)"/g)].map(m => m[1]!);
+  const node = headless ? tokens[0] : result.executable, installedCli = headless ? tokens[1] : tokens[0];
+  const { launcher_result: launcherResult, task_state: taskState, last_run: lastRun, ...task } = result;
+  return {
+    ...task, home, supported,
+    ...(result.installed ? {
+      launcher: headless ? 'conhost --headless' : 'direct (opens a console window; run startup install)',
+      dashboard: installedPort ? `http://127.0.0.1:${installedPort}` : null,
+      executable_available: typeof result.executable === 'string' && existsSync(result.executable) && typeof node === 'string' && existsSync(node),
+      installed_cli_available: existsSync(installedCli ?? ''),
+      // Task Scheduler reports the console host's exit code, which is 0 even when the runtime failed to start; the
+      // start record written by runtime start decides.
+      startup_result: taskStartResult(lastRun ?? null, taskState === 4, readStart(home)),
+      task: { state: taskState, last_run: lastRun ?? null, launcher_result: launcherResult },
+    } : { dashboard: null, executable_available: true, installed_cli_available: true }),
+    ...(!supported ? { unsupported: 'Sign-in startup needs Windows 10 version 1809 (build 17763) or later.' } : {}),
+    ...(action === 'install' ? { message: 'Continuity will start automatically after Windows sign-in, without a window. No browser is opened.' } : {}),
+  };
 }

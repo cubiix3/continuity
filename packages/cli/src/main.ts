@@ -106,9 +106,20 @@ const runtimeCommands = program.command('runtime').description('Control the opti
 for (const command of ['start', 'run'] as const) runtimeCommands.command(command).description(command === 'run' ? 'Run in the foreground (diagnostics)' : 'Start a hidden background process')
   .option('--port <port>', 'loopback dashboard port', '4783').option('--no-auto-sync', 'serve the dashboard without automatic source sync')
   .action(async (options: { port: string; autoSync: boolean }) => {
+    if (command === 'start') {
+      // Every start leaves an outcome record: Windows starts this from the sign-in task through a headless console
+      // host, whose exit code cannot show a failure (#44).
+      const home = backgroundHome(), { recordStart, startCategory } = await import('../../sdk/src/start-record.js');
+      try {
+        const port = Number(options.port); if (!Number.isInteger(port) || port < 0 || port > 65535) throw Object.assign(new Error('Port must be 0–65535.'), { category: 'invalid_arguments' });
+        const result = await (await background()).startBackground(home, cliPath, port, options.autoSync);
+        recordStart(home, 'message' in result ? 'already_running' : 'started');
+        output(result);
+      } catch (error) { recordStart(home, 'failed', startCategory(error)); throw error; }
+      return;
+    }
     const port = Number(options.port); if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Port must be 0–65535.');
-    if (command === 'start') output(await (await background()).startBackground(backgroundHome(), cliPath, port, options.autoSync));
-    else { await (await background()).runBackground(backgroundHome(), port, options.autoSync); persistent = true; }
+    await (await background()).runBackground(backgroundHome(), port, options.autoSync); persistent = true;
   });
 runtimeCommands.command('status').action(async () => output(await (await background()).runtimeRequest(backgroundHome())));
 runtimeCommands.command('stop').action(async () => output(await (await background()).stopBackground(backgroundHome())));

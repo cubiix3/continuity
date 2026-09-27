@@ -34,6 +34,7 @@ test('user startup runs the runtime through the headless console host, checks th
   const expected = startupAction(system, process.execPath, cli, canonical, port, false);
   type Status = { installed: boolean; current_command?: boolean; launcher?: string; startup_result?: { state: string } };
   const status = () => startupRegistration('status', home, cli, port, false) as Status;
+  let failure: unknown;
   try {
     // An older Windows gets an explicit refusal, never a task that opens a window; 17763 (1809) itself is supported.
     expect(() => startupRegistration('install', home, cli, port, false, { build: 17762, systemRoot: process.env.SystemRoot })).toThrow('1809');
@@ -108,6 +109,14 @@ test('user startup runs the runtime through the headless console host, checks th
     expect(startupRegistration('remove', home, cli).installed).toBe(false);
     expect(startupRegistration('remove', home, cli).installed).toBe(false);
     expect(startupRegistration('status', home, cli).installed).toBe(false);
-  } finally { await stopBackground(home); startupRegistration('remove', home, cli); rmSync(home, { recursive: true, force: true }); }
+  } catch (error) { failure = error; }
+  finally {
+    try { await stopBackground(home); }
+    catch (error) { if (failure === undefined) failure = error; }
+    try { startupRegistration('remove', home, cli); }
+    catch (error) { if (failure === undefined) failure = error; }
+    finally { rmSync(home, { recursive: true, force: true }); }
+  }
+  if (failure !== undefined) throw failure;
   // About thirty sequential PowerShell/COM calls; slow Windows runners need headroom.
 }, 240_000);

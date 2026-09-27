@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -32,7 +32,7 @@ test.skipIf(process.platform !== 'win32')('cold Git discovery leaves the event l
     const { windowsGitAsync } = await import('../packages/sdk/src/windows-process.js');
     let ticks = 0;
     const timer = setInterval(() => ticks++, 1);
-    try { expect(await windowsGitAsync()).toBe(join(root, 'cmd', 'git.exe')); }
+    try { expect(await windowsGitAsync()).toBe(realpathSync.native(join(root, 'cmd', 'git.exe'))); }
     finally { clearInterval(timer); }
     expect(ticks).toBeGreaterThan(0);
     expect(state.asyncCalls).toBe(1);

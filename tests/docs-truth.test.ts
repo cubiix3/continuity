@@ -29,6 +29,7 @@ it('keeps MCP tool counts and provider detail tools aligned with exports', () =>
   expect(count).toBeDefined();
   expect(read('docs/architecture.md')).toMatch(new RegExp('\\| `adapter-mcp` \\| ' + count + ' stdio MCP tools', 'i'));
   expect(read('README.md')).toMatch(new RegExp(`\\| MCP stdio \\| ${count} project-bound tools`, 'i'));
+  expect(read('docs/agent-bootstrap.md')).toMatch(new RegExp(`${count} project-bound tools`, 'i'));
   expect(help()).toMatch(new RegExp(`Serve ${count} project-bound MCP tools`, 'i'));
 
   const row = read('docs/agent-bootstrap.md').split(/\r?\n/)

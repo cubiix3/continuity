@@ -19,6 +19,8 @@ Installation schedules startup at the next sign-in. `runtime start` starts it no
 Open `http://127.0.0.1:4783` yourself; login never opens a browser. No administrator
 rights are requested. The task runs only in the installing user's logged-in session.
 No Windows service, password, execution-policy bypass, or elevated task is installed.
+The runtime has no console window, and the Git processes it starts for workspace
+checks start hidden too, so syncing a worktree opens no window (#31).
 
 ```powershell
 continuity runtime stop

@@ -35,6 +35,7 @@
   - **Privacy.** Only the changed paths and the duration are read, never the command or its output.
   - **Speed.** A read-only Bash call is answered in about 43 ms before the CLI loads, and other hook calls load less of it (about 124 ms instead of 190 ms).
   - **Upgrade.** Existing installs report `stale` until `integrate claude install` runs again. See ADR 017.
+- Hidden workspace Git checks on Windows (#31): the Git processes Continuity starts to verify a worktree now start with `windowsHide`. From a process without a console (the background runtime, or a detail server a daemon starts), each check used to open a visible console or Windows Terminal window, one per Git call; they open none now. Executable, arguments, `shell: false`, timeout, output limit, exit handling and results are unchanged. Windows that Codex's daemon opens for its own commands and hooks are Codex behaviour and remain.
 - Context no longer starves strongly relevant memories: after current rules, a memory whose text covers at least half of the meaningful task terms may use up to 25% of the byte budget ahead of lower-ranked source passages. Trust order holds inside that share (a related higher-trust memory is always offered it first). Presentation order is unchanged, and contexts without such a memory are identical.
 
 ## 0.1.0 — 2026-09-22

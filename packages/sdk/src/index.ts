@@ -257,7 +257,9 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       for (let dir = start; dir !== (workspace?.root ?? project.root); dir = dirname(dir)) if (dirname(dir) === dir || existsSync(join(dir, '.git'))) return undefined;
       if (!workspace) return new ProjectClient(storage, sourceFor(project), project, undefined, undefined, 'lexical');
       const source = sourceFor(project, workspace.root);
-      const workspaceSource = { scan: () => { verifyWorkspace(project.root, workspace.root); return source.scan({ ...project, root: workspace.root }); } };
+      // The bounded change check reads only metadata of an attachment already confirmed above; scans verify it with Git.
+      const workspaceSource = { scan: () => { verifyWorkspace(project.root, workspace.root); return source.scan({ ...project, root: workspace.root }); },
+        changedSince: (_: Project, indexed: readonly string[], since: number) => source.changedSince({ ...project, root: workspace.root }, indexed, since) };
       return new ProjectClient(boundStore(workspace.workspace_id), workspaceSource, project, undefined, undefined, 'lexical', workspace);
     },
     project: (path: string) => {

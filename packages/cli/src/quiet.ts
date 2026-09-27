@@ -6,7 +6,8 @@ import { insideGit, SHELL_TOOLS } from '../../adapter-hooks/src/shell.js';
  * Git tree whose own report lists no change is answered here, before the CLI loads, and so is any call in a session
  * where autosave is off (the hook would do nothing). Everything else continues in main.js, which takes the input read here.
  */
-const LIMIT = 1024 * 1024;
+/** Claude Code's shell report carries every hunk and the command's output, so the tool-use input may be large. */
+export const TOOL_USE_LIMIT = 16 * 1024 * 1024;
 let buffered: string | undefined, oversized = false;
 /** The hook input already read from stdin, if any. */
 export const readHookInput = () => ({ text: buffered, oversized });
@@ -14,16 +15,16 @@ export const readHookInput = () => ({ text: buffered, oversized });
 export async function quietToolUse(argv: readonly string[]): Promise<boolean> {
   const args = argv.slice(2);
   if (args.at(-3) !== 'integrate' || args.at(-2) !== 'claude' || args.at(-1) !== 'tool-use') return false;
+  // The input is always read to the end, even when oversized, so the provider never writes into a closed pipe.
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of process.stdin) {
     size += (chunk as Buffer).length;
-    // Oversized input is ignored by the hook anyway.
-    if (size > LIMIT) { oversized = true; return true; }
-    chunks.push(chunk as Buffer);
+    if (size <= TOOL_USE_LIMIT) chunks.push(chunk as Buffer);
   }
+  // Oversized input is ignored by the hook anyway.
+  if (size > TOOL_USE_LIMIT) { oversized = true; return true; }
   buffered = Buffer.concat(chunks).toString('utf8');
-  // The input is always read in full first, so the provider never writes into a closed pipe.
   if (!autosaveEnabled('claude')) return true;
   try {
     const input = JSON.parse(buffered) as { tool_name?: unknown; cwd?: unknown; tool_response?: { bashEditDiff?: { changedFiles?: unknown; moreFiles?: unknown } } };

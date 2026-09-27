@@ -126,14 +126,16 @@ The offer is gated:
     Codex 0.157 reports under the nested tool's name.
   - **Claude Code shell tools** (`Bash|PowerShell`), when the command changed project files ([ADR 017](adr/017-shell-made-edits.md)):
     - For **Bash** in a Git tree, Claude Code's own report of the changed paths decides. A call without one is read-only,
-      and the hook answers it before the CLI loads (about 37 ms).
+      and the hook answers it before the CLI loads (about 43 ms; bare Node takes 24 ms).
     - For **PowerShell**, or **Bash without Git**, the provider reports nothing. A bounded check finds indexed files
-      modified during the command, and new files beside them.
-    - Only paths inside a registered project count, minus dependencies, build output, VCS and Continuity state, and
-      secret-looking files.
-    - Paths in several projects make the edit `mixed`.
-    - When another session (Claude Code or Codex) edited the same workspace while the command ran, the report is
-      ambiguous and nothing is counted.
+      modified during the command, and new files beside them that the source scanner would index. It uses the
+      scanner's own rules (`.gitignore`, excluded names, extensions, source scope) and never follows a link.
+    - Only paths inside a registered project count, bound by their real folder, minus dependencies, build output, VCS
+      and Continuity state, and secret-looking files.
+    - A command that changed another project or workspace than the session's own makes the turn `mixed`, so nothing
+      is offered.
+    - When another session (Claude Code or Codex) edited the same workspace while the command ran, or up to 1.5 s
+      before it started, the report is ambiguous and nothing is counted.
 - once per turn: the first edit gets it, and later edits of the turn are covered by it.
   The offer remembers a hash of the turn (Codex `turn_id`, Claude Code `prompt_id`). An
   offer whose turn ended without a `Stop` (an interrupted turn) no longer counts: the
@@ -337,14 +339,14 @@ responsiveness wins over a longer wait. The `Stop` hook timeout is 60 seconds.
 Saving is best effort. A session interrupted with Ctrl+C, closed while the model is
 still answering, or crashed may end without a save.
 
-Edits made only through shell commands (for example `Move-Item`, `sed -i`) do not flag
-the session. Neither provider reports file mutations for shell commands: Claude Code's
-`FileChanged` watches named files only, and `PostToolUse` for `Bash` carries no
-modified-file field. Codex 0.157 reports shell commands, including those run from code
-mode, as `Bash` with no mutation data. Treating every shell command as an edit, parsing
-commands, running Git on every stop, or watching the project directory during a
-session was rejected. A watcher cannot tell whether an agent, an editor, a build or
-another session changed a file. This remains a follow-up.
+Claude Code shell edits are covered by [ADR 017](adr/017-shell-made-edits.md). Its
+`bashEditDiff` report and `duration_ms` field were verified with Claude Code 2.1.283 but
+are not documented by Anthropic. If they change, Bash edits in Git look read-only again.
+Codex shell edits outside `apply_patch` do not flag the session: Codex 0.157 reports
+shell commands, including those run from code mode, as `Bash` with no mutation data.
+Treating every shell command as an edit, parsing commands, running Git on every stop,
+or watching the project directory during a session was rejected. A watcher cannot tell
+whether an agent, an editor, a build or another session changed a file.
 
 ## Privacy and state
 

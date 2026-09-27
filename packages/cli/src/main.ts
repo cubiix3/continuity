@@ -9,11 +9,11 @@ import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/sr
 import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
 import type { ProjectClient } from '../../core/src/index.js';
 import { deniedPath } from '../../core/src/security/denied.js';
-import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSeen, readSessionState, recordEdit, editedByOthers, insideGit, observedChanges, DEFAULT_WINDOW_MS, WINDOW_MARGIN_MS, recordSeen, autosaveInstalled, removeHookIntegration, saveReport, sessionStartInput, sessionStartOutput, sessionStartUnavailable, mcpUsable, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
+import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSeen, readSessionState, recordEdit, editedByOthers, lastEdit, insideGit, DEFAULT_WINDOW_MS, MAX_CHANGED, WINDOW_MARGIN_MS, recordSeen, autosaveInstalled, removeHookIntegration, saveReport, sessionStartInput, sessionStartOutput, sessionStartUnavailable, mcpUsable, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
 import { GenericAdapter } from '../../adapter-generic/src/index.js';
 import type { ShellReport } from '../../adapter-hooks/src/index.js';
 import { continuityHome } from '../../sdk/src/local-ipc.js';
-import { readHookInput } from './quiet.js';
+import { readHookInput, TOOL_USE_LIMIT } from './quiet.js';
 
 // Servers, the MCP SDK and the runtime load only for the commands that use them, so provider hooks start fast (#34).
 const mcp = () => import('../../adapter-mcp/src/index.js');
@@ -156,44 +156,57 @@ async function hookStdin(limit: number) {
   const early = readHookInput();
   if (early.oversized) return undefined;
   if (early.text !== undefined) return Buffer.byteLength(early.text) > limit ? undefined : early.text;
+  // Read to the end even when oversized, so the provider never writes into a closed pipe.
   const chunks: Buffer[] = []; let size = 0;
-  for await (const chunk of process.stdin) { size += (chunk as Buffer).length; if (size > limit) return undefined; chunks.push(chunk as Buffer); }
-  return Buffer.concat(chunks).toString('utf8');
+  for await (const chunk of process.stdin) { size += (chunk as Buffer).length; if (size <= limit) chunks.push(chunk as Buffer); }
+  return size > limit ? undefined : Buffer.concat(chunks).toString('utf8');
 }
 const scopeOf = (client: { status(): { project_id: string; workspace?: { workspace_id: string } } }) => { const s = client.status(); return scopeKey(s.project_id, s.workspace?.workspace_id); };
 const hasStore = () => existsSync(join(continuityHomePath(), 'continuity.db'));
+/** A deleted file's folder may be gone too: the nearest existing ancestor, at most 32 levels up. */
+function existingAncestor(dir: string, known: Map<string, string | undefined>) {
+  const visited: string[] = [];
+  let found: string | undefined;
+  for (let current = dir, level = 0; level < 32; level++) {
+    if (known.has(current)) { found = known.get(current); break; }
+    visited.push(current);
+    if (existsSync(current)) { found = current; break; }
+    if (dirname(current) === current) break;
+    current = dirname(current);
+  }
+  for (const path of visited) known.set(path, found);
+  return found;
+}
 /**
- * The scope a shell call edited (#34), or undefined when it changed nothing Continuity can attribute to this session.
- * The provider's report (or, without one, the bounded check of indexed files) gives absolute paths. Each path is bound
- * like a session directory: outside every registered project, or a dependency, build output, VCS or Continuity file,
- * it does not count; several scopes are `mixed`. Another session's edit of the same scope during the command makes
- * the report ambiguous, and nothing is attributed.
+ * What a shell call edited (#34): the scope to offer in, and the scopes to journal for this session. The provider's
+ * report (or, without one, the source adapter's bounded check) gives absolute paths. Each is bound by its real folder
+ * like a session directory; outside every registered project, or a dependency, build output, VCS, Continuity or
+ * secret-looking file, it does not count. A scope another session edited during the command is ambiguous and not
+ * attributed. A call that edited another project or workspace than the session's own makes the turn `mixed`.
  */
-function shellScope(provider: 'claude' | 'codex', session: string, client: ProjectClient, shell: ShellReport, cwd: string, now: number) {
+function shellScope(provider: 'claude' | 'codex', session: string, client: ProjectClient, shell: ShellReport, cwd: string, now: number): { scope: string | undefined; touched: string[] } {
+  const home = continuityHomePath(), own = scopeOf(client);
   const since = now - (shell.duration ?? DEFAULT_WINDOW_MS) - WINDOW_MARGIN_MS;
   let files = shell.changed;
   if (!files.length) {
     // A truncated report without paths cannot be bound; Bash in a Git tree reports every change it saw.
-    if (shell.more > 0 || (shell.tool === 'Bash' && insideGit(cwd))) return undefined;
-    const indexed = client.sourceFiles();
-    files = observedChanges(indexed.root, indexed.paths, since);
+    if (shell.more > 0 || (shell.tool === 'Bash' && insideGit(cwd))) return { scope: undefined, touched: [] };
+    // Files this session's earlier edits changed were already counted then.
+    files = client.changedSources(Math.max(since, lastEdit(home, provider, session, own, now) + 1)).slice(0, MAX_CHANGED);
   }
-  const scopes = new Set<string>(), owners = new Map<string, ProjectClient | undefined>();
+  const scopes = new Set<string>(), ancestors = new Map<string, string | undefined>(), owners = new Map<string, { scope: string; root: string } | undefined>();
   for (const file of files) {
-    // A deleted file's directory may be gone too: bind from its nearest existing ancestor. Failures skip the file.
-    let dir = dirname(file);
-    while (!existsSync(dir) && dirname(dir) !== dir) dir = dirname(dir);
-    if (!owners.has(dir)) { if (owners.size >= 20) break; let owner: ProjectClient | undefined; try { owner = runtime().session(dir); } catch { owner = undefined; } owners.set(dir, owner); }
-    const owner = owners.get(dir);
-    if (!owner) continue;
-    const status = owner.status();
-    if (deniedPath(relative(status.workspace?.root ?? status.root, file))) continue;
-    scopes.add(scopeOf(owner));
+    try {
+      const dir = existingAncestor(dirname(file), ancestors);
+      if (!dir) continue;
+      const real = realpathSync.native(dir);
+      if (!owners.has(real)) { const status = runtime().session(real)?.status(); owners.set(real, status && { scope: scopeKey(status.project_id, status.workspace?.workspace_id), root: status.workspace?.root ?? status.root }); }
+      const owner = owners.get(real);
+      if (owner && !deniedPath(relative(owner.root, join(real, relative(dir, file))))) scopes.add(owner.scope);
+    } catch { /* An unbindable path does not count. */ }
   }
-  if (scopes.size > 1) return 'mixed';
-  const [scope] = scopes;
-  if (!scope || editedByOthers(continuityHomePath(), provider, session, scope, since)) return undefined;
-  return scope;
+  const touched = [...scopes].filter(scope => !editedByOthers(home, provider, session, scope, since, now));
+  return { scope: touched.some(scope => scope !== own) ? 'mixed' : touched.includes(own) ? own : undefined, touched };
 }
 for (const provider of ['claude', 'codex'] as const) {
   const name = provider === 'claude' ? 'Claude Code' : 'Codex';
@@ -246,14 +259,15 @@ for (const provider of ['claude', 'codex'] as const) {
   command.command('tool-use', { hidden: true }).action(async () => {
     process.exitCode = 0;
     try {
-      const input = toolUseInput(await hookStdin(1024 * 1024) ?? '');
+      const input = toolUseInput(await hookStdin(TOOL_USE_LIMIT) ?? '');
       if (!input || !autosaveEnabled(provider) || !hasStore()) return;
       const client = runtime().session(input.cwd);
       if (!client) return;
       const home = continuityHomePath(), now = Date.now();
-      const scope = input.shell ? shellScope(provider, input.session, client, input.shell, input.cwd, now) : scopeOf(client);
+      const shell = input.shell ? shellScope(provider, input.session, client, input.shell, input.cwd, now) : undefined;
+      const scope = shell ? shell.scope : scopeOf(client);
+      for (const edited of shell ? shell.touched : [scope!]) recordEdit(home, provider, input.session, edited, now);
       if (!scope) return;
-      recordEdit(home, provider, input.session, scope, now);
       const state = readSessionState(home, provider, input.session);
       const decision = editDecision(state, scope, input.subagent, input.turn);
       if (!decision.offer) { if (JSON.stringify(decision.state) !== JSON.stringify(state)) writeSessionState(home, provider, input.session, decision.state); return; }

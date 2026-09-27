@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path';
 import type { Correction, ProjectClient } from '../../core/src/index.js';
 import { looksSensitive } from '../../core/src/security/sensitive.js';
 import type { HookProviderName } from './index.js';
-import { MAX_CHANGED, SHELL_TOOLS } from './shell.js';
+import { MAX_CHANGED, SHELL_TOOLS, WINDOW_MARGIN_MS } from './shell.js';
 
 /**
  * Model-aware session autosave without an extra visible turn. After the first file edit of a turn, the PostToolUse hook
@@ -19,6 +19,8 @@ export const SAVE_LABEL = 'continuity-save';
 /** A continuation request (the fallback, which the user sees) at most this often per session. */
 export const PROMPT_INTERVAL_MS = 15 * 60 * 1000;
 const STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Edit journal entries matter only for a command's duration (Claude Code allows at most 10 minutes). */
+const EDIT_TTL_MS = 60 * 60 * 1000;
 const MAX_MEMORIES = 5;
 const MAX_LIST = 10;
 const MAX_ITEM = 500;
@@ -113,7 +115,7 @@ export function toolUseInput(stdin: string): { session: string; cwd: string; sub
 }
 function shellReport(tool: string, response: unknown, duration: unknown): ShellReport {
   const diff = response && typeof response === 'object' ? (response as { bashEditDiff?: unknown }).bashEditDiff as { changedFiles?: unknown; moreFiles?: unknown } | undefined : undefined;
-  const changed = Array.isArray(diff?.changedFiles) ? diff.changedFiles.filter((f): f is string => typeof f === 'string' && f.length > 0 && f.length < 4096 && isAbsolute(f)).slice(0, MAX_CHANGED) : [];
+  const changed = Array.isArray(diff?.changedFiles) ? diff.changedFiles.filter((f): f is string => typeof f === 'string' && f.length > 0 && f.length < 4096 && !f.includes('\0') && isAbsolute(f)).slice(0, MAX_CHANGED) : [];
   const more = typeof diff?.moreFiles === 'number' && diff.moreFiles > 0 ? diff.moreFiles : 0;
   return { tool, changed, more, ...(typeof duration === 'number' && Number.isFinite(duration) && duration >= 0 ? { duration } : {}) };
 }
@@ -143,9 +145,9 @@ function stateDirectory(home: string) {
 }
 const replace = (file: string, text: string) => { const temporary = `${file}.${process.pid}.tmp`; writeFileSync(temporary, text); renameSync(temporary, file); };
 /** Abandoned sessions leave only flags and ids; drop them after a week. */
-function cleanup(dir: string, now: number) {
+function cleanup(dir: string, now: number, ttl = STATE_TTL_MS) {
   for (const name of readdirSync(dir)) {
-    try { if (now - statSync(join(dir, name)).mtimeMs > STATE_TTL_MS) unlinkSync(join(dir, name)); } catch { /* concurrent cleanup */ }
+    try { if (now - statSync(join(dir, name)).mtimeMs > ttl) unlinkSync(join(dir, name)); } catch { /* concurrent cleanup */ }
   }
 }
 
@@ -164,18 +166,25 @@ export function recordEdit(home: string, provider: HookProviderName, session: st
   try { if (lstatSync(dir).isSymbolicLink()) throw new Error('Autosave edit journal is a link.'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   mkdirSync(dir, { recursive: true });
   replace(join(dir, `${scope}-${sessionKey(provider, session)}`), String(now));
-  cleanup(dir, now);
+  cleanup(dir, now, EDIT_TTL_MS);
 }
+/** A journal time, if it is plausible: an entry later than now (the clock was set back) is ignored. */
+const journalTime = (file: string, now: number) => { const time = Number(readFileSync(file, 'utf8')); return Number.isFinite(time) && time <= now + WINDOW_MARGIN_MS ? time : undefined; };
 /** Whether a session other than this one recorded an edit of `scope` at or after `since`. */
-export function editedByOthers(home: string, provider: HookProviderName, session: string, scope: string, since: number): boolean {
+export function editedByOthers(home: string, provider: HookProviderName, session: string, scope: string, since: number, now = Date.now()): boolean {
   if (!SCOPE.test(scope)) return false;
   const dir = journalDir(home), own = `${scope}-${sessionKey(provider, session)}`;
   let names: string[];
   try { names = readdirSync(dir); } catch { return false; }
   return names.some(name => {
     if (!name.startsWith(`${scope}-`) || name === own || name.endsWith('.tmp')) return false;
-    try { return Number(readFileSync(join(dir, name), 'utf8')) >= since; } catch { return false; }
+    try { return (journalTime(join(dir, name), now) ?? -Infinity) >= since; } catch { return false; }
   });
+}
+/** When this session last recorded an edit of `scope`, or 0. */
+export function lastEdit(home: string, provider: HookProviderName, session: string, scope: string, now = Date.now()): number {
+  if (!SCOPE.test(scope)) return 0;
+  try { return journalTime(join(journalDir(home), `${scope}-${sessionKey(provider, session)}`), now) ?? 0; } catch { return 0; }
 }
 export function writeSessionState(home: string, provider: HookProviderName, session: string, state: SessionState, now = Date.now()) {
   const dir = stateDirectory(home), file = stateFile(home, provider, session);

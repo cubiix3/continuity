@@ -88,7 +88,14 @@ $registered = $null; try { $registered = [DateTime]::Parse($task.Definition.Regi
 `;
   let output: string;
   try { output = execFileSync(windowsPowerShell(), ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { cwd: windowsSystemDirectory(), env: windowsPowerShellEnvironment(), encoding: 'utf8', windowsHide: true, timeout: 20000, maxBuffer: 65536, stdio: ['ignore', 'pipe', 'pipe'] }); }
-  catch { throw new Error('User startup registration failed. Check Task Scheduler permissions and the Continuity task; no elevation or alternate registration was attempted.'); }
+  catch (error) {
+    if (process.env.CI) {
+      const failure = error as Error & { code?: string; status?: number; signal?: string; stderr?: Buffer };
+      console.error('Startup helper failure', { code: failure.code, status: failure.status, signal: failure.signal, stderr: failure.stderr?.toString('utf8').slice(0, 1000) });
+    }
+    // eslint-disable-next-line preserve-caught-error -- Temporary CI diagnosis; keep the public error stable.
+    throw new Error('User startup registration failed. Check Task Scheduler permissions and the Continuity task; no elevation or alternate registration was attempted.');
+  }
   const result = JSON.parse(output.trim()) as { refused?: string; installed: boolean; name: string; mechanism: string; executable?: string; arguments?: string; current_command?: boolean; enabled?: boolean; logon_type?: number; run_level?: number; last_run?: string | null; registered?: string | null; task_state?: number; launcher_result?: number; legacy_console?: boolean };
   if (result.refused === 'legacy_console') throw new Error(LEGACY_CONSOLE + ' Nothing was installed, and an existing startup task is unchanged; turn the legacy console off (console window properties, Options), or run continuity runtime start.');
   const installedArgs = typeof result.arguments === 'string' ? result.arguments : '';

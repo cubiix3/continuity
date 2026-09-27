@@ -1,0 +1,12 @@
+# Upgrading a local installation
+
+Current `main` is unreleased and still declares package version 0.1.0. Use an intended Continuity release artifact or a tarball built from the exact commit you chose. Continuity is not published under the npm package name `continuity`.
+
+1. Record the active Continuity home, Dashboard port, installed package path and provider integration status. The home is selected by `--home`, then `CONTINUITY_HOME`, then the default `~/.continuity`.
+2. Run `continuity runtime stop` for that home, and close other Continuity processes. Back up the **entire** home, including the SQLite database and any WAL/SHM files, before replacing the package. Keep the backup with the package version or commit that created it.
+3. Install the chosen tarball or checkout using the [README quickstart](README.md#quickstart). Use Node.js 24.13 or newer on the Node 24 line. On Windows, workspace operations require a registered Git for Windows installation; a PATH-only portable Git is not discovered.
+4. Run `continuity doctor`. Check `continuity runtime status`, `continuity startup status` on Windows, and `continuity integrate claude status` or `continuity integrate codex status` for integrations you use. Use the same `--home` option for every command when the home is nondefault.
+5. If a provider status is `stale` or `partial`, run its idempotent `continuity integrate claude install` or `continuity integrate codex install`. A moved package or Node executable can leave an old absolute command in a hook. On Windows, run `continuity startup install` if `current_command` is false; this updates the task without changing its user or elevation level.
+6. Start the runtime if you use it (`continuity runtime start`). Check `continuity runtime status`, open the reported local Dashboard, and verify the expected projects, worktrees and sync health. The runtime and provider hooks are optional; check only the integrations you actually installed.
+
+An upgrade can migrate the SQLite schema. There is no supported downgrade or reverse migration. If recovery is necessary, stop Continuity and restore a consistent copy of the complete home together with its original package; do not point an older package at a migrated database. See [local administration](docs/operations.md#diagnostics) for Doctor and backup limits.

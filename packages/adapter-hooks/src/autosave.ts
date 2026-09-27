@@ -195,7 +195,9 @@ export type StopDecision = { action: 'apply' | 'request' | 'none'; state: Sessio
  * offer on a turn that made no edit of its own is never asked about.
  */
 export function stopDecision(state: SessionState, active: boolean, answered: boolean, turn?: string, now = Date.now()): StopDecision {
-  if (state.pending && answered && (state.offered || state.asked)) return { action: 'apply', state: settled(state, false) };
+  // Only an answer to the offer of this same turn, or to Continuity's own request, is applied: a save line in a later
+  // turn's answer never revives the offer of an interrupted one.
+  if (state.pending && answered && (state.offered || state.asked) && !expired(state, turn)) return { action: 'apply', state: settled(state, false) };
   if (active) return { action: 'none', state: state.asked ? settled(state, state.dirty) : state };
   if (state.asked) return { action: 'none', state: settled(state, state.dirty) };
   if (expired(state, turn)) return { action: 'none', state: settled(state, false, false) };
@@ -220,11 +222,14 @@ function unfenced(message: string) {
   return kept.join('\n');
 }
 /**
- * Only the last `[continuity-save]: <json>` line outside fenced code (the label is case-insensitive, like any CommonMark
- * link label). Anything else means "no save".
+ * The last line outside fenced code that starts with the label decides (the label is case-insensitive, like any
+ * CommonMark link label). The contract asks for `[continuity-save]: <json>`, a link reference definition that Codex
+ * hides. Models sometimes drop the angle brackets, so the bare object, `[continuity-save]: {…}`, is accepted too. If
+ * the rest of that last line is neither form, or not a JSON object, there is no save: an earlier line never stands in.
  */
 export function parseSaveReply(message: string): SaveReply | undefined {
-  const body = [...unfenced(message).matchAll(new RegExp(`^ {0,3}\\[${SAVE_LABEL}\\]:[ \\t]*<([^\\r\\n]*)>[ \\t]*\\r?$`, 'gim'))].at(-1)?.[1];
+  const rest = [...unfenced(message).matchAll(new RegExp(`^ {0,3}\\[${SAVE_LABEL}\\]:([^\\r\\n]*)\\r?$`, 'gim'))].at(-1)?.[1]?.trim();
+  const body = rest?.startsWith('<') && rest.endsWith('>') ? rest.slice(1, -1) : rest?.startsWith('{') && rest.endsWith('}') ? rest : undefined;
   if (body === undefined) return undefined;
   try {
     const value = JSON.parse(body) as Record<string, unknown>;

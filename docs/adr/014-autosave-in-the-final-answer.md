@@ -40,6 +40,11 @@ can carry the save without a continuation.
 - **Apply at the turn's own stop.** `Stop` reads `last_assistant_message` only while an
   offer or request is outstanding, applies the last save line outside fenced code through
   the same Core calls, and is silent. The earlier tagged block is no longer read.
+  Amended by #35: the same line without the angle brackets (`[continuity-save]: {…}`)
+  is accepted too, because Claude Code sometimes drops them. The last line that starts
+  with the label decides, and a malformed one means no save. An interrupted turn's offer
+  is not revived by a later turn's answer. The contract still asks for the bracketed
+  form, the only one Codex hides.
 - **Fallback.** If the offered turn has no save line, or edits happened without an
   offer, `Stop` asks once through a continuation. Claude Code gets Stop
   `additionalContext`, Codex gets `decision: block`. The request is three lines (396 bytes)

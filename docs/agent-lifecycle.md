@@ -178,10 +178,15 @@ If that replacement is not saved (invalid, or looks like a secret), the open
 handoff stays open.
 An open handoff that looks sensitive is not offered.
 
-Only the last save line in the final answer of an offered turn, or in the answer to
-the fallback request, is read. A save line in any other answer is ignored, and so is
-one inside fenced code (quoted content, such as an example). The label is
-case-insensitive, as in CommonMark. The `<continuity-save>{…}</continuity-save>`
+Only the final answer of an offered turn, or the answer to the fallback request, is
+read. An offer from an interrupted turn does not count, so a save line in a later
+turn's answer revives nothing. In that answer, the last line outside fenced code that
+starts with the label decides; indented code, quotes and inline code do not start
+with it. The rest of that line must be the object in angle brackets, as asked,
+`<{…}>`. The bare object, `{…}`, also counts: models sometimes drop the brackets
+(#35). The object must end the line. Anything else on that last line, including
+malformed JSON, means no save, and an earlier line never stands in for it. Text after
+the save line does not void it. The label is case-insensitive, as in CommonMark. The `<continuity-save>{…}</continuity-save>`
 block of earlier releases is no longer read; a request left outstanding by an earlier
 release expires silently.
 

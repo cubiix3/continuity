@@ -93,6 +93,9 @@ test('an interrupted turn: its offer expires silently, and the next edit is offe
   // A read-only next turn: no request on a turn that made no edit, then or later. The next edited turn's offer covers
   // the session, so the interrupted turn's edits leave nothing behind (no scope that could turn a later edit `mixed`).
   expect(stopDecision(stale, false, false, 't2', 1000)).toEqual({ action: 'none', state: { dirty: false, pending: false } });
+  // A save line in the later turn's answer does not revive the expired offer; the same turn's answer still applies.
+  expect(stopDecision(stale, false, true, 't2', 1000)).toEqual({ action: 'none', state: { dirty: false, pending: false } });
+  expect(stopDecision(stale, false, true, 't1', 1000).action).toBe('apply');
   // An edit in the next turn gets a fresh offer, in whatever project it happens.
   expect(editDecision(stale, 'x', false, 't2')).toEqual({ offer: true, state: { dirty: false, pending: true, offered: true, turn: 't2', scope: 'x' } });
   expect(editDecision(stale, 'y', false, 't2')).toEqual({ offer: true, state: { dirty: false, pending: true, offered: true, turn: 't2', scope: 'y' } });
@@ -127,6 +130,77 @@ test('the offer is complete, the fallback request is short and self-contained; o
   expect(parseSaveReply('<continuity-save>{"memories":[]}</continuity-save>')).toBeUndefined();
   // The last line wins.
   expect(parseSaveReply('[continuity-save]: <{"memories":[{"key":"old"}]}>\n\n[continuity-save]: <{"memories":[]}>')).toEqual({ memories: [], handoff: null });
+});
+
+test('a save line without the angle brackets is accepted as the same line, and nowhere else', () => {
+  const payload = '{"memories":[{"key":"config.include-comments","kind":"experience","text":"Include lines keep the rest of the line as the path."}],"handoff":null}';
+  const expected = parseSaveReply(`Done.\n\n[continuity-save]: <${payload}>`);
+  expect(expected?.memories).toHaveLength(1);
+  // The line Claude Code wrote (#35): the label and the bare JSON object.
+  expect(parseSaveReply(`Done.\n\n[continuity-save]: ${payload}`)).toEqual(expected);
+  expect(parseSaveReply(`Done.\r\n\r\n   [Continuity-Save]:${payload}  \r\n`)).toEqual(expected);
+  // Inside fenced or indented code, a blockquote, a list item or inline code it is quoted content, never the save.
+  for (const quoted of [`\`\`\`text\n[continuity-save]: ${payload}\n\`\`\``, `~~~\n[continuity-save]: ${payload}\n~~~`, `\`\`\`text\n\`\`\`text\n[continuity-save]: ${payload}\n\`\`\``,
+    `    [continuity-save]: ${payload}`, `> [continuity-save]: ${payload}`, `- [continuity-save]: ${payload}`, `\`[continuity-save]: ${payload}\``]) {
+    expect(parseSaveReply(`Here is the format:\n\n${quoted}\n`), quoted).toBeUndefined();
+  }
+  // Only the exact label, then one JSON object that ends the line.
+  for (const wrong of [`[continuity-saved]: ${payload}`, `[continuity-save] : ${payload}`, `continuity-save: ${payload}`, `[continuity-save]: ${payload} and more`,
+    `[continuity-save]: ${payload}>`, `[continuity-save]: <${payload}`, '[continuity-save]: {not json}', '[continuity-save]: ["a"]', '[continuity-save]: <["a"]>', '[continuity-save]: <null>', '[continuity-save]: "memories"', `The save was [continuity-save]: ${payload}`]) {
+    expect(parseSaveReply(`Done.\n\n${wrong}`), wrong).toBeUndefined();
+  }
+  // Both forms together: the last candidate line decides, and a malformed last line means no save (an earlier line never stands in).
+  expect(parseSaveReply(`[continuity-save]: <{"memories":[{"key":"old"}]}>\n\n[continuity-save]: ${payload}`)).toEqual(expected);
+  expect(parseSaveReply(`[continuity-save]: ${payload}\n\n[continuity-save]: <{"memories":[]}>`)).toEqual({ memories: [], handoff: null });
+  expect(parseSaveReply(`[continuity-save]: ${payload}\n\n[continuity-save]: {broken`)).toBeUndefined();
+  expect(parseSaveReply(`[continuity-save]: ${payload}\n\n[continuity-save]: <{"memories":[]}`)).toBeUndefined();
+  expect(parseSaveReply(`[continuity-save]: ${payload}\n\n[continuity-save]: {"memories": [}`)).toBeUndefined();
+  // Prose after the save line does not void it (unchanged from the bracketed form); a fenced example after it is ignored.
+  expect(parseSaveReply(`[continuity-save]: ${payload}\nThanks.`)).toEqual(expected);
+  expect(parseSaveReply(`[continuity-save]: ${payload}\n\n\`\`\`\n[continuity-save]: {"memories":[]}\n\`\`\``)).toEqual(expected);
+});
+
+/** The final answer as Claude Code wrote it in #35: the save line without its angle brackets. */
+const bare = (value: unknown) => `Done.\n\n[continuity-save]: ${JSON.stringify(value)}`;
+
+test('a bracketless save line is applied through the real hooks like the bracketed one, quietly and only when offered', () => {
+  const lesson = { key: 'locale.bracketless', kind: 'experience', text: 'The locale loader reads plural rules from each locale file.' };
+  const { edit: changed, answer } = session('claude', a, bare({ memories: [lesson], handoff: { goal: 'Add the Czech locale', status: 'in_progress', next: 'Write cs.json.' } }));
+  expect(JSON.parse(changed.stdout)).toEqual(offer());
+  // Applied at the first stop: no fallback request, no output, nothing shown.
+  expect([answer.status, answer.stdout]).toEqual([0, '']);
+  expect(active().find(m => m.key === lesson.key)).toMatchObject({ text: lesson.text, from: { agent: 'Claude Code' } });
+  expect(host.project(a).latestHandoff()).toMatchObject({ task: { goal: 'Add the Czech locale' } });
+  // It closes the offered handoff like the bracketed form.
+  const open = host.project(a).latestHandoff()!;
+  edit('claude', 'closer', a);
+  expect(run('claude', 'stop', { session_id: 'closer', cwd: a, stop_hook_active: false, last_assistant_message: bare({ memories: [], handoff: null, close_handoff: true }) }).stdout).toBe('');
+  expect(host.project(a).handoff(open.id).closure).toMatchObject({ closed_by: { session: 'closer' } });
+  // Without an outstanding offer, a bracketless line is ignored like any other text.
+  const stray = { key: 'locale.stray', kind: 'experience', text: 'A save line in an answer that was never offered one.' };
+  expect(run('claude', 'stop', { session_id: 'never-offered', cwd: a, stop_hook_active: false, last_assistant_message: bare({ memories: [stray] }) }).stdout).toBe('');
+  // A line from an interrupted turn's offer is never applied in a later turn.
+  run('claude', 'tool-use', { session_id: 'interrupted', cwd: a, tool_name: 'Edit', prompt_id: 'turn-1' });
+  expect(run('claude', 'stop', { session_id: 'interrupted', cwd: a, stop_hook_active: false, prompt_id: 'turn-2', last_assistant_message: bare({ memories: [stray] }) }).stdout).toBe('');
+  expect(active().some(m => m.key === 'locale.stray')).toBe(false);
+});
+
+test('a bracketless line inside fenced code is no save: the fallback asks once; an oversized answer is ignored', () => {
+  const quoted = `The format looks like this:\n\n\`\`\`text\n${bare({ memories: [{ key: 'doc.example', kind: 'memory', text: 'An example from the docs.' }] }).split('\n\n')[1]}\n\`\`\``;
+  const { request, answer } = fallbackSession('claude', a, bare({ memories: [{ key: 'locale.fenced', kind: 'experience', text: 'Only the real save line outside the fence counts.' }] }), 'fenced');
+  expect(JSON.parse(request.stdout).hookSpecificOutput.additionalContext).toBe(SAVE_REQUEST);
+  expect(answer.stdout).toBe('');
+  expect(active().map(m => m.key)).toEqual(['locale.fenced']);
+  // Only the fenced example: nothing saved, and the fallback is still asked (a missing save is a missing save).
+  edit('claude', 'only-fenced', a);
+  const asked = run('claude', 'stop', { session_id: 'only-fenced', cwd: a, stop_hook_active: false, last_assistant_message: quoted });
+  expect(JSON.parse(asked.stdout).hookSpecificOutput.additionalContext).toBe(SAVE_REQUEST);
+  expect(active().some(m => m.key === 'doc.example')).toBe(false);
+  // Hook input above the 1 MiB limit is not read at all: nothing saved, no output, exit 0.
+  edit('claude', 'oversized', a);
+  const huge = run('claude', 'stop', { session_id: 'oversized', cwd: a, stop_hook_active: false, last_assistant_message: `${'x'.repeat(1024 * 1024)}\n\n${bare({ memories: [{ key: 'locale.huge', kind: 'experience', text: 'Never stored because the hook input is too large.' }] }).split('\n\n')[1]}` });
+  expect([huge.status, huge.stdout]).toEqual([0, '']);
+  expect(active().some(m => m.key === 'locale.huge')).toBe(false);
 });
 
 test('completed task: one attributed lesson, no handoff, no extra turn, silent success, exit 0 throughout', () => {

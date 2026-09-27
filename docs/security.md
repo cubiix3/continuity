@@ -101,7 +101,8 @@ session id, cwd, the turn id (`turn_id` or `prompt_id`, stored only as a hash) a
 whether a sub-agent made the edit (`agent_id`); it returns the fixed save contract as
 additional context. The `Stop` hook reads the same ids and `last_assistant_message`, the
 latter only while Continuity's own offer or request is outstanding,
-and only its last save line outside fenced code. Transcripts, transcript paths and tool
+and only its last save line outside fenced code, bracketed or bare (see
+[agent lifecycle](agent-lifecycle.md)). Transcripts, transcript paths and tool
 payloads are never opened. Hook commands contain only absolute paths and fixed
 words, quoted literally for PowerShell and POSIX `sh`. Hooks never exit 2. They
 continue a turn only through the documented JSON output, never on a continuation

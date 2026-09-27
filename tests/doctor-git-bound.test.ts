@@ -25,6 +25,8 @@ import { openContinuity, DOCTOR_WORKSPACE_CONCURRENCY } from '../packages/sdk/sr
 import { verifyWorkspace } from '../packages/sdk/src/workspaces.js';
 
 const WORKTREES = 10;
+// The bounded output per Git call: 64 KiB for rev-parse, 1 MiB for the worktree list.
+const gitOutputLimit = (args: readonly string[]) => args[2] === 'worktree' ? 1024 * 1024 : 65536;
 // Real worktree creation in beforeEach is slow on Windows runners.
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 let root: string, primary: string, host: ReturnType<typeof openContinuity>, projectId: string;
@@ -55,8 +57,7 @@ it('verifies real worktrees with at most DOCTOR_WORKSPACE_CONCURRENCY Git proces
   // Every Git call: argument array, no shell, the 5 s timeout, a bounded output buffer, and no console window (#31).
   for (const { args, options } of processes.calls) {
     expect(Array.isArray(args)).toBe(true); expect(args[0]).toBe('-C');
-    expect(options).toEqual({ encoding: 'utf8', timeout: 5000, maxBuffer: expect.any(Number), shell: false, windowsHide: true });
-    expect(options.maxBuffer).toBeGreaterThan(0); expect(options.maxBuffer).toBeLessThanOrEqual(1024 * 1024);
+    expect(options).toEqual({ encoding: 'utf8', timeout: 5000, maxBuffer: gitOutputLimit(args), shell: false, windowsHide: true });
   }
 });
 
@@ -67,8 +68,7 @@ it('starts the synchronous verifier Git calls the same way: argument array, boun
   for (const { args, options } of processes.syncCalls) {
     expect(Array.isArray(args)).toBe(true); expect(args[0]).toBe('-C');
     // execFileSync never uses a shell unless asked; stdin is closed, output is captured.
-    expect(options).toEqual({ encoding: 'utf8', timeout: 5000, maxBuffer: expect.any(Number), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-    expect(options.maxBuffer).toBeGreaterThan(0); expect(options.maxBuffer).toBeLessThanOrEqual(1024 * 1024);
+    expect(options).toEqual({ encoding: 'utf8', timeout: 5000, maxBuffer: gitOutputLimit(args), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   }
 });
 

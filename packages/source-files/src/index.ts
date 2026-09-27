@@ -5,8 +5,8 @@ import ignore from 'ignore';
 import type { Ignore } from 'ignore';
 import type { Project, Resource, SourcePort } from '../../core/src/contracts.js';
 import { looksSensitive } from '../../core/src/security/sensitive.js';
+import { DENIED_NAME as deniedName } from '../../core/src/security/denied.js';
 
-const deniedName = /^(?:\.env(?:\..*)?|credentials.*|secrets.*|\.git|\.continuity|node_modules|dist|build|coverage|vendor|\.ssh|\.aws|\.venv|venv|\.next|\.cache)$|\.(?:pem|key|p12|pfx|db|sqlite|log)$/i;
 const allowedExtensions = new Set(['.md', '.mdx', '.txt', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rs', '.go', '.java', '.cs', '.c', '.h', '.cpp', '.toml', '.yaml', '.yml', '.json', '.sql', '.sh']);
 export { looksSensitive };
 export function isWithin(root: string, path: string): boolean {

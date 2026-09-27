@@ -1,5 +1,7 @@
 # 014: Autosave in the final answer
 
+Amended by [ADR 017](017-shell-made-edits.md): shell-made edits also start the offer.
+
 Amends [ADR 012](012-agent-session-autosave.md) (issue #27).
 
 ## Context

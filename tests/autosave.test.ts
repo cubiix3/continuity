@@ -439,7 +439,7 @@ test('roundtrip: Claude session A saves, Codex session B loads; B hands off, Cla
   const c = JSON.parse(run('claude', 'session-start', { cwd: a, source: 'startup' }).stdout).hookSpecificOutput.additionalContext as string;
   expect(c).toContain('Codex · in progress'); expect(c).toContain('Validate every locale file'); expect(c).toContain('Locale files must not contain blank lines');
   // Flags only: the per-session state holds no content and disappears once answered.
-  const states = existsSync(join(home, 'hooks', 'autosave')) ? readdirSync(join(home, 'hooks', 'autosave')) : [];
+  const states = existsSync(join(home, 'hooks', 'autosave')) ? readdirSync(join(home, 'hooks', 'autosave')).filter(f => f !== 'edits') : [];
   for (const file of states) expect(readFileSync(join(home, 'hooks', 'autosave', file), 'utf8')).toMatch(/^\{"dirty":(true|false),"pending":(true|false)(,"offered":true)?(,"asked":true)?(,"turn":"[0-9a-f]{16}")?(,"prompted_at":\d+)?(,"scope":"([0-9a-f]{24}|mixed)")?\}$/);
 });
 
@@ -484,7 +484,7 @@ test('install adds startup and autosave hooks once, upgrades bootstrap-only inst
   const settings = JSON.parse(readFileSync(full.file, 'utf8'));
   expect(settings.hooks.SessionStart).toHaveLength(1);
   expect(settings.hooks.Stop).toEqual([{ hooks: [foreignStop] }, { hooks: [full.entries[2]!.hook] }]);
-  expect(settings.hooks.PostToolUse).toEqual([{ matcher: 'Write', hooks: [foreignEdit] }, { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [full.entries[1]!.hook] }]);
+  expect(settings.hooks.PostToolUse).toEqual([{ matcher: 'Write', hooks: [foreignEdit] }, { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell', hooks: [full.entries[1]!.hook] }]);
   expect(full.entries[2]!.hook).toMatchObject({ args: ['--no-warnings', cli, '--home', home, 'integrate', 'claude', 'stop'], timeout: 60 });
   expect(hookIntegrationStatus(startupOnly)).toMatchObject({ state: 'stale', events: { Stop: 'unexpected' } });
   installHookIntegration(startupOnly);
@@ -618,14 +618,14 @@ test('mode: interactive Claude and daemon-hosted Codex sessions save by default;
     if (!expected) expect([changed.stdout, stop.stdout, changed.stderr, stop.stderr], label).toEqual(['', '', '', '']);
   });
   // Disabled sessions leave no flag files: only the six enabled cases wrote state.
-  expect(readdirSync(join(home, 'hooks', 'autosave'))).toHaveLength(6);
+  expect(readdirSync(join(home, 'hooks', 'autosave')).filter(f => f !== 'edits')).toHaveLength(6);
 });
 
 const CODEX_TUI = { CONTINUITY_AUTOSAVE: undefined, CODEX_DAEMON_SHUTDOWN_SOCKET: '1' };
 /** Codex 0.157 PostToolUse input for an edit; code mode reports a nested `tools.apply_patch(...)` the same way. */
 const codexEdit = (session_id: string, cwd: string) => ({ session_id, cwd, hook_event_name: 'PostToolUse', tool_name: 'apply_patch', tool_use_id: `call-${session_id}`, turn_id: 'turn-1',
   tool_input: { command: '*** Begin Patch\n*** Update File: README.md\n@@\n-# Alpha\n+# Alpha loader\n*** End Patch\n' }, tool_response: 'Success. Updated the following files:\nM README.md', permission_mode: 'bypassPermissions', model: 'gpt', transcript_path: null });
-const flagCount = () => existsSync(join(home, 'hooks', 'autosave')) ? readdirSync(join(home, 'hooks', 'autosave')).length : 0;
+const flagCount = () => existsSync(join(home, 'hooks', 'autosave')) ? readdirSync(join(home, 'hooks', 'autosave')).filter(f => f !== 'edits').length : 0;
 
 test('Codex 0.157: an interactive session saves with no override; codex exec and a nested exec keep their answer and write nothing', () => {
   const changed = run('codex', 'tool-use', codexEdit('tui', a), CODEX_TUI);
@@ -679,8 +679,10 @@ test('session flags stay content-free and abandoned ones are removed after a wee
   const stale = join(dir, `${'0'.repeat(40)}.json`); writeFileSync(stale, '{"dirty":true,"pending":false}');
   const eightDays = (Date.now() - 8 * 24 * 60 * 60 * 1000) / 1000; utimesSync(stale, eightDays, eightDays);
   run('codex', 'tool-use', codexEdit('fresh', a), CODEX_TUI);
-  const files = readdirSync(dir);
+  const files = readdirSync(dir).filter(f => f !== 'edits');
   expect(files).toHaveLength(1); expect(existsSync(stale)).toBe(false);
+  // The edit journal holds a timestamp per scope and session, nothing else.
+  for (const entry of readdirSync(join(dir, 'edits'))) { expect(entry).toMatch(/^[0-9a-f]{24}-[0-9a-f]{40}$/); expect(readFileSync(join(dir, 'edits', entry), 'utf8')).toMatch(/^\d+$/); }
   const flag = readFileSync(join(dir, files[0]!), 'utf8');
   expect(flag).toMatch(/^\{"dirty":false,"pending":true,"offered":true,"turn":"[0-9a-f]{16}","scope":"[0-9a-f]{24}"\}$/);
   for (const content of ['README.md', 'Begin Patch', 'fresh', 'Alpha']) expect(flag).not.toContain(content);

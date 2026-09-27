@@ -120,10 +120,20 @@ travels in the answer the user reads anyway.
 
 The offer is gated:
 
-- only on file-edit tools of this session (Claude Code:
-  `Edit|Write|MultiEdit|NotebookEdit`; Codex reports edits as `apply_patch`, including
-  `tools.apply_patch(…)` calls from code mode's `exec` tool, which Codex 0.157 reports
-  under the nested tool's name);
+- only on file edits of this session:
+  - **Claude Code edit tools:** `Edit|Write|MultiEdit|NotebookEdit`.
+  - **Codex:** reports edits as `apply_patch`, including `tools.apply_patch(…)` calls from code mode's `exec` tool, which
+    Codex 0.157 reports under the nested tool's name.
+  - **Claude Code shell tools** (`Bash|PowerShell`), when the command changed project files ([ADR 017](adr/017-shell-made-edits.md)):
+    - For **Bash** in a Git tree, Claude Code's own report of the changed paths decides. A call without one is read-only,
+      and the hook answers it before the CLI loads (about 37 ms).
+    - For **PowerShell**, or **Bash without Git**, the provider reports nothing. A bounded check finds indexed files
+      modified during the command, and new files beside them.
+    - Only paths inside a registered project count, minus dependencies, build output, VCS and Continuity state, and
+      secret-looking files.
+    - Paths in several projects make the edit `mixed`.
+    - When another session (Claude Code or Codex) edited the same workspace while the command ran, the report is
+      ambiguous and nothing is counted.
 - once per turn: the first edit gets it, and later edits of the turn are covered by it.
   The offer remembers a hash of the turn (Codex `turn_id`, Claude Code `prompt_id`). An
   offer whose turn ended without a `Stop` (an interrupted turn) no longer counts: the

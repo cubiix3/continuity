@@ -243,4 +243,9 @@ export class ProjectClient {
     return handoff;
   }
   doctor() { return this.storage.diagnose(); }
+  /** The bound root and the relative paths of its current indexed sources. Read-only; for bounded change checks. */
+  sourceFiles() {
+    this.assertBinding();
+    return { root: this.workspace?.root ?? this.project.root, paths: this.scopedResources().filter(r => r.state === 'fresh').map(r => r.path) };
+  }
 }

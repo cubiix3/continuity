@@ -96,10 +96,24 @@ remain below current sources and do not gain source-authoritative trust.
 
 ## Provider hooks and autosave
 
-Provider hooks read only structured hook fields. The `PostToolUse` hook reads the
-session id, cwd, the turn id (`turn_id` or `prompt_id`, stored only as a hash) and
-whether a sub-agent made the edit (`agent_id`); it returns the fixed save contract as
-additional context. The `Stop` hook reads the same ids and `last_assistant_message`, the
+Provider hooks read only structured hook fields. The `PostToolUse` hook reads:
+- the session id and cwd;
+- the turn id (`turn_id` or `prompt_id`, stored only as a hash);
+- whether a sub-agent made the edit (`agent_id`);
+- the tool name;
+- for Claude Code's shell tools, only the changed paths of Claude Code's own edit report (`bashEditDiff.changedFiles`)
+  and the command's duration ([ADR 017](adr/017-shell-made-edits.md)). The command, its output and file contents are
+  never read.
+
+It returns the fixed save contract as additional context. A shell call counts as an edit only when its paths bind to a
+registered project and are not denied (dependencies, build output, VCS or Continuity state, secret-looking names).
+Paths are used to decide, never stored. Each attributed edit leaves a timestamp per workspace and session under
+`hooks/autosave/edits`, and another session's edit of the same workspace during a command makes that command's report
+ambiguous.
+
+Claude Code's report is a before/after comparison over the command. A change made at the same moment by a human
+editor, or by an agent without Continuity's hooks, can therefore still count for the command. That only triggers the
+save offer: Continuity records no file provenance, and the model decides what, if anything, to save. The `Stop` hook reads the same ids and `last_assistant_message`, the
 latter only while Continuity's own offer or request is outstanding,
 and only its last save line outside fenced code, bracketed or bare (see
 [agent lifecycle](agent-lifecycle.md)). Transcripts, transcript paths and tool

@@ -195,8 +195,11 @@ export type StopDecision = { action: 'apply' | 'request' | 'none'; state: Sessio
  * offer on a turn that made no edit of its own is never asked about.
  */
 export function stopDecision(state: SessionState, active: boolean, answered: boolean, turn?: string, now = Date.now()): StopDecision {
-  if (state.pending && answered && (state.offered || state.asked)) return { action: 'apply', state: settled(state, false) };
-  if (active) return { action: 'none', state: state.asked ? settled(state, state.dirty) : state };
+  // Only an answer to the offer of this same turn, or to Continuity's own request, is applied: a save line in a later
+  // turn's answer never revives the offer of an interrupted one.
+  if (state.pending && answered && (state.offered || state.asked) && !expired(state, turn)) return { action: 'apply', state: settled(state, false) };
+  // A continuation stop never asks; it ends Continuity's request, and an expired offer, so neither survives into later stops.
+  if (active) return { action: 'none', state: state.asked ? settled(state, state.dirty) : expired(state, turn) ? settled(state, false, false) : state };
   if (state.asked) return { action: 'none', state: settled(state, state.dirty) };
   if (expired(state, turn)) return { action: 'none', state: settled(state, false, false) };
   if (!state.pending && !state.dirty) return { action: 'none', state };
@@ -207,24 +210,33 @@ export function stopDecision(state: SessionState, active: boolean, answered: boo
 
 export type Outcome = { item: string; outcome: string };
 interface SaveReply { memories: unknown[]; handoff: unknown; close_handoff?: boolean }
-/** Lines inside fenced code (``` or ~~~, CommonMark rules) are quoted content, never the model's own save. */
-function unfenced(message: string) {
+/**
+ * The message's lines (split once on CRLF, CR or LF), with lines inside fenced code blanked: quoted content, never the
+ * model's own save. CommonMark fences: ``` or ~~~, at most three spaces in; a backtick fence's info string has no
+ * backtick (``` x ``` is inline code); it closes on the same character, at least as long, with nothing after it.
+ */
+function unfencedLines(message: string) {
   const kept: string[] = [];
   let fence: string | undefined;
-  for (const line of message.split('\n')) {
-    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+  for (const line of message.split(/\r\n|\r|\n/)) {
+    const marker = /^ {0,3}(`{3,}(?![^`]*`)|~{3,})/.exec(line)?.[1];
     if (fence) { if (marker && marker[0] === fence[0] && marker.length >= fence.length && !line.trim().slice(marker.length).trim()) fence = undefined; kept.push(''); }
     else if (marker) { fence = marker; kept.push(''); }
     else kept.push(line);
   }
-  return kept.join('\n');
+  return kept;
 }
 /**
- * Only the last `[continuity-save]: <json>` line outside fenced code (the label is case-insensitive, like any CommonMark
- * link label). Anything else means "no save".
+ * The last line outside fenced code that starts with the label decides (the label is case-insensitive, like any
+ * CommonMark link label). The contract asks for `[continuity-save]: <json>`, a link reference definition that Codex
+ * hides. Models sometimes drop the angle brackets, so the bare object, `[continuity-save]: {…}`, is accepted too. If
+ * the rest of that last line is neither form, or not a JSON object, there is no save: an earlier line never stands in.
+ * Each line is matched on its own, so a Unicode line separator inside a line never starts another one.
  */
 export function parseSaveReply(message: string): SaveReply | undefined {
-  const body = [...unfenced(message).matchAll(new RegExp(`^ {0,3}\\[${SAVE_LABEL}\\]:[ \\t]*<([^\\r\\n]*)>[ \\t]*\\r?$`, 'gim'))].at(-1)?.[1];
+  const label = new RegExp(`^ {0,3}\\[${SAVE_LABEL}\\]:([\\s\\S]*)$`, 'i');
+  const rest = unfencedLines(message).flatMap(line => label.exec(line)?.[1] ?? []).at(-1)?.trim();
+  const body = rest?.startsWith('<') && rest.endsWith('>') ? rest.slice(1, -1) : rest?.startsWith('{') && rest.endsWith('}') ? rest : undefined;
   if (body === undefined) return undefined;
   try {
     const value = JSON.parse(body) as Record<string, unknown>;

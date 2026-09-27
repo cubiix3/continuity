@@ -24,6 +24,12 @@
   - **Contract.** `BootstrapBundle.attention.conflicts` changes meaning from records to keys. A stale, withheld source claim no longer hides a conflict.
   - **Dashboard.** Quarantined records and their filter are labelled "Needs review" instead of "Conflict(s)", and the time a record was superseded is shown. See ADR 016.
   - **Existing databases.** A correction already stuck next to a forgotten old claim stays quarantined. The startup index now counts it as held rather than as a conflict, so only the Dashboard ("Needs review") shows it: approve it or forget it there.
+- Bracketless autosave replies (#35): `Stop` also accepts the save line without its angle brackets, `[continuity-save]: {…}`, which Claude Code sometimes writes. Such saves were silently dropped and prompted the fallback. The rule is:
+  - the last line outside fenced code that starts with the label decides;
+  - a malformed last line means no save, and an earlier line never stands in;
+  - a later turn's answer no longer revives an interrupted turn's offer.
+
+  The contract still asks for the bracketed form, and the fallback stays for answers without a save line.
 - Context no longer starves strongly relevant memories: after current rules, a memory whose text covers at least half of the meaningful task terms may use up to 25% of the byte budget ahead of lower-ranked source passages. Trust order holds inside that share (a related higher-trust memory is always offered it first). Presentation order is unchanged, and contexts without such a memory are identical.
 
 ## 0.1.0 — 2026-09-22

@@ -268,10 +268,11 @@ const cliRun = (args: string[], input?: unknown, extra: Record<string, string> =
 const install = (provider: Provider, ...flags: string[]) => expect(cliRun(['integrate', provider, 'install', ...flags]).status).toBe(0);
 const run = (provider: Provider, event: 'session-start' | 'tool-use' | 'stop', input: unknown, extra: Record<string, string> = {}) => cliRun(['integrate', provider, event], input, extra);
 /** One provider session: optionally the startup context, then an edited turn whose final answer carries the save line. */
-function turn(provider: Provider, id: string, memories: unknown[], start = true) {
+function turn(provider: Provider, id: string, memories: unknown[], start = true, brackets = true) {
   const context = start ? run(provider, 'session-start', { session_id: id, cwd: a, hook_event_name: 'SessionStart', source: 'startup' }).stdout : '';
   run(provider, 'tool-use', { session_id: id, cwd: a, tool_name: provider === 'claude' ? 'Edit' : 'apply_patch' });
-  const stop = run(provider, 'stop', { session_id: id, cwd: a, stop_hook_active: false, last_assistant_message: `Done.\n\n[continuity-save]: <${JSON.stringify({ memories, handoff: null })}>` });
+  const payload = JSON.stringify({ memories, handoff: null });
+  const stop = run(provider, 'stop', { session_id: id, cwd: a, stop_hook_active: false, last_assistant_message: `Done.\n\n[continuity-save]: ${brackets ? `<${payload}>` : payload}` });
   return { context, stop: stop.stdout };
 }
 const seenFiles = () => { const dir = join(home, 'hooks', 'autosave'); return existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.seen.json')).map(f => JSON.parse(readFileSync(join(dir, f), 'utf8')) as string[]) : []; };
@@ -288,6 +289,15 @@ test.each(['claude', 'codex'] as const)('%s: a session corrects a stale lesson i
   expect(renderBootstrap(host.bootstrap(a)!)).not.toContain('conflict');
   // The session state holds memory ids only.
   expect(seenFiles()).toEqual([[old.id]]);
+});
+
+test('claude: a correction written without the angle brackets (#35) still replaces the shown lesson', () => {
+  install('claude');
+  const client = host.project(a);
+  const old = client.propose({ ...stale, from: agent('earlier') });
+  expect(turn('claude', 'bare-fix', [{ key: stale.key, kind: 'experience', text: fixed, corrects: true }], true, false).stop).toBe('');
+  expect(byId(old.id).status).toBe('superseded');
+  expect(client.memories().find(m => m.key === stale.key && m.status === 'persist')).toMatchObject({ text: fixed, from: { session: 'bare-fix' } });
 });
 
 test('only memories listed in full count as shown, also with the detail tool installed', () => {

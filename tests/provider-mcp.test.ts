@@ -90,7 +90,7 @@ test('Claude: a moved CLI makes the entry stale until install repairs it; a syml
   expect(json(real)).toMatchObject({ keep: true, mcpServers: { continuity: { type: 'stdio' } } });
 });
 
-test('Doctor surfaces a stale provider integration after a package move without changing settings', () => {
+test('Doctor surfaces stale hooks without changing settings or treating reduced profiles as broken', () => {
   const claudeDir = join(root, 'claude-upgrade');
   const oldCli = join(root, 'previous', 'cli', 'src', 'index.js');
   mkdirSync(dirname(oldCli), { recursive: true });
@@ -99,7 +99,10 @@ test('Doctor surfaces a stale provider integration after a package move without 
   const settingsFile = join(claudeDir, 'settings.json');
   const mcpFile = join(claudeDir, '.claude.json');
   const before = [readFileSync(settingsFile, 'utf8'), readFileSync(mcpFile, 'utf8')];
-  const env = { ...process.env, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: join(root, 'codex-empty') };
+  const codexDir = join(root, 'codex-unreadable');
+  mkdirSync(codexDir);
+  writeFileSync(join(codexDir, 'hooks.json'), '{');
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexDir };
   const run = (...args: string[]) => {
     const result = spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, '--project', a, '--json', ...args],
       { encoding: 'utf8', windowsHide: true, env });
@@ -113,6 +116,11 @@ test('Doctor surfaces a stale provider integration after a package move without 
   expect([readFileSync(settingsFile, 'utf8'), readFileSync(mcpFile, 'utf8')]).toEqual(before);
   run('integrate', 'claude', 'install');
   expect(run('doctor').provider_integrations).toEqual([expect.objectContaining({ provider: 'claude', state: 'installed' })]);
+  run('integrate', 'claude', 'install', '--no-autosave', '--no-mcp');
+  const reduced = run('doctor').provider_integrations;
+  expect(reduced).toEqual([expect.objectContaining({ provider: 'claude', state: 'partial' })]);
+  expect(reduced?.[0]?.message).toContain('original --no-autosave or --no-mcp choices');
+  expect(reduced?.[0]?.message).not.toContain('continuity integrate claude install');
 });
 
 test('Codex: the MCP table is appended and removed as a whole block; comments, CRLF and other tables are untouched', () => {

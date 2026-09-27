@@ -58,8 +58,14 @@ program.command('doctor').description('Check storage, registrations, runtime and
   catch (error) { retrieval = { status: 'unavailable', reason: error instanceof Error ? error.message : 'Project binding cannot be inspected' }; }
   const provider_integrations = (['claude', 'codex'] as const)
     .map(provider => hookIntegrationStatus(integrationTarget(provider)))
-    .filter(status => status.state !== 'missing')
-    .map(({ provider, state, message }) => ({ provider, state, message }));
+    .filter(status => status.installed)
+    .map(status => {
+      const { provider, state } = status;
+      let message = status.message;
+      if (state === 'stale') message = `An installed entry is stale. Check continuity integrate ${provider} status with the original --no-autosave or --no-mcp choices, then run continuity integrate ${provider} install with those choices to repair.`;
+      if (state === 'partial') message = `Startup context is present, but optional components differ from the default profile. Check continuity integrate ${provider} status with the original --no-autosave or --no-mcp choices before changing settings.`;
+      return { provider, state, message };
+    });
   output({ ...health, retrieval, provider_integrations, fallback: health.fts5 ? 'FTS5 active' : 'FTS5 unavailable' });
   if (health.integrity !== 'ok' || !health.fts5 || health.problems.length) process.exitCode = 1;
 });

@@ -8,6 +8,7 @@ import { createServer } from 'node:net';
 import { readStart, recordStart, taskStartResult, TASK_RUN_WINDOW_MS } from '../packages/sdk/src/start-record.js';
 import { startupAction, windowsArgument } from '../packages/sdk/src/startup-windows.js';
 import { stopBackground } from '../packages/sdk/src/background.js';
+import { windowsPowerShell, windowsSystemDirectory } from '../packages/sdk/src/windows-process.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 const cli = resolve('dist/packages/cli/src/index.js');
@@ -56,7 +57,7 @@ test.runIf(process.platform === 'win32')('a record another process holds for a m
   recordStart(home, 'failed', 'error', new Date('2026-01-01T00:00:00.000Z'));
   const file = join(home, 'runtime-start.json'), held = join(home, 'held.flag');
   const script = `$f = [IO.File]::Open(${JSON.stringify(file).replace(/^"|"$/g, "'")}, 'Open', 'ReadWrite', 'None'); Set-Content -LiteralPath ${JSON.stringify(held).replace(/^"|"$/g, "'")} -Value 1; Start-Sleep -Milliseconds 400; $f.Close()`;
-  const holder = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, stdio: 'ignore' });
+  const holder = spawn(windowsPowerShell(), ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { cwd: windowsSystemDirectory(), windowsHide: true, stdio: 'ignore' });
   for (let i = 0; i < 200 && !existsSync(held); i++) await new Promise(r => setTimeout(r, 25));
   expect(existsSync(held)).toBe(true);
   const record = recordStart(home, 'started');

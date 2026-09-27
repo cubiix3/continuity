@@ -5,17 +5,17 @@ import { tmpdir } from 'node:os';
 
 // Real worktrees and real Git processes. execFile is wrapped only to count Git processes that are alive at once, and
 // both execFile and execFileSync to record the options Git is started with.
-type Call = { args: readonly string[]; options: Record<string, unknown> };
+type Call = { file: string; args: readonly string[]; options: Record<string, unknown> };
 const processes = vi.hoisted(() => ({ active: 0, peak: 0, total: 0, calls: [] as Call[], syncCalls: [] as Call[] }));
 vi.mock('node:child_process', async importOriginal => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   const execFile = (file: string, args: readonly string[], options: object, callback: (...result: unknown[]) => void) => {
-    if (file !== 'git') return actual.execFile(file, args, options, callback as never);
-    processes.active++; processes.total++; processes.peak = Math.max(processes.peak, processes.active); processes.calls.push({ args, options: options as Record<string, unknown> });
+    if (!/[/\\]git\.exe$/i.test(file) && file !== 'git') return actual.execFile(file, args, options, callback as never);
+    processes.active++; processes.total++; processes.peak = Math.max(processes.peak, processes.active); processes.calls.push({ file, args, options: options as Record<string, unknown> });
     return actual.execFile(file, args, options, ((...result: unknown[]) => { processes.active--; callback(...result); }) as never);
   };
   const execFileSync = (file: string, args: readonly string[], options: object) => {
-    if (file === 'git') processes.syncCalls.push({ args, options: options as Record<string, unknown> });
+    if (/[/\\]git\.exe$/i.test(file) || file === 'git') processes.syncCalls.push({ file, args, options: options as Record<string, unknown> });
     return actual.execFileSync(file, args, options);
   };
   return { ...actual, execFile, execFileSync };
@@ -55,9 +55,15 @@ it('verifies real worktrees with at most DOCTOR_WORKSPACE_CONCURRENCY Git proces
   expect(processes.peak).toBe(DOCTOR_WORKSPACE_CONCURRENCY);
   expect(processes.active).toBe(0);
   // Every Git call: argument array, no shell, the 5 s timeout, a bounded output buffer, and no console window (#31).
-  for (const { args, options } of processes.calls) {
+  for (const { file, args, options } of processes.calls) {
     expect(Array.isArray(args)).toBe(true); expect(args[0]).toBe('-C');
-    expect(options).toEqual({ encoding: 'utf8', timeout: 5000, maxBuffer: gitOutputLimit(args), shell: false, windowsHide: true });
+    if (process.platform === 'win32') {
+      expect(file).toMatch(/^[A-Z]:\\.*\\git\.exe$/i);
+      expect(options.cwd).toMatch(/^[A-Z]:\\.*\\System32$/i);
+      expect(options.env).toMatchObject({ GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: 'NUL' });
+      expect(Object.keys(options.env as object).filter(key => key.startsWith('GIT_'))).toEqual(['GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_GLOBAL']);
+    }
+    expect(options).toMatchObject({ encoding: 'utf8', timeout: 5000, maxBuffer: gitOutputLimit(args), shell: false, windowsHide: true });
   }
 });
 
@@ -65,10 +71,15 @@ it('starts the synchronous verifier Git calls the same way: argument array, boun
   const [workspace] = host.inspection.workspaces(projectId);
   expect(verifyWorkspace(primary, workspace!.root)).toBe(workspace!.root);
   expect(processes.syncCalls).toHaveLength(5);
-  for (const { args, options } of processes.syncCalls) {
+  for (const { file, args, options } of processes.syncCalls) {
     expect(Array.isArray(args)).toBe(true); expect(args[0]).toBe('-C');
+    if (process.platform === 'win32') {
+      expect(file).toMatch(/^[A-Z]:\\.*\\git\.exe$/i);
+      expect(options.cwd).toMatch(/^[A-Z]:\\.*\\System32$/i);
+      expect(options.env).toMatchObject({ GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: 'NUL' });
+    }
     // execFileSync never uses a shell unless asked; stdin is closed, output is captured.
-    expect(options).toEqual({ encoding: 'utf8', timeout: 5000, maxBuffer: gitOutputLimit(args), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    expect(options).toMatchObject({ encoding: 'utf8', timeout: 5000, maxBuffer: gitOutputLimit(args), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   }
 });
 

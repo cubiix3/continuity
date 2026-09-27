@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { openContinuity, CONTINUITY_HOST_API_VERSION, DOCTOR_WORKSPACE_CONCURRENCY } from '../packages/sdk/src/index.js';
 import { mapBounded, runFile, verifyWorkspace, verifyWorkspaceAsync } from '../packages/sdk/src/workspaces.js';
@@ -267,7 +267,7 @@ it('runs Git without a shell and bounds time, output and failures', async () => 
   expect(Date.now() - started).toBeLessThan(10000);
   await expect(runFile(process.execPath, ['-e', 'process.stderr.write("git failed"); process.exit(3)'], { timeout: 5000, maxBuffer: 1024 })).rejects.toMatchObject({ code: 3, message: expect.stringContaining('git failed') });
   await expect(runFile(process.execPath, ['-e', 'process.stdout.write("x".repeat(4096))'], { timeout: 5000, maxBuffer: 1024 })).rejects.toMatchObject({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' });
-  await expect(runFile('continuity-missing-executable', [], { timeout: 5000, maxBuffer: 1024 })).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(runFile(resolve('continuity-missing-executable'), [], { timeout: 5000, maxBuffer: 1024 })).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 it('bounds concurrent verifications and keeps results in input order', async () => {
@@ -309,9 +309,9 @@ it('keeps Overview health cheap, project-scoped and free of Git processes', asyn
   const path = process.env.PATH;
   process.env.PATH = '';
   try {
-    // Without Git on PATH, full verification fails while the cheap check still reads the worktree link files.
+    // Health remains cheap; on Windows the full check finds the trusted Git installation without PATH.
     expect(await host.health(projectId)).toMatchObject({ project_id: projectId, fts5: true, problems: [] });
-    expect((await host.doctor()).problems.some(problem => problem.startsWith('inaccessible/stale workspace'))).toBe(true);
+    expect((await host.doctor()).problems.some(problem => problem.startsWith('inaccessible/stale workspace'))).toBe(process.platform !== 'win32');
   } finally { process.env.PATH = path; }
   expect((await host.doctor()).problems.some(problem => problem.startsWith('inaccessible/stale registration'))).toBe(true);
   await expect(host.health('prj_00000000-0000-4000-8000-000000000000')).rejects.toThrow();

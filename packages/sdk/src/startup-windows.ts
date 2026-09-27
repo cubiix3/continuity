@@ -5,6 +5,7 @@ import { release } from 'node:os';
 import { win32 } from 'node:path';
 import { continuityHome } from './local-ipc.js';
 import { readStart, taskStartResult } from './start-record.js';
+import { windowsPowerShell, windowsPowerShellEnvironment, windowsSystemDirectory } from './windows-process.js';
 
 /** Windows argv quoting, not shell interpolation. Task Scheduler launches the executable directly. */
 export function windowsArgument(value: string) { return '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"'; }
@@ -86,7 +87,7 @@ $registered = $null; try { $registered = [DateTime]::Parse($task.Definition.Regi
 @{ installed = $true; mechanism = 'Task Scheduler'; name = $p.name; executable = $entry.Path; arguments = $entry.Arguments; current_command = $current; enabled = $task.Enabled; logon_type = $principal.LogonType; run_level = $principal.RunLevel; last_run = $lastRun; registered = $registered; task_state = $task.State; launcher_result = $task.LastTaskResult; legacy_console = $legacy } | ConvertTo-Json -Compress
 `;
   let output: string;
-  try { output = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout: 20000, maxBuffer: 65536, stdio: ['ignore', 'pipe', 'pipe'] }); }
+  try { output = execFileSync(windowsPowerShell(), ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { cwd: windowsSystemDirectory(), env: windowsPowerShellEnvironment(), encoding: 'utf8', windowsHide: true, timeout: 20000, maxBuffer: 65536, stdio: ['ignore', 'pipe', 'pipe'] }); }
   catch { throw new Error('User startup registration failed. Check Task Scheduler permissions and the Continuity task; no elevation or alternate registration was attempted.'); }
   const result = JSON.parse(output.trim()) as { refused?: string; installed: boolean; name: string; mechanism: string; executable?: string; arguments?: string; current_command?: boolean; enabled?: boolean; logon_type?: number; run_level?: number; last_run?: string | null; registered?: string | null; task_state?: number; launcher_result?: number; legacy_console?: boolean };
   if (result.refused === 'legacy_console') throw new Error(LEGACY_CONSOLE + ' Nothing was installed, and an existing startup task is unchanged; turn the legacy console off (console window properties, Options), or run continuity runtime start.');

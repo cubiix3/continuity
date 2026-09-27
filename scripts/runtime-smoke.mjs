@@ -20,6 +20,7 @@ try {
   const tarball = readdirSync(root).find(p => p.endsWith('.tgz'));
   const install = join(root, 'install space ü'); mkdirSync(install); writeFileSync(join(install, 'package.json'), '{"private":true}'); pm(['add', '--ignore-scripts', join(root, tarball)], install);
   const pkg = join(install, 'node_modules/continuity-local'); cli = join(pkg, 'dist/packages/cli/src/index.js');
+  const windowsTools = process.platform === 'win32' ? await import(pathToFileURL(join(pkg, 'dist/packages/sdk/src/windows-process.js')).href) : null;
   mkdirSync(project); writeFileSync(join(project, 'source.ts'), 'export const value = 1;'); command('init');
   const probe = createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve)); const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
   if (process.platform === 'win32') {
@@ -28,13 +29,14 @@ try {
     // The installed package's stable paths, run by the headless console host (no window at sign-in, #44).
     assert.equal(installed.launcher, 'conhost --headless'); assert.match(installed.executable, /\\System32\\conhost\.exe$/i);
     assert(installed.arguments.startsWith(`--headless "${process.execPath}" "`) && /continuity-local\\dist\\packages\\cli\\src\\index\.js" "--home" /.test(installed.arguments));
-    execFileSync('schtasks.exe', ['/Run', '/TN', installed.name], { windowsHide: true, stdio: 'pipe' });
+    const system = windowsTools.windowsSystemDirectory();
+    execFileSync(join(system, 'schtasks.exe'), ['/Run', '/TN', installed.name], { cwd: system, windowsHide: true, stdio: 'pipe' });
   } else command('runtime', 'start', '--port', String(port));
   await until(() => command('runtime', 'status').running);
   if (process.platform === 'win32') await until(() => command('startup', 'status', '--port', String(port)).startup_result?.state === 'started');
   const status = command('runtime', 'status'); assert.equal(status.dashboard, `http://127.0.0.1:${port}`);
   if (process.platform === 'win32') {
-    const bindings = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-NetTCPConnection -OwningProcess ${Number(status.pid)} -State Listen | Select-Object -ExpandProperty LocalAddress`], { encoding: 'utf8', windowsHide: true }).trim().split(/\r?\n/);
+    const bindings = execFileSync(windowsTools.windowsPowerShell(), ['-NoProfile', '-NonInteractive', '-Command', `Get-NetTCPConnection -OwningProcess ${Number(status.pid)} -State Listen | Select-Object -ExpandProperty LocalAddress`], { cwd: windowsTools.windowsSystemDirectory(), encoding: 'utf8', windowsHide: true }).trim().split(/\r?\n/);
     assert.deepEqual(bindings, ['127.0.0.1']);
   }
   assert.equal(command('runtime', 'start').pid, status.pid);

@@ -8,6 +8,7 @@ import { startupAction, startupRegistration, windowsArgument } from '../packages
 import { continuityHome } from '../packages/sdk/src/local-ipc.js';
 import { recordStart } from '../packages/sdk/src/start-record.js';
 import { runtimeRequest, stopBackground } from '../packages/sdk/src/background.js';
+import { windowsPowerShell, windowsSystemDirectory } from '../packages/sdk/src/windows-process.js';
 
 /** Test-only: changes the registered task's action through the same Task Scheduler COM API, keeping its principal. */
 function tamper(name: string, change: { path?: string; args?: string; workdir?: string; second?: boolean }) {
@@ -19,7 +20,7 @@ if ($p.path) { $a.Path = $p.path }; if ($p.args) { $a.Arguments = $p.args }; if 
 if ($p.second) { $b = $d.Actions.Create(0); $b.Path = $a.Path; $b.Arguments = $a.Arguments }
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $null = $f.RegisterTaskDefinition($p.name, $d, 6, $sid, $null, 3)`;
-  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, stdio: 'pipe' });
+  execFileSync(windowsPowerShell(), ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { cwd: windowsSystemDirectory(), windowsHide: true, stdio: 'pipe' });
 }
 const waitFor = async (check: () => Promise<boolean>) => { for (let i = 0; i < 150; i++) { if (await check()) return true; await new Promise(r => setTimeout(r, 100)); } return false; };
 
@@ -55,14 +56,14 @@ test('user startup runs the runtime through the headless console host, checks th
 
     // An old failure record never stands for the task's run.
     recordStart(canonical, 'failed', 'start_timeout', new Date(Date.now() - 10 * 60_000));
-    execFileSync('schtasks.exe', ['/Run', '/TN', String(first.name)], { windowsHide: true, stdio: 'pipe' });
+    execFileSync(join(windowsSystemDirectory(), 'schtasks.exe'), ['/Run', '/TN', String(first.name)], { cwd: windowsSystemDirectory(), windowsHide: true, stdio: 'pipe' });
     expect(await waitFor(async () => (await runtimeRequest(home)).running === true)).toBe(true);
     const running = await runtimeRequest(home);
     expect(running.auto_sync).toBe(false); expect(running.dashboard).toBe(`http://127.0.0.1:${port}`);
     const response = await fetch(String(running.dashboard)); expect(response.status).toBe(200); await response.text();
     expect(await waitFor(async () => status().startup_result?.state === 'started')).toBe(true);
     // A second run while the runtime is up: the same runtime, reported as already running.
-    execFileSync('schtasks.exe', ['/Run', '/TN', String(first.name)], { windowsHide: true, stdio: 'pipe' });
+    execFileSync(join(windowsSystemDirectory(), 'schtasks.exe'), ['/Run', '/TN', String(first.name)], { cwd: windowsSystemDirectory(), windowsHide: true, stdio: 'pipe' });
     expect(await waitFor(async () => status().startup_result?.state === 'already_running')).toBe(true);
     expect((await runtimeRequest(home)).pid).toBe(running.pid);
     await stopBackground(home);

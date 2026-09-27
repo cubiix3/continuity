@@ -1,6 +1,7 @@
 import { execFile, execFileSync } from 'node:child_process';
 import { existsSync, realpathSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
+import { windowsGit, windowsGitAsync, windowsGitEnvironment, windowsSystemDirectory } from './windows-process.js';
 
 const canonical = (path: string) => {
   const root = realpathSync.native(path);
@@ -9,6 +10,17 @@ const canonical = (path: string) => {
 };
 interface GitCall { args: string[]; maxBuffer: number }
 const GIT_TIMEOUT_MS = 5000;
+const gitFile = () => process.platform === 'win32' ? windowsGit() : 'git';
+const gitOptions = () => process.platform === 'win32' ? { cwd: windowsSystemDirectory(), env: windowsGitEnvironment() } : {};
+const outsideWorkspace = (file: string, projectRoot: string, workspaceRoot: string): string => {
+  if (process.platform !== 'win32') return file;
+  const executable = file.toLowerCase();
+  if ([projectRoot, workspaceRoot].some(root => {
+    const directory = canonical(root);
+    return executable === directory || executable.startsWith(`${directory}\\`);
+  })) throw new Error('Git executable must be outside the repository and worktree.');
+  return file;
+};
 /**
  * The membership checks as a sequence of Git calls, so the synchronous and asynchronous verifiers share one
  * definition. Each yielded call receives Git's stdout; any failed call rejects the workspace.
@@ -34,7 +46,7 @@ export function verifyWorkspace(projectRoot: string, workspaceRoot: string): str
   for (let step = checks.next(); ; ) {
     if (step.done) return step.value;
     const { args, maxBuffer } = step.value;
-    step = checks.next(execFileSync('git', args, { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, maxBuffer, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }));
+    step = checks.next(execFileSync(outsideWorkspace(gitFile(), projectRoot, workspaceRoot), args, { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, maxBuffer, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, ...gitOptions() }));
   }
 }
 
@@ -44,8 +56,9 @@ export function verifyWorkspace(projectRoot: string, workspaceRoot: string): str
  * on Windows, even when the caller has no console (the background runtime) (#31).
  */
 export function runFile(file: string, args: readonly string[], options: { timeout: number; maxBuffer: number }): Promise<string> {
+  if (process.platform === 'win32' && !isAbsolute(file)) return Promise.reject(new Error('Windows child executable must be absolute.'));
   return new Promise((resolvePromise, reject) => {
-    const child = execFile(file, args, { encoding: 'utf8', timeout: options.timeout, maxBuffer: options.maxBuffer, shell: false, windowsHide: true }, (error, stdout) => error ? reject(error) : resolvePromise(stdout));
+    const child = execFile(file, args, { encoding: 'utf8', timeout: options.timeout, maxBuffer: options.maxBuffer, shell: false, windowsHide: true, ...gitOptions() }, (error, stdout) => error ? reject(error) : resolvePromise(stdout));
     child.stdin?.end();
   });
 }
@@ -55,7 +68,7 @@ export async function verifyWorkspaceAsync(projectRoot: string, workspaceRoot: s
   for (let step = checks.next(); ; ) {
     if (step.done) return step.value;
     const { args, maxBuffer } = step.value;
-    step = checks.next(await runFile('git', args, { timeout: GIT_TIMEOUT_MS, maxBuffer }));
+    step = checks.next(await runFile(outsideWorkspace(process.platform === 'win32' ? await windowsGitAsync() : 'git', projectRoot, workspaceRoot), args, { timeout: GIT_TIMEOUT_MS, maxBuffer }));
   }
 }
 

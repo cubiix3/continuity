@@ -19,7 +19,9 @@ Agent adapters receive a narrower `AgentAdapter` contract with seven operations.
 | `cli` | Local user commands and service startup |
 | `adapter-generic` | Small programmatic agent contract |
 | `adapter-mcp` | Seven stdio MCP tools |
-| `adapter-claude` | Claude Code SessionStart hook output and explicit settings install/remove |
+| `adapter-hooks` | Claude Code and Codex session hooks and explicit integration install/remove |
+| `dashboard` | Local Dashboard UI |
+| `retrieval-semantic` | Optional semantic retrieval adapters |
 | `server` | Local HTTP v1 transport |
 
 These are private pnpm workspace modules compiled together by one TypeScript

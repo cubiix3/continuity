@@ -5,8 +5,8 @@ import ignore from 'ignore';
 import type { Ignore } from 'ignore';
 import type { Project, Resource, SourcePort } from '../../core/src/contracts.js';
 import { looksSensitive } from '../../core/src/security/sensitive.js';
+import { DENIED_NAME as deniedName } from '../../core/src/security/denied.js';
 
-const deniedName = /^(?:\.env(?:\..*)?|credentials.*|secrets.*|\.git|\.continuity|node_modules|dist|build|coverage|vendor|\.ssh|\.aws|\.venv|venv|\.next|\.cache)$|\.(?:pem|key|p12|pfx|db|sqlite|log)$/i;
 const allowedExtensions = new Set(['.md', '.mdx', '.txt', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rs', '.go', '.java', '.cs', '.c', '.h', '.cpp', '.toml', '.yaml', '.yml', '.json', '.sql', '.sh']);
 export { looksSensitive };
 export function isWithin(root: string, path: string): boolean {
@@ -52,16 +52,66 @@ export class FileSources implements SourcePort {
       return { files: error.files, bytes: error.bytes, skipped_oversized: error.oversized, limit_exceeded: true, complete: false, reason: error.message };
     }
   }
-  private collect(project: Project, metadataOnly = false) {
+  /**
+   * The bounded check for shell edits a provider does not report (#34): indexed files modified at or after `since`, and
+   * new files beside them that scan would take. Each directory passes the traversal's own checks from the root, one
+   * component at a time and never through a link, before anything in it is listed or examined. Content is never read,
+   * and deletions are not reported. `indexed` holds root-relative paths as scan stored them; returns absolute paths.
+   */
+  changedSince(project: Project, indexed: readonly string[], since: number): string[] {
+    const { root, nestedRoots, excluded, outsidePrefixes, eligibleName, eligibleFile, layer } = this.rules(project);
+    const directories = new Map<string, IgnoreLayer[] | undefined>();
+    const directory = (local: string): IgnoreLayer[] | undefined => {
+      if (directories.has(local)) return directories.get(local);
+      let layers: IgnoreLayer[] | undefined;
+      if (!local) layers = layer(root, []);
+      else {
+        const slash = local.lastIndexOf('/'), name = local.slice(slash + 1), inherited = directory(slash < 0 ? '' : local.slice(0, slash));
+        const path = join(root, ...local.split('/'));
+        try {
+          if (inherited && name !== '.' && name !== '..' && !deniedName.test(name) && lstatSync(path, { throwIfNoEntry: false })?.isDirectory()
+            && !excluded(inherited, path, local, true) && !outsidePrefixes(local) && realpathSync.native(path) === path) {
+            const normalized = process.platform === 'win32' ? path.toLowerCase() : path;
+            if (!nestedRoots.includes(normalized) && !existsSync(join(path, '.git'))) layers = layer(path, inherited);
+          }
+        } catch { layers = undefined; }
+      }
+      directories.set(local, layers);
+      return layers;
+    };
+    const known = new Map<string, Set<string>>();
+    for (const path of indexed) {
+      const slash = path.lastIndexOf('/'), local = slash < 0 ? '' : path.slice(0, slash);
+      known.set(local, (known.get(local) ?? new Set()).add(path.slice(slash + 1)));
+    }
+    const changed: string[] = [];
+    for (const [local, names] of known) {
+      const layers = directory(local);
+      if (!layers) continue;
+      const dir = local ? join(root, ...local.split('/')) : root;
+      let entries;
+      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        // Name checks and one lstat first; only a changed file meets the ignore and selection rules.
+        if (!entry.isFile() || deniedName.test(entry.name) || !eligibleName(entry.name)) continue;
+        const path = join(dir, entry.name), indexedFile = names.has(entry.name);
+        let info;
+        try { info = lstatSync(path); } catch { continue; }
+        if (!info.isFile() || info.nlink > 1) continue;
+        // An indexed file counts when it was modified; a new one also when it was created (a copy keeps its old mtime).
+        if ((indexedFile ? info.mtimeMs : Math.max(info.birthtimeMs, info.mtimeMs)) < since) continue;
+        const fileLocal = local ? `${local}/${entry.name}` : entry.name;
+        if (!excluded(layers, path, fileLocal, false) && eligibleFile(entry.name, fileLocal)) changed.push(path);
+      }
+    }
+    return changed;
+  }
+  /** The traversal's rules for one project: canonical root, nested roots, resolved selection and .gitignore layers. */
+  private rules(project: Project) {
     const selections = typeof this.selection === 'function' ? this.selection() : [this.selection];
     const root = realpathSync.native(project.root);
     const identityRoot = process.platform === 'win32' ? root.toLowerCase() : root;
     if (identityRoot !== project.root) throw new Error('Project root changed its canonical location. Re-register the intended directory.');
-    const output: Resource[] = [];
-    const directories: { path: string; accepts: (name: string) => boolean }[] = [];
-    let bytes = 0;
-    let visited = 0;
-    let oversized = 0;
     const nestedRoots = this.registeredRoots().filter(p => p !== project.root);
     const filters = selections.map(selection => ({
       excluded: ignore().add([...(selection.exclude ?? [])]),
@@ -77,15 +127,28 @@ export class FileSources implements SourcePort {
       const selectedPath = local.toLowerCase();
       return filters.some(({ prefixes }) => prefixes && !prefixes.some(prefix => selectedPath === prefix || selectedPath.startsWith(prefix + '/') || prefix.startsWith(selectedPath + '/')));
     };
-    const eligibleFile = (name: string, local: string) => (allowedExtensions.has(extname(name).toLowerCase()) || /^(README|AGENTS|LICENSE)$/i.test(name))
-      && !filters.some(f => f.included && !f.included.ignores(local));
-    const walk = (directory: string, inherited: IgnoreLayer[]) => {
+    const eligibleName = (name: string) => allowedExtensions.has(extname(name).toLowerCase()) || /^(README|AGENTS|LICENSE)$/i.test(name);
+    const eligibleFile = (name: string, local: string) => eligibleName(name) && !filters.some(f => f.included && !f.included.ignores(local));
+    const layer = (directory: string, inherited: IgnoreLayer[]) => {
       const layers = [...inherited];
       const ignorePath = join(directory, '.gitignore');
       if (existsSync(ignorePath) && !lstatSync(ignorePath).isSymbolicLink()) {
         if (statSync(ignorePath).size > 65536) throw new Error('Oversized .gitignore; sync aborted.');
         layers.push({ base: directory, rules: ignore().add(readFileSync(ignorePath, 'utf8')) });
       }
+      return layers;
+    };
+    return { root, nestedRoots, excluded, outsidePrefixes, eligibleName, eligibleFile, layer };
+  }
+  private collect(project: Project, metadataOnly = false) {
+    const { root, nestedRoots, excluded, outsidePrefixes, eligibleFile, layer } = this.rules(project);
+    const output: Resource[] = [];
+    const directories: { path: string; accepts: (name: string) => boolean }[] = [];
+    let bytes = 0;
+    let visited = 0;
+    let oversized = 0;
+    const walk = (directory: string, inherited: IgnoreLayer[]) => {
+      const layers = layer(directory, inherited);
       if (metadataOnly) directories.push({ path: directory, accepts: name => {
         if (name === '.gitignore') return true;
         if (name.includes('/') || name.includes('\\') || deniedName.test(name)) return false;

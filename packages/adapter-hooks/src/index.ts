@@ -9,6 +9,7 @@ import type { McpEntryState, McpTarget } from './mcp.js';
 
 export * from './autosave.js';
 export * from './mcp.js';
+export * from './shell.js';
 export { assertWritable } from './files.js';
 
 /**
@@ -21,9 +22,12 @@ export type HookEvent = 'SessionStart' | 'PostToolUse' | 'Stop';
 const EVENTS: readonly HookEvent[] = ['SessionStart', 'PostToolUse', 'Stop'];
 const SUBCOMMAND: Record<HookEvent, string> = { SessionStart: 'session-start', PostToolUse: 'tool-use', Stop: 'stop' };
 const TIMEOUT_SECONDS: Record<HookEvent, number> = { SessionStart: 15, PostToolUse: 10, Stop: 60 };
-/** Stop has no matcher. PostToolUse marks a session as edited: Claude's edit tools; Codex reports edits as apply_patch. */
+/**
+ * Stop has no matcher. PostToolUse marks a session as edited: Claude's edit tools and its shell tools, whose own report
+ * says whether files changed (#34); Codex reports edits as apply_patch.
+ */
 const MATCHERS: Record<HookProviderName, Partial<Record<HookEvent, string>>> = {
-  claude: { SessionStart: 'startup|resume|clear|compact', PostToolUse: 'Edit|Write|MultiEdit|NotebookEdit' },
+  claude: { SessionStart: 'startup|resume|clear|compact', PostToolUse: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell' },
   codex: { SessionStart: 'startup|resume|clear|compact', PostToolUse: 'apply_patch' },
 };
 const MAX_STDIN = 64 * 1024;

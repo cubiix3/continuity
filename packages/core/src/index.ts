@@ -243,4 +243,13 @@ export class ProjectClient {
     return handoff;
   }
   doctor() { return this.storage.diagnose(); }
+  /**
+   * Files of this scope changed at or after `since`, where no provider reports them (#34): the source adapter's bounded
+   * check of the indexed files and new files beside them. Read-only; absolute paths; empty without such a check.
+   */
+  changedSources(since: number): string[] {
+    this.assertBinding();
+    const indexed = this.scopedResources().filter(r => r.state === 'fresh').map(r => r.path);
+    return this.source.changedSince?.(this.workspace ? { ...this.project, root: this.workspace.root } : this.project, indexed, since) ?? [];
+  }
 }

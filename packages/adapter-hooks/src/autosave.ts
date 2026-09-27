@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import type { Correction, ProjectClient } from '../../core/src/index.js';
 import { looksSensitive } from '../../core/src/security/sensitive.js';
 import type { HookProviderName } from './index.js';
+import { MAX_CHANGED, SHELL_TOOLS, WINDOW_MARGIN_MS } from './shell.js';
 
 /**
  * Model-aware session autosave without an extra visible turn. After the first file edit of a turn, the PostToolUse hook
@@ -18,6 +19,8 @@ export const SAVE_LABEL = 'continuity-save';
 /** A continuation request (the fallback, which the user sees) at most this often per session. */
 export const PROMPT_INTERVAL_MS = 15 * 60 * 1000;
 const STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Edit journal entries matter only for a command's duration (Claude Code allows at most 10 minutes). */
+const EDIT_TTL_MS = 60 * 60 * 1000;
 const MAX_MEMORIES = 5;
 const MAX_LIST = 10;
 const MAX_ITEM = 500;
@@ -94,16 +97,27 @@ export function stopInput(stdin: string): StopInput | undefined {
     return { session, cwd, active: input.stop_hook_active === true, message: typeof input.last_assistant_message === 'string' ? input.last_assistant_message : '', ...(turn ? { turn } : {}) };
   } catch { return undefined; }
 }
+/** What a shell tool call reported: the changed paths (absolute) and its duration, nothing else. */
+export interface ShellReport { tool: string; changed: string[]; more: number; duration?: number }
 /**
- * PostToolUse input: only session id, cwd, the turn id and whether a sub-agent made the edit (both providers add
- * `agent_id` inside a sub-agent) are used; tool input/output is never read or stored.
+ * PostToolUse input: only session id, cwd, the turn id, whether a sub-agent made the edit (both providers add
+ * `agent_id` inside a sub-agent) and the tool's name are used. For a shell tool, also the changed paths of the
+ * provider's own edit report and the duration (#34). The command, its output and file contents are never read or stored.
  */
-export function toolUseInput(stdin: string): { session: string; cwd: string; subagent: boolean; turn?: string } | undefined {
+export function toolUseInput(stdin: string): { session: string; cwd: string; subagent: boolean; turn?: string; shell?: ShellReport } | undefined {
   try {
-    const { session_id: session, cwd, agent_id: agent, turn_id: turnId, prompt_id: promptId } = JSON.parse(stdin) as Record<string, unknown>;
+    const { session_id: session, cwd, agent_id: agent, turn_id: turnId, prompt_id: promptId, tool_name: tool, tool_response: response, duration_ms: duration } = JSON.parse(stdin) as Record<string, unknown>;
     const turn = turnKey(turnId ?? promptId);
-    return typeof session === 'string' && session.trim() && session.length <= 100 && typeof cwd === 'string' && cwd && cwd.length < 4096 ? { session: session.trim(), cwd, subagent: typeof agent === 'string' && agent !== '', ...(turn ? { turn } : {}) } : undefined;
+    if (typeof session !== 'string' || !session.trim() || session.length > 100 || typeof cwd !== 'string' || !cwd || cwd.length >= 4096) return undefined;
+    const shell = typeof tool === 'string' && SHELL_TOOLS.has(tool) ? shellReport(tool, response, duration) : undefined;
+    return { session: session.trim(), cwd, subagent: typeof agent === 'string' && agent !== '', ...(turn ? { turn } : {}), ...(shell ? { shell } : {}) };
   } catch { return undefined; }
+}
+function shellReport(tool: string, response: unknown, duration: unknown): ShellReport {
+  const diff = response && typeof response === 'object' ? (response as { bashEditDiff?: unknown }).bashEditDiff as { changedFiles?: unknown; moreFiles?: unknown } | undefined : undefined;
+  const changed = Array.isArray(diff?.changedFiles) ? diff.changedFiles.filter((f): f is string => typeof f === 'string' && f.length > 0 && f.length < 4096 && !f.includes('\0') && isAbsolute(f)).slice(0, MAX_CHANGED) : [];
+  const more = typeof diff?.moreFiles === 'number' && diff.moreFiles > 0 ? diff.moreFiles : 0;
+  return { tool, changed, more, ...(typeof duration === 'number' && Number.isFinite(duration) && duration >= 0 ? { duration } : {}) };
 }
 
 /**
@@ -131,10 +145,46 @@ function stateDirectory(home: string) {
 }
 const replace = (file: string, text: string) => { const temporary = `${file}.${process.pid}.tmp`; writeFileSync(temporary, text); renameSync(temporary, file); };
 /** Abandoned sessions leave only flags and ids; drop them after a week. */
-function cleanup(dir: string, now: number) {
+function cleanup(dir: string, now: number, ttl = STATE_TTL_MS) {
   for (const name of readdirSync(dir)) {
-    try { if (now - statSync(join(dir, name)).mtimeMs > STATE_TTL_MS) unlinkSync(join(dir, name)); } catch { /* concurrent cleanup */ }
+    try { if (now - statSync(join(dir, name)).mtimeMs > ttl) unlinkSync(join(dir, name)); } catch { /* concurrent cleanup */ }
   }
+}
+
+/**
+ * Edit journal (#34): when each session last edited each scope, one small file per scope and session next to the
+ * session flags (timestamps only). A shell report covers everything that changed while the command ran, so it is
+ * ambiguous when another session edited the same scope meanwhile.
+ */
+const SCOPE = /^[0-9a-f]{24}$/;
+const journalDir = (home: string) => join(stateDir(home), 'edits');
+const sessionKey = (provider: HookProviderName, session: string) => createHash('sha256').update(`${provider}\0${session}`).digest('hex').slice(0, 40);
+export function recordEdit(home: string, provider: HookProviderName, session: string, scope: string, now = Date.now()) {
+  if (!SCOPE.test(scope)) return;
+  stateDirectory(home);
+  const dir = journalDir(home);
+  try { if (lstatSync(dir).isSymbolicLink()) throw new Error('Autosave edit journal is a link.'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  mkdirSync(dir, { recursive: true });
+  replace(join(dir, `${scope}-${sessionKey(provider, session)}`), String(now));
+  cleanup(dir, now, EDIT_TTL_MS);
+}
+/** A journal time, if it is plausible: an entry later than now (the clock was set back) is ignored. */
+const journalTime = (file: string, now: number) => { const time = Number(readFileSync(file, 'utf8')); return Number.isFinite(time) && time <= now + WINDOW_MARGIN_MS ? time : undefined; };
+/** Whether a session other than this one recorded an edit of `scope` at or after `since`. */
+export function editedByOthers(home: string, provider: HookProviderName, session: string, scope: string, since: number, now = Date.now()): boolean {
+  if (!SCOPE.test(scope)) return false;
+  const dir = journalDir(home), own = `${scope}-${sessionKey(provider, session)}`;
+  let names: string[];
+  try { names = readdirSync(dir); } catch { return false; }
+  return names.some(name => {
+    if (!name.startsWith(`${scope}-`) || name === own || name.endsWith('.tmp')) return false;
+    try { return (journalTime(join(dir, name), now) ?? -Infinity) >= since; } catch { return false; }
+  });
+}
+/** When this session last recorded an edit of `scope`, or 0. */
+export function lastEdit(home: string, provider: HookProviderName, session: string, scope: string, now = Date.now()): number {
+  if (!SCOPE.test(scope)) return 0;
+  try { return journalTime(join(journalDir(home), `${scope}-${sessionKey(provider, session)}`), now) ?? 0; } catch { return 0; }
 }
 export function writeSessionState(home: string, provider: HookProviderName, session: string, state: SessionState, now = Date.now()) {
   const dir = stateDirectory(home), file = stateFile(home, provider, session);

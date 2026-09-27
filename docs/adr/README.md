@@ -18,3 +18,4 @@ These decisions describe implemented boundaries. Revisit them with evidence, not
 - [014: Autosave in the final answer](014-autosave-in-the-final-answer.md)
 - [015: Project detail tools installed with the provider integration](015-provider-detail-tools.md)
 - [016: Explicit agent corrections of agent observations](016-agent-corrections.md)
+- [017: Shell-made edits start autosave](017-shell-made-edits.md)

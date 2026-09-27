@@ -161,7 +161,11 @@ export interface InspectionStoragePort extends Pick<StoragePort, 'projects' | 'w
   inspectionStats(projectId: string, workspaceId: string): { sources: number; memories: number; pending: number; active: number; conflicts: number; handoffs: number; contexts: number; workspaces: number };
 }
 
-export interface SourcePort { scan(project: Project): Resource[] }
+export interface SourcePort {
+  scan(project: Project): Resource[];
+  /** Indexed files (root-relative) modified at or after `since`, and new files beside them that scan would take; absolute paths. */
+  changedSince?(project: Project, indexed: readonly string[], since: number): string[];
+}
 export type RetrievalMode = 'lexical' | 'semantic' | 'hybrid';
 export interface Passage {
   id: string; project_id: string; resource_id: string; source_hash: string;

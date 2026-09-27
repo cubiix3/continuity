@@ -30,6 +30,11 @@
   - a later turn's answer no longer revives an interrupted turn's offer.
 
   The contract still asks for the bracketed form, and the fallback stays for answers without a save line.
+- Shell-made edits start autosave (#34): Claude Code in auto mode often edits through its Bash tool, which never started a save.
+  - **What counts.** A shell call now counts when Claude Code's own edit report lists a changed file in the session's registered project. Where there is no report (PowerShell, or no Git), the source scanner's own rules check the indexed files and new files beside them, never through a link. Dependencies, build output, VCS and Continuity state do not count, and an edit of another project makes the turn `mixed`. Another session's edit of the same workspace during the command makes the report ambiguous.
+  - **Privacy.** Only the changed paths and the duration are read, never the command or its output.
+  - **Speed.** A read-only Bash call is answered in about 43 ms before the CLI loads, and other hook calls load less of it (about 124 ms instead of 190 ms).
+  - **Upgrade.** Existing installs report `stale` until `integrate claude install` runs again. See ADR 017.
 - Context no longer starves strongly relevant memories: after current rules, a memory whose text covers at least half of the meaningful task terms may use up to 25% of the byte budget ahead of lower-ranked source passages. Trust order holds inside that share (a related higher-trust memory is always offered it first). Presentation order is unchanged, and contexts without such a memory are identical.
 
 ## 0.1.0 — 2026-09-22

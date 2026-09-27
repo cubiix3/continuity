@@ -43,9 +43,10 @@ only the task's last run:
 - a run that left no record reads `no_result` (for example, a removed CLI);
 - after `startup install` replaces the task, its earlier runs no longer count, and the
   result reads `not_run` until the next run;
-- a manual `runtime start` within a minute after a task run counts as that run's result. Task Scheduler's own "Last Run
-Result" is the console host's exit code, which is 0 even when the runtime failed; status
-shows it as `task.launcher_result`.
+- a manual `runtime start` within a minute after a task run counts as that run's result.
+
+Task Scheduler's own "Last Run Result" is the console host's exit code, which is 0 even
+when the runtime failed; status shows it as `task.launcher_result`.
 
 After upgrading from a version whose task started `node.exe` directly, status reports
 `launcher: direct …` and `current_command: false`; run `continuity startup install` once to

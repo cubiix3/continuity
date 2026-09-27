@@ -52,6 +52,19 @@ test('a record that cannot be written changes nothing and leaves no temporary fi
   expect(readStart(home)).toBeUndefined();
 });
 
+test.runIf(process.platform === 'win32')('a record another process holds for a moment is still written (retried rename)', async () => {
+  recordStart(home, 'failed', 'error', new Date('2026-01-01T00:00:00.000Z'));
+  const file = join(home, 'runtime-start.json'), held = join(home, 'held.flag');
+  const script = `$f = [IO.File]::Open(${JSON.stringify(file).replace(/^"|"$/g, "'")}, 'Open', 'ReadWrite', 'None'); Set-Content -LiteralPath ${JSON.stringify(held).replace(/^"|"$/g, "'")} -Value 1; Start-Sleep -Milliseconds 400; $f.Close()`;
+  const holder = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, stdio: 'ignore' });
+  for (let i = 0; i < 200 && !existsSync(held); i++) await new Promise(r => setTimeout(r, 25));
+  expect(existsSync(held)).toBe(true);
+  const record = recordStart(home, 'started');
+  await new Promise(done => holder.on('exit', done));
+  expect(readStart(home)).toEqual(record);
+  expect(readdirSync(home).filter(f => f.endsWith('.tmp'))).toEqual([]);
+});
+
 test('concurrent starts each leave a valid record and no temporary file', async () => {
   const module = pathToFileURL(resolve('dist/packages/sdk/src/start-record.js')).href;
   const writer = `const { recordStart } = await import(${JSON.stringify(module)}); for (let i = 0; i < 100; i++) recordStart(process.argv[1], i % 2 ? 'started' : 'already_running');`;

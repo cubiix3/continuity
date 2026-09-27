@@ -97,6 +97,7 @@ test('user startup runs the runtime through the headless console host, checks th
     }
     // The task's earlier runs belong to the replaced registration: none counts for this one yet.
     expect(status().startup_result?.state).toBe('not_run');
+    expect((status() as { task?: { last_run: string | null; launcher_result: number | null } }).task).toMatchObject({ last_run: null, launcher_result: null });
     expect(status().launcher).toBe('conhost --headless');
     tamper(String(first.name), { path: process.execPath, args: rest });
     expect(status().launcher).toMatch(/^direct/);

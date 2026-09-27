@@ -48,7 +48,8 @@ if ($task -and $task.Definition.RegistrationInfo.Description -ne $p.marker) { th
 if ($p.action -eq 'remove') { if ($task) { $folder.DeleteTask($p.name, 0) }; @{ installed = $false; mechanism = 'Task Scheduler'; name = $p.name } | ConvertTo-Json -Compress; exit }
 # "Use legacy console" (ForceV2 = 0) makes the console host refuse --headless and start nothing.
 $legacy = $false
-if ($null -ne $p.legacy) { $legacy = [bool]$p.legacy } else { try { $legacy = ((Get-ItemProperty -LiteralPath 'HKCU:\\Console' -Name ForceV2 -ErrorAction Stop).ForceV2 -eq 0) } catch { $legacy = $false } }
+# Like the console host, only a DWORD value of 0 counts; another type is ignored.
+if ($null -ne $p.legacy) { $legacy = [bool]$p.legacy } else { try { $v = (Get-ItemProperty -LiteralPath 'HKCU:\\Console' -Name ForceV2 -ErrorAction Stop).ForceV2; $legacy = ($v -is [int]) -and $v -eq 0 } catch { $legacy = $false } }
 if ($p.action -eq 'install') {
   if ($legacy) { @{ refused = 'legacy_console' } | ConvertTo-Json -Compress; exit }
   # The console host must be the one in the Windows system directory, however the environment names it.
@@ -110,7 +111,8 @@ $registered = $null; try { $registered = [DateTime]::Parse($task.Definition.Regi
       // Task Scheduler reports the console host's exit code, which is 0 even when the runtime failed to start; the
       // start record written by runtime start decides.
       startup_result: taskStartResult(run, taskState === 4, readStart(home)),
-      task: { state: taskState, last_run: run, registered: registered ?? null, launcher_result: launcherResult },
+      // The console host's exit code of that run; none when the last run belongs to a replaced registration.
+      task: { state: taskState, last_run: run, registered: registered ?? null, launcher_result: run ? launcherResult : null },
     } : { dashboard: null, executable_available: true, installed_cli_available: true }),
     ...(!supported ? { unsupported: 'Sign-in startup needs Windows 10 version 1809 (build 17763) or later.' } : legacy ? { unsupported: LEGACY_CONSOLE } : {}),
     ...(action === 'install' ? { message: 'Continuity will start automatically after Windows sign-in, without a window. No browser is opened.' } : {}),

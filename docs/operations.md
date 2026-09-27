@@ -6,7 +6,8 @@ OS execution privileges; restrict that agent's OS permissions if necessary.
 
 ## Source index scope
 
-Use `continuity sources show`, `preview`, `set` and `clear` to narrow an existing
+Use `continuity sources show`, `continuity sources preview`, `continuity sources set`
+and `continuity sources clear` to narrow an existing
 project's source selection in local `sources.json`. Preview before setting a filter,
 then sync. Project IDs and roots stay unchanged. See [source scope](source-scope.md)
 for patterns, fail-closed behavior and unchanged safety limits.

@@ -40,8 +40,11 @@ export function startupRegistration(action: 'install' | 'status' | 'remove', hom
 $ErrorActionPreference = 'Stop'
 [Console]::Error.WriteLine('startup:entry')
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::Error.WriteLine('startup:encoding')
 $p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
+[Console]::Error.WriteLine('startup:json')
 $service = New-Object -ComObject Schedule.Service
+[Console]::Error.WriteLine('startup:object')
 $service.Connect()
 [Console]::Error.WriteLine('startup:connected')
 $folder = $service.GetFolder('\\')
@@ -95,7 +98,7 @@ $registered = $null; try { $registered = [DateTime]::Parse($task.Definition.Regi
   catch (error) {
     if (process.env.CI) {
       const failure = error as Error & { code?: string; status?: number; signal?: string; stderr?: Buffer };
-      const phases = failure.stderr?.toString('utf8').match(/startup:(?:entry|connected|lookup|registry)/g) ?? [];
+      const phases = failure.stderr?.toString('utf8').match(/startup:(?:entry|encoding|json|object|connected|lookup|registry)/g) ?? [];
       console.error('Startup helper failure', { code: failure.code, status: failure.status, signal: failure.signal, phases });
     }
     // eslint-disable-next-line preserve-caught-error -- Temporary CI diagnosis; keep the public error stable.

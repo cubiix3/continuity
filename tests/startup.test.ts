@@ -115,7 +115,8 @@ test('user startup runs the runtime through the headless console host, checks th
     catch (error) { if (failure === undefined) failure = error; }
     try { startupRegistration('remove', home, cli); }
     catch (error) { if (failure === undefined) failure = error; }
-    finally { rmSync(home, { recursive: true, force: true }); }
+    try { rmSync(home, { recursive: true, force: true }); }
+    catch (error) { if (failure === undefined) failure = error; }
   }
   if (failure !== undefined) throw failure;
   // About thirty sequential PowerShell/COM calls; slow Windows runners need headroom.

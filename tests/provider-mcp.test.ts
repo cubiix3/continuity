@@ -121,6 +121,11 @@ test('Doctor surfaces stale hooks without changing settings or treating reduced 
   expect(reduced).toEqual([expect.objectContaining({ provider: 'claude', state: 'partial' })]);
   expect(reduced?.[0]?.message).toContain('original --no-autosave or --no-mcp choices');
   expect(reduced?.[0]?.message).not.toContain('continuity integrate claude install');
+  writeMcpEntry(codexTarget(codexDir).mcp, true);
+  expect(run('doctor').provider_integrations).toEqual([
+    expect.objectContaining({ provider: 'claude', state: 'partial' }),
+    expect.objectContaining({ provider: 'codex', state: 'invalid_config', message: expect.stringContaining('Hook settings could not be read') })
+  ]);
 });
 
 test('Codex: the MCP table is appended and removed as a whole block; comments, CRLF and other tables are untouched', () => {

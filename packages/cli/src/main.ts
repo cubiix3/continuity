@@ -58,7 +58,7 @@ program.command('doctor').description('Check storage, registrations, runtime and
   catch (error) { retrieval = { status: 'unavailable', reason: error instanceof Error ? error.message : 'Project binding cannot be inspected' }; }
   const provider_integrations = (['claude', 'codex'] as const)
     .map(provider => hookIntegrationStatus(integrationTarget(provider)))
-    .filter(status => status.installed)
+    .filter(status => status.installed || ['installed', 'stale', 'disabled'].includes(status.mcp))
     .map(status => {
       const { provider, state } = status;
       let message = status.message;

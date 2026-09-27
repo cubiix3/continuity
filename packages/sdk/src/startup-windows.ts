@@ -38,9 +38,14 @@ export function startupRegistration(action: 'install' | 'status' | 'remove', hom
   // Fixed, versioned adapter logic; dynamic paths cross as JSON data, never PowerShell code.
   const script = `
 $ErrorActionPreference = 'Stop'
+$PSModuleAutoLoadingPreference = 'None'
 [Console]::Error.WriteLine('startup:entry')
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::Error.WriteLine('startup:encoding')
+Import-Module -Name ([IO.Path]::Combine($PSHOME, 'Modules', 'Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
+[Console]::Error.WriteLine('startup:utility')
+Import-Module -Name ([IO.Path]::Combine($PSHOME, 'Modules', 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Management.psd1')) -ErrorAction Stop
+[Console]::Error.WriteLine('startup:management')
 $p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
 [Console]::Error.WriteLine('startup:json')
 $service = New-Object -ComObject Schedule.Service
@@ -98,7 +103,7 @@ $registered = $null; try { $registered = [DateTime]::Parse($task.Definition.Regi
   catch (error) {
     if (process.env.CI) {
       const failure = error as Error & { code?: string; status?: number; signal?: string; stderr?: Buffer };
-      const phases = failure.stderr?.toString('utf8').match(/startup:(?:entry|encoding|json|object|connected|lookup|registry)/g) ?? [];
+      const phases = failure.stderr?.toString('utf8').match(/startup:(?:entry|encoding|utility|management|json|object|connected|lookup|registry)/g) ?? [];
       console.error('Startup helper failure', { code: failure.code, status: failure.status, signal: failure.signal, phases });
     }
     // eslint-disable-next-line preserve-caught-error -- Temporary CI diagnosis; keep the public error stable.

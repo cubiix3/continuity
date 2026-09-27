@@ -13,16 +13,12 @@ export function windowsPowerShell(): string {
 
 export function windowsPowerShellEnvironment(system = windowsSystemDirectory()): NodeJS.ProcessEnv {
   const root = win32.dirname(system);
-  const env: NodeJS.ProcessEnv = {
+  return {
     SystemRoot: root,
     WINDIR: root,
     PATH: `${system};${root}`,
     PSModulePath: win32.join(system, 'WindowsPowerShell', 'v1.0', 'Modules'),
   };
-  for (const key of ['USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP']) {
-    if (process.env[key]) env[key] = process.env[key];
-  }
-  return env;
 }
 
 /** Only OS variables needed by native Windows programs; never forward inherited Git settings. */

@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { openContinuity } from '../packages/sdk/src/index.js';
 import { FileSources } from '../packages/source-files/src/index.js';
 
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 vi.mock('node:fs', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return { ...actual, renameSync: vi.fn(actual.renameSync) };

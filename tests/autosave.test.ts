@@ -96,6 +96,9 @@ test('an interrupted turn: its offer expires silently, and the next edit is offe
   // A save line in the later turn's answer does not revive the expired offer; the same turn's answer still applies.
   expect(stopDecision(stale, false, true, 't2', 1000)).toEqual({ action: 'none', state: { dirty: false, pending: false } });
   expect(stopDecision(stale, false, true, 't1', 1000).action).toBe('apply');
+  // Nor does a continuation stop of a later turn (another hook's), and it ends the expired offer so no later stop applies it.
+  expect(stopDecision(stale, true, true, 't2', 1000)).toEqual({ action: 'none', state: { dirty: false, pending: false } });
+  expect(stopDecision(stale, true, false, 't1', 1000)).toEqual({ action: 'none', state: stale });
   // An edit in the next turn gets a fresh offer, in whatever project it happens.
   expect(editDecision(stale, 'x', false, 't2')).toEqual({ offer: true, state: { dirty: false, pending: true, offered: true, turn: 't2', scope: 'x' } });
   expect(editDecision(stale, 'y', false, 't2')).toEqual({ offer: true, state: { dirty: false, pending: true, offered: true, turn: 't2', scope: 'y' } });
@@ -155,6 +158,18 @@ test('a save line without the angle brackets is accepted as the same line, and n
   expect(parseSaveReply(`[continuity-save]: ${payload}\n\n[continuity-save]: {broken`)).toBeUndefined();
   expect(parseSaveReply(`[continuity-save]: ${payload}\n\n[continuity-save]: <{"memories":[]}`)).toBeUndefined();
   expect(parseSaveReply(`[continuity-save]: ${payload}\n\n[continuity-save]: {"memories": [}`)).toBeUndefined();
+  // A last label line that is no save at all (prose, or nothing) also means no save.
+  expect(parseSaveReply(`[continuity-save]: ${payload}\n\n[continuity-save]: see above`)).toBeUndefined();
+  expect(parseSaveReply(`[continuity-save]: ${payload}\n\n[continuity-save]:`)).toBeUndefined();
+  // Fences follow CommonMark: the closing fence uses the same character, at least as long, at most three spaces in; a
+  // backtick run with a backtick after it is inline code, not a fence; lines split on CRLF, CR and LF only.
+  expect(parseSaveReply(`\`\`\`\n~~~\n[continuity-save]: ${payload}\n\`\`\``)).toBeUndefined();
+  expect(parseSaveReply(`\`\`\`\`\n\`\`\`\n[continuity-save]: ${payload}\n\`\`\`\``)).toBeUndefined();
+  expect(parseSaveReply(`    \`\`\`\n[continuity-save]: ${payload}`)).toEqual(expected);
+  expect(parseSaveReply(`\`\`\`x\`\`\` is inline code\n\n\`\`\`\n[continuity-save]: {"memories":[]}\n\`\`\``)).toBeUndefined();
+  expect(parseSaveReply(`\`\`\`\r[continuity-save]: {"memories":[]}\r\`\`\`\r\r[continuity-save]: ${payload}`)).toEqual(expected);
+  expect(parseSaveReply(`\`\`\`\r[continuity-save]: {"memories":[]}\r\`\`\``)).toBeUndefined();
+  expect(parseSaveReply(`> quoted${String.fromCharCode(0x2028)}[continuity-save]: ${payload}`)).toBeUndefined();
   // Prose after the save line does not void it (unchanged from the bracketed form); a fenced example after it is ignored.
   expect(parseSaveReply(`[continuity-save]: ${payload}\nThanks.`)).toEqual(expected);
   expect(parseSaveReply(`[continuity-save]: ${payload}\n\n\`\`\`\n[continuity-save]: {"memories":[]}\n\`\`\``)).toEqual(expected);

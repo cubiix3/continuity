@@ -103,8 +103,10 @@ $registered = $null; try { $registered = [DateTime]::Parse($task.Definition.Regi
   catch (error) {
     if (process.env.CI) {
       const failure = error as Error & { code?: string; status?: number; signal?: string; stderr?: Buffer };
-      const phases = failure.stderr?.toString('utf8').match(/startup:(?:entry|encoding|utility|management|json|object|connected|lookup|registry)/g) ?? [];
-      console.error('Startup helper failure', { code: failure.code, status: failure.status, signal: failure.signal, phases });
+      const stderr = failure.stderr?.toString('utf8') ?? '';
+      const phases = stderr.match(/startup:(?:entry|encoding|utility|management|json|object|connected|lookup|registry)/g) ?? [];
+      const detail = stderr.replace(/startup:[a-z]+/g, '').replace(/[A-Za-z0-9+/]{40,}={0,2}/g, '[encoded]').replace(/[A-Za-z]:\\[^\s]+/g, '[path]').trim().slice(-600);
+      console.error('Startup helper failure', { code: failure.code, status: failure.status, signal: failure.signal, phases, detail });
     }
     // eslint-disable-next-line preserve-caught-error -- Temporary CI diagnosis; keep the public error stable.
     throw new Error('User startup registration failed. Check Task Scheduler permissions and the Continuity task; no elevation or alternate registration was attempted.');

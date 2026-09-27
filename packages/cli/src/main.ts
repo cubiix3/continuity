@@ -51,12 +51,16 @@ function contextOutput(bundle: ContextBundle): void {
 }
 program.command('init').description('Register this canonical project directory locally').option('--name <name>').action((options: { name?: string }) => output(runtime().init(program.opts<{ project: string }>().project, options.name)));
 program.command('status').description('Show project identity and last sync').action(() => output(client().status()));
-program.command('doctor').description('Check storage, registrations and runtime').action(async () => {
+program.command('doctor').description('Check storage, registrations, runtime and installed provider integrations').action(async () => {
   const health = await runtime().doctor();
   let retrieval: { status: string; reason: string };
   try { retrieval = await client().retrievalHealth(); }
   catch (error) { retrieval = { status: 'unavailable', reason: error instanceof Error ? error.message : 'Project binding cannot be inspected' }; }
-  output({ ...health, retrieval, fallback: health.fts5 ? 'FTS5 active' : 'FTS5 unavailable' });
+  const provider_integrations = (['claude', 'codex'] as const)
+    .map(provider => hookIntegrationStatus(integrationTarget(provider)))
+    .filter(status => status.state !== 'missing')
+    .map(({ provider, state, message }) => ({ provider, state, message }));
+  output({ ...health, retrieval, provider_integrations, fallback: health.fts5 ? 'FTS5 active' : 'FTS5 unavailable' });
   if (health.integrity !== 'ok' || !health.fts5 || health.problems.length) process.exitCode = 1;
 });
 const project = program.command('project').description('Manage local project identities');
@@ -168,6 +172,8 @@ const continuityHomePath = () => {
   const canonical = join(existsSync(existing) ? realpathSync.native(existing) : existing, ...rest);
   return process.platform === 'win32' ? canonical.toLowerCase() : canonical;
 };
+const integrationTarget = (provider: 'claude' | 'codex', autosave = true, detail = true) =>
+  (provider === 'claude' ? claudeHookTarget : codexHookTarget)(process.execPath, realpathSync.native(cliPath), continuityHomePath(), process.env, { autosave, detail });
 /** Bounded provider hook input; oversized input is ignored rather than truncated. */
 async function hookStdin(limit: number) {
   const early = readHookInput();
@@ -227,7 +233,7 @@ function shellScope(provider: 'claude' | 'codex', session: string, client: Proje
 }
 for (const provider of ['claude', 'codex'] as const) {
   const name = provider === 'claude' ? 'Claude Code' : 'Codex';
-  const target = (autosave = true, detail = true) => (provider === 'claude' ? claudeHookTarget : codexHookTarget)(process.execPath, realpathSync.native(cliPath), continuityHomePath(), process.env, { autosave, detail });
+  const target = (autosave = true, detail = true) => integrationTarget(provider, autosave, detail);
   const command = integrate.command(provider).description(`${name} startup context, session autosave hooks and project detail tools in the user settings (${provider === 'claude' ? 'CLAUDE_CONFIG_DIR or ~/.claude/settings.json, and .claude.json for the MCP entry' : 'CODEX_HOME or ~/.codex: hooks.json and config.toml'})`);
   command.command('install').description('Add or repair the Continuity hooks and MCP entry; other hooks and servers are preserved')
     .option('--no-autosave', 'startup context only; removes Continuity autosave hooks').option('--no-mcp', 'no project detail tools; removes the Continuity MCP entry')

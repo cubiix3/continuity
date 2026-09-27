@@ -90,6 +90,31 @@ test('Claude: a moved CLI makes the entry stale until install repairs it; a syml
   expect(json(real)).toMatchObject({ keep: true, mcpServers: { continuity: { type: 'stdio' } } });
 });
 
+test('Doctor surfaces a stale provider integration after a package move without changing settings', () => {
+  const claudeDir = join(root, 'claude-upgrade');
+  const oldCli = join(root, 'previous', 'cli', 'src', 'index.js');
+  mkdirSync(dirname(oldCli), { recursive: true });
+  writeFileSync(oldCli, '');
+  installHookIntegration(claudeHookTarget(process.execPath, oldCli, home, { CLAUDE_CONFIG_DIR: claudeDir }));
+  const settingsFile = join(claudeDir, 'settings.json');
+  const mcpFile = join(claudeDir, '.claude.json');
+  const before = [readFileSync(settingsFile, 'utf8'), readFileSync(mcpFile, 'utf8')];
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: join(root, 'codex-empty') };
+  const run = (...args: string[]) => {
+    const result = spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, '--project', a, '--json', ...args],
+      { encoding: 'utf8', windowsHide: true, env });
+    expect(result.status, result.stderr).toBe(0);
+    return JSON.parse(result.stdout) as { provider_integrations?: { provider: string; state: string; message: string }[] };
+  };
+
+  expect(run('doctor').provider_integrations).toEqual([expect.objectContaining({
+    provider: 'claude', state: 'stale', message: expect.stringContaining('continuity integrate claude install')
+  })]);
+  expect([readFileSync(settingsFile, 'utf8'), readFileSync(mcpFile, 'utf8')]).toEqual(before);
+  run('integrate', 'claude', 'install');
+  expect(run('doctor').provider_integrations).toEqual([expect.objectContaining({ provider: 'claude', state: 'installed' })]);
+});
+
 test('Codex: the MCP table is appended and removed as a whole block; comments, CRLF and other tables are untouched', () => {
   const dir = join(root, 'codex'); mkdirSync(dir);
   const file = join(dir, 'config.toml');

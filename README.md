@@ -217,7 +217,7 @@ access. FTS5 retrieval works fully offline; semantic retrieval is optional and
 
 ```text
 init                          Register the current directory
-status | doctor               Identity and last sync | storage and registration health
+status | doctor               Identity and last sync | storage, registration, runtime and integration health
 sync                          Refresh the source index
 sources show | preview        Current source scope | read-only selection and limit check (main)
 sources set | clear           Replace or remove this project's local source filter (main)

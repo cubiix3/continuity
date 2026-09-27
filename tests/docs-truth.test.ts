@@ -16,7 +16,7 @@ const commands = (...args: string[]) => {
   return [...section.matchAll(/^ {2}([a-z][a-z-]*)(?=\s|$)/gm)].map(match => match[1]!).filter(name => name !== 'help');
 };
 
-it('documents the actual package modules', () => {
+it('documents the actual package directories', () => {
   const modules = readdirSync(resolve('packages'), { withFileTypes: true })
     .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
   const documented = [...read('docs/architecture.md').matchAll(/^\| `([^`]+)` \|/gm)]
@@ -42,9 +42,13 @@ it('documents the registered CLI commands and provider integrations', () => {
   const block = read('README.md').match(/## Commands\s+```text\s+([\s\S]*?)```/)?.[1];
   if (!block) throw new Error('README command table is missing');
   const headings = block.split(/\r?\n/).map(line => line.split(/\s{2,}/)[0] ?? '');
-  for (const name of commands()) {
-    expect(headings.some(heading => new RegExp(`(^|[\\s|])${name}(?=[\\s|]|$)`).test(heading)), name).toBe(true);
-  }
+  const documented = new Set(headings.flatMap(heading => {
+    const alternatives = heading.split('|').map(part => part.trim());
+    const first = alternatives[0]?.split(/\s+/) ?? [];
+    if (!first[0]) return [];
+    return first.length === 1 ? alternatives.map(part => part.split(/\s+/)[0]!) : [first[0]];
+  }));
+  expect([...documented].sort()).toEqual(commands().sort());
   const providerHeading = headings.find(heading => heading.startsWith('integrate '));
   if (!providerHeading) throw new Error('README provider command is missing');
   expect(providerHeading.slice('integrate '.length).split('|').sort()).toEqual(commands('integrate').sort());
@@ -59,17 +63,14 @@ it('documents the host API and current source and runtime commands', () => {
   expect(hosts).toContain(`CONTINUITY_HOST_API_VERSION !== ${CONTINUITY_HOST_API_VERSION}`);
 
   const operations = read('docs/operations.md');
-  for (const name of ['show', 'preview', 'set', 'clear']) {
-    expect(commands('sources')).toContain(name);
-    expect(operations).toMatch(new RegExp('`(?:continuity sources )?' + name + '`'));
+  for (const name of commands('sources')) {
+    expect(operations).toContain(`continuity sources ${name}`);
   }
   const runtime = read('docs/background-runtime.md');
-  for (const name of ['start', 'run', 'status', 'stop']) {
-    expect(commands('runtime')).toContain(name);
+  for (const name of commands('runtime')) {
     expect(runtime).toContain(`runtime ${name}`);
   }
-  for (const name of ['install', 'status', 'remove']) {
-    expect(commands('startup')).toContain(name);
+  for (const name of commands('startup')) {
     expect(runtime).toContain(`startup ${name}`);
   }
 });

@@ -39,32 +39,24 @@ export function startupRegistration(action: 'install' | 'status' | 'remove', hom
   const script = `
 $ErrorActionPreference = 'Stop'
 $PSModuleAutoLoadingPreference = 'None'
-[Console]::Error.WriteLine('startup:entry')
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-[Console]::Error.WriteLine('startup:encoding')
+# Load only Windows-owned modules by exact path, without command discovery.
 Import-Module -Name ([IO.Path]::Combine($PSHOME, 'Modules', 'Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
-[Console]::Error.WriteLine('startup:utility')
 Import-Module -Name ([IO.Path]::Combine($PSHOME, 'Modules', 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Management.psd1')) -ErrorAction Stop
-[Console]::Error.WriteLine('startup:management')
 $p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
-[Console]::Error.WriteLine('startup:json')
 $service = New-Object -ComObject Schedule.Service
-[Console]::Error.WriteLine('startup:object')
 $service.Connect()
-[Console]::Error.WriteLine('startup:connected')
 $folder = $service.GetFolder('\\')
 $task = $null
 try { $task = $folder.GetTask($p.name) } catch { if ($_.Exception.HResult -ne -2147024894) { throw } }
-[Console]::Error.WriteLine('startup:lookup')
 if ($task -and $task.Definition.RegistrationInfo.Description -ne $p.marker) { throw 'Startup name is owned by another registration.' }
-if ($p.action -eq 'remove') { if ($task) { $folder.DeleteTask($p.name, 0) }; @{ installed = $false; mechanism = 'Task Scheduler'; name = $p.name } | ConvertTo-Json -Compress; exit }
+if ($p.action -eq 'remove') { if ($task) { $folder.DeleteTask($p.name, 0) }; @{ installed = $false; mechanism = 'Task Scheduler'; name = $p.name } | ConvertTo-Json -Compress; exit 0 }
 # "Use legacy console" (ForceV2 = 0) makes the console host refuse --headless and start nothing.
 $legacy = $false
 # Like the console host, only a DWORD value of 0 counts; another type is ignored.
 if ($null -ne $p.legacy) { $legacy = [bool]$p.legacy } else { try { $v = (Get-ItemProperty -LiteralPath 'HKCU:\\Console' -Name ForceV2 -ErrorAction Stop).ForceV2; $legacy = ($v -is [int]) -and $v -eq 0 } catch { $legacy = $false } }
-[Console]::Error.WriteLine('startup:registry')
 if ($p.action -eq 'install') {
-  if ($legacy) { @{ refused = 'legacy_console' } | ConvertTo-Json -Compress; exit }
+  if ($legacy) { @{ refused = 'legacy_console' } | ConvertTo-Json -Compress; exit 0 }
   # The console host must be the one in the Windows system directory, however the environment names it.
   if (-not [string]::Equals($p.executable, (Join-Path ([Environment]::SystemDirectory) 'conhost.exe'), [StringComparison]::OrdinalIgnoreCase)) { throw 'Console host is not the Windows system copy.' }
   $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -88,7 +80,7 @@ if ($p.action -eq 'install') {
   $exec.Arguments = $p.args
   $task = $folder.RegisterTaskDefinition($p.name, $definition, 6, $sid, $null, 3)
 }
-if (!$task) { @{ installed = $false; mechanism = 'Task Scheduler'; name = $p.name; legacy_console = $legacy } | ConvertTo-Json -Compress; exit }
+if (!$task) { @{ installed = $false; mechanism = 'Task Scheduler'; name = $p.name; legacy_console = $legacy } | ConvertTo-Json -Compress; exit 0 }
 $entry = $task.Definition.Actions.Item(1)
 $principal = $task.Definition.Principal
 # Current only as exactly one action: this executable, exactly these arguments (ordinal, character by character;
@@ -100,17 +92,7 @@ $registered = $null; try { $registered = [DateTime]::Parse($task.Definition.Regi
 `;
   let output: string;
   try { output = execFileSync(windowsPowerShell(), ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { cwd: windowsSystemDirectory(), env: windowsPowerShellEnvironment(), encoding: 'utf8', windowsHide: true, timeout: 20000, maxBuffer: 65536, stdio: ['ignore', 'pipe', 'pipe'] }); }
-  catch (error) {
-    if (process.env.CI) {
-      const failure = error as Error & { code?: string; status?: number; signal?: string; stderr?: Buffer };
-      const stderr = failure.stderr?.toString('utf8') ?? '';
-      const phases = stderr.match(/startup:(?:entry|encoding|utility|management|json|object|connected|lookup|registry)/g) ?? [];
-      const detail = stderr.replace(/startup:[a-z]+/g, '').replace(/[A-Za-z0-9+/]{40,}={0,2}/g, '[encoded]').replace(/[A-Za-z]:\\[^\s]+/g, '[path]').trim().slice(-600);
-      console.error('Startup helper failure', { code: failure.code, status: failure.status, signal: failure.signal, phases, detail });
-    }
-    // eslint-disable-next-line preserve-caught-error -- Temporary CI diagnosis; keep the public error stable.
-    throw new Error('User startup registration failed. Check Task Scheduler permissions and the Continuity task; no elevation or alternate registration was attempted.');
-  }
+  catch { throw new Error('User startup registration failed. Check Task Scheduler permissions and the Continuity task; no elevation or alternate registration was attempted.'); }
   const result = JSON.parse(output.trim()) as { refused?: string; installed: boolean; name: string; mechanism: string; executable?: string; arguments?: string; current_command?: boolean; enabled?: boolean; logon_type?: number; run_level?: number; last_run?: string | null; registered?: string | null; task_state?: number; launcher_result?: number; legacy_console?: boolean };
   if (result.refused === 'legacy_console') throw new Error(LEGACY_CONSOLE + ' Nothing was installed, and an existing startup task is unchanged; turn the legacy console off (console window properties, Options), or run continuity runtime start.');
   const installedArgs = typeof result.arguments === 'string' ? result.arguments : '';

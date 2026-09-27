@@ -117,8 +117,10 @@ of the same workspace during a command, or up to 1.5 s before it, makes that com
 
 Claude Code's report is a before/after comparison over the command. A change made at the same moment can therefore
 still count for the command: by a human editor, by an agent without Continuity's hooks, or by a Codex shell command
-outside `apply_patch`. When two sessions' commands overlap, the first hook to run takes the offer. That only triggers
-the save offer: Continuity records no file provenance, and the model decides what, if anything, to save. The `Stop` hook reads the same ids and `last_assistant_message`, the
+outside `apply_patch`. When two sessions' commands overlap, the first hook to run takes the offer. Continuity records
+no file provenance. In the session's own workspace such a change can only trigger the save offer, and the model decides
+what, if anything, to save. In another registered scope of the same Git tree it makes the turn `mixed`, so the save
+fails closed ([ADR 017](adr/017-shell-made-edits.md)). The `Stop` hook reads the same ids and `last_assistant_message`, the
 latter only while Continuity's own offer or request is outstanding,
 and only its last save line outside fenced code, bracketed or bare (see
 [agent lifecycle](agent-lifecycle.md)). Transcripts, transcript paths and tool

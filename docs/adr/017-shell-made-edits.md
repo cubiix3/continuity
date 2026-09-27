@@ -83,8 +83,16 @@ Traced with an isolated probe that logged only key names, types and sizes:
   - A PowerShell call pays the full hook (about 124 ms on a small project; the bounded check and index read add up to
     about 45 ms on the largest registered projects here).
   - **Concurrent writers.** A change made at the same moment by a human editor, by an agent without Continuity's
-    hooks, or by a Codex shell command outside `apply_patch` can still count for the command. That only triggers the
-    offer; no file provenance is recorded, and the model decides what to save.
+    hooks, or by a Codex shell command outside `apply_patch` can still count for the command. No file provenance is
+    recorded. In the session's own workspace the change can only trigger the offer, and the model decides what to
+    save. In another registered scope of the same Git tree (a nested project, for example), it makes the turn
+    `mixed`: that fails closed, even when the turn's offer is already pending, so the save is skipped. The session
+    that sees it also journals that scope, so another session's real edit there during the command is ambiguous.
+  - **Parallel sub-agents.** The bounded check starts after the session's last journaled edit, and sub-agents share
+    the session. A sub-agent's edit that lands while a PowerShell command runs hides that command's earlier writes;
+    the session stays dirty, so `Stop` asks through the visible fallback instead.
+  - **Case-only renames.** A folder renamed only by case (`src` to `Src`) fails the scanner's real-path check, so
+    the bounded check misses edits in it until the next sync. This fails closed.
   - **Overlapping commands: the first hook wins.** Session B's read-only command overlaps session A's edit, and B's
     hook runs first. B's report lists A's file, so B is offered, and A's report is ambiguous. The model in B usually
     saves nothing, as in any turn without a lesson, and A's lesson for that command is lost.

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { copyFileSync, existsSync, linkSync,mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -129,6 +129,21 @@ test('an edit of another project from this session is mixed: never offered, and 
   expect(crossed).toMatchObject({ dirty: true, pending: false, scope: 'mixed' });
   // The beta edit is on record: a beta session whose command overlapped it cannot claim it.
   expect(shell('beta-reader', b, { changed: [join(b, 'src', 'app.js')], duration: 10_000 }).stdout).toBe('');
+});
+
+test('a created file, a rename and a worktree of the same project: each binds to its own workspace', () => {
+  // A registered worktree is its own workspace: its own edit is offered, an edit of the primary checkout is mixed.
+  const worktree = join(root, 'alpha-wt');
+  git(a, 'worktree', 'add', '-q', '-b', 'wt', worktree); host.workspace(a, worktree);
+  expect(offered(shell('in-worktree', worktree, { changed: [join(worktree, 'README.md')] }))).toBe(true);
+  expect(shell('to-primary', worktree, { changed: [join(a, 'README.md')] }).stdout).toBe('');
+  const states = stateFiles().map(f => JSON.parse(readFileSync(join(home, 'hooks', 'autosave', f), 'utf8')) as { scope?: string });
+  expect(states.filter(s => s.scope === 'mixed')).toHaveLength(1);
+  // A new file, and a rename whose old path is gone, are edits of the project (beta: alpha is on record above).
+  writeFileSync(join(b, 'src', 'created.js'), 'export const y = 1;\n');
+  expect(offered(shell('creator', b, { changed: [join(b, 'src', 'created.js')] }))).toBe(true);
+  mkdirSync(join(plain, 'lib')); renameSync(join(plain, 'src', 'app.js'), join(plain, 'lib', 'app.js'));
+  expect(offered(shell('mover', plain, { changed: [join(plain, 'src', 'app.js'), join(plain, 'lib', 'app.js')] }))).toBe(true);
 });
 
 test('the journal window: duration plus a 1.5 s margin, 60 s without a valid duration, odd entries ignored', () => {
@@ -262,6 +277,9 @@ test('hook input beyond 1 MiB still counts; input beyond the limit is read to th
   expect(big.error).toBeUndefined(); expect(offered(big)).toBe(true);
   const huge = run('claude', 'tool-use', JSON.stringify(shellInput('huge', a, { changed: [join(a, 'README.md')] })).replace('SECRET-OUTPUT', 'y'.repeat(17 * 1024 * 1024)));
   expect(huge).toMatchObject({ status: 0, stdout: '', error: undefined });
+  // Codex hooks and Stop read their input after the CLI loads: oversized input is read to the end there too.
+  const oversized = JSON.stringify({ session_id: 'huge', cwd: a, hook_event_name: 'Stop', padding: 'y'.repeat(17 * 1024 * 1024) });
+  for (const [provider, event] of [['codex', 'tool-use'], ['claude', 'stop']] as const) expect(run(provider, event, oversized)).toMatchObject({ status: 0, stdout: '', error: undefined });
 });
 
 test('the edit journal: never written through a link, entries expire after an hour', () => {

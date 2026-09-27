@@ -91,8 +91,10 @@ The same install adds the `PostToolUse` (`apply_patch`) and `Stop` hooks. Intera
   edits count toward the parent session, and only the parent is asked.
 - On Windows, Codex's daemon opens a console window for each command it starts,
   including its own `git` calls and every hook command (observed with 0.157.1 when
-  Windows Terminal is the default terminal). This is Codex behaviour; each Continuity
-  hook call adds one such window.
+  Windows Terminal is the default terminal). This is Codex behaviour, and Continuity
+  cannot change it: each Continuity hook call still gets one such window from Codex.
+  The processes Continuity itself starts (its workspace `git` checks, from hooks, the
+  detail server or the background runtime) start hidden and add no window (#31).
 - `codex --no-daemon` looks exactly like `codex exec` to hooks and does not autosave
   unless started with `CONTINUITY_AUTOSAVE=1`.
 - The daemon keeps the environment of the launch that started it, for every session

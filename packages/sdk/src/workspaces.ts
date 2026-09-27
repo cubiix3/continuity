@@ -25,23 +25,27 @@ function* membership(projectRoot: string, workspaceRoot: string): Generator<GitC
   if (!entries.split('\0').some(line => line.startsWith('worktree ') && existsSync(resolve(line.slice(9))) && canonical(resolve(line.slice(9))) === workspace)) throw new Error('Workspace is not registered with Git.');
   return workspace;
 }
-/** Host-only Git membership check. Neither display names nor copied identity files grant scope. */
+/**
+ * Host-only Git membership check. Neither display names nor copied identity files grant scope. Git starts without a
+ * console window on Windows, even when the caller has none (#31).
+ */
 export function verifyWorkspace(projectRoot: string, workspaceRoot: string): string {
   const checks = membership(projectRoot, workspaceRoot);
   for (let step = checks.next(); ; ) {
     if (step.done) return step.value;
     const { args, maxBuffer } = step.value;
-    step = checks.next(execFileSync('git', args, { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, maxBuffer, stdio: ['ignore', 'pipe', 'pipe'] }));
+    step = checks.next(execFileSync('git', args, { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, maxBuffer, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }));
   }
 }
 
 /**
  * Runs a fixed executable with an argument array (never a shell), bounded by a timeout and output limit. The child is
- * killed on timeout or overflow, and the promise rejects; stdin is closed immediately.
+ * killed on timeout or overflow, and the promise rejects; stdin is closed immediately. It never opens a console window
+ * on Windows, even when the caller has no console (the background runtime) (#31).
  */
 export function runFile(file: string, args: readonly string[], options: { timeout: number; maxBuffer: number }): Promise<string> {
   return new Promise((resolvePromise, reject) => {
-    const child = execFile(file, args, { encoding: 'utf8', timeout: options.timeout, maxBuffer: options.maxBuffer, shell: false }, (error, stdout) => error ? reject(error) : resolvePromise(stdout));
+    const child = execFile(file, args, { encoding: 'utf8', timeout: options.timeout, maxBuffer: options.maxBuffer, shell: false, windowsHide: true }, (error, stdout) => error ? reject(error) : resolvePromise(stdout));
     child.stdin?.end();
   });
 }

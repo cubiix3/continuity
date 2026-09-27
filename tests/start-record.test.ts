@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { createServer } from 'node:net';
 import { readStart, recordStart, taskStartResult, TASK_RUN_WINDOW_MS } from '../packages/sdk/src/start-record.js';
 import { startupAction, windowsArgument } from '../packages/sdk/src/startup-windows.js';
@@ -44,12 +45,29 @@ test('the start record is written atomically, holds no message, and a malformed 
   }
 });
 
+test('a record that cannot be written changes nothing and leaves no temporary file', () => {
+  mkdirSync(join(home, 'runtime-start.json'));
+  expect(recordStart(home, 'started')).toMatchObject({ outcome: 'started' });
+  expect(readdirSync(home).filter(f => f.endsWith('.tmp'))).toEqual([]);
+  expect(readStart(home)).toBeUndefined();
+});
+
+test('concurrent starts each leave a valid record and no temporary file', async () => {
+  const module = pathToFileURL(resolve('dist/packages/sdk/src/start-record.js')).href;
+  const writer = `const { recordStart } = await import(${JSON.stringify(module)}); for (let i = 0; i < 100; i++) recordStart(process.argv[1], i % 2 ? 'started' : 'already_running');`;
+  const children = Array.from({ length: 4 }, () => spawn(process.execPath, ['--input-type=module', '-e', writer, home], { stdio: 'ignore', windowsHide: true }));
+  await Promise.all(children.map(child => new Promise(done => child.on('exit', done))));
+  expect(readdirSync(home).filter(f => f.endsWith('.tmp'))).toEqual([]);
+  expect(readStart(home)?.outcome).toMatch(/^(started|already_running)$/);
+});
+
 test('a record counts only for the task run it belongs to; an older one is never shown as the current result', () => {
   const run = '2026-09-27T10:00:00.000Z', at = (ms: number) => ({ version: 1 as const, at: new Date(Date.parse(run) + ms).toISOString(), outcome: 'failed' as const, exit_code: 1 as const, category: 'start_timeout' as const });
   expect(taskStartResult(null, false, at(500))).toEqual({ state: 'not_run', last_run: null });
   expect(taskStartResult(run, false, at(700))).toEqual({ state: 'failed', last_run: run, at: at(700).at, exit_code: 1, category: 'start_timeout' });
   // Task Scheduler keeps whole seconds: a record up to a second before the stored time belongs to the same run.
   expect(taskStartResult(run, false, at(-900)).state).toBe('failed');
+  expect(taskStartResult(run, false, at(-1500)).state).toBe('no_result');
   // An older record (a previous run or a manual start) is not this run's result.
   expect(taskStartResult(run, false, at(-5000))).toEqual({ state: 'no_result', last_run: run });
   expect(taskStartResult(run, true, at(-5000))).toEqual({ state: 'running', last_run: run });

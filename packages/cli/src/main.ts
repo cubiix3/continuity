@@ -101,6 +101,8 @@ handoff.command('close <id>').description('Mark a handoff finished; the handoff 
   .requiredOption('--agent <name>', 'who confirms the work is finished').requiredOption('--session <id>', 'session or reference for the record')
   .action((id: string, options: { agent: string; session: string }) => output(client().closeHandoff({ id, from: { agent: options.agent, session: options.session } })));
 let persistent = false;
+/** runtime start ends within this, below the sign-in task's one-minute limit (#44). */
+const START_DEADLINE_MS = 45_000;
 const backgroundHome = () => continuityHome(program.opts<{ home?: string }>().home);
 const runtimeCommands = program.command('runtime').description('Control the optional local background runtime');
 for (const command of ['start', 'run'] as const) runtimeCommands.command(command).description(command === 'run' ? 'Run in the foreground (diagnostics)' : 'Start a hidden background process')
@@ -110,12 +112,16 @@ for (const command of ['start', 'run'] as const) runtimeCommands.command(command
       // Every start leaves an outcome record: Windows starts this from the sign-in task through a headless console
       // host, whose exit code cannot show a failure (#44).
       const home = backgroundHome(), { recordStart, startCategory } = await import('../../sdk/src/start-record.js');
+      // The task's one-minute limit ends only the console host, so the start ends itself well before that.
+      const watchdog = setTimeout(() => { recordStart(home, 'failed', 'start_timeout'); process.exit(1); }, START_DEADLINE_MS);
+      watchdog.unref();
       try {
         const port = Number(options.port); if (!Number.isInteger(port) || port < 0 || port > 65535) throw Object.assign(new Error('Port must be 0–65535.'), { category: 'invalid_arguments' });
         const result = await (await background()).startBackground(home, cliPath, port, options.autoSync);
         recordStart(home, 'message' in result ? 'already_running' : 'started');
         output(result);
       } catch (error) { recordStart(home, 'failed', startCategory(error)); throw error; }
+      finally { clearTimeout(watchdog); }
       return;
     }
     const port = Number(options.port); if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Port must be 0–65535.');

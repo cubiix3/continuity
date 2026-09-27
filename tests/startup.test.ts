@@ -34,9 +34,15 @@ test('user startup runs the runtime through the headless console host, checks th
   type Status = { installed: boolean; current_command?: boolean; launcher?: string; startup_result?: { state: string } };
   const status = () => startupRegistration('status', home, cli, port, false) as Status;
   try {
-    // An older Windows gets an explicit refusal, never a task that opens a window.
-    expect(() => startupRegistration('install', home, cli, port, false, { build: 17134, systemRoot: process.env.SystemRoot })).toThrow('1809');
-    expect(startupRegistration('status', home, cli, port, false, { build: 17134, systemRoot: process.env.SystemRoot })).toMatchObject({ installed: false, supported: false });
+    // An older Windows gets an explicit refusal, never a task that opens a window; 17763 (1809) itself is supported.
+    expect(() => startupRegistration('install', home, cli, port, false, { build: 17762, systemRoot: process.env.SystemRoot })).toThrow('1809');
+    expect(startupRegistration('status', home, cli, port, false, { build: 17762, systemRoot: process.env.SystemRoot })).toMatchObject({ installed: false, supported: false });
+    expect(startupRegistration('status', home, cli, port, false, { build: 17763, systemRoot: process.env.SystemRoot })).toMatchObject({ installed: false, supported: true });
+    // "Use legacy console" makes the console host refuse --headless: refused as well, and reported by status.
+    expect(() => startupRegistration('install', home, cli, port, false, { build: 26200, systemRoot: process.env.SystemRoot, legacyConsole: true })).toThrow('legacy console');
+    expect(startupRegistration('status', home, cli, port, false, { build: 26200, systemRoot: process.env.SystemRoot, legacyConsole: true })).toMatchObject({ supported: false, unsupported: expect.stringContaining('ForceV2') });
+    // Windows expands %VAR% in the task's command line: such a path is refused.
+    expect(() => startupRegistration('install', home, join(home, '%USERNAME%', 'index.js'), port, false)).toThrow('%');
     // A console host outside the Windows system directory (an altered SystemRoot) is refused, and nothing is registered.
     const fakeRoot = join(home, 'fake windows'); mkdirSync(join(fakeRoot, 'System32'), { recursive: true }); writeFileSync(join(fakeRoot, 'System32', 'conhost.exe'), '');
     expect(() => startupRegistration('install', home, cli, port, false, { build: 26200, systemRoot: fakeRoot })).toThrow('registration failed');
@@ -73,14 +79,24 @@ test('user startup runs the runtime through the headless console host, checks th
       ['other port', { args: expected.arguments.replace(`"--port" "${port}"`, `"--port" "${port + 1}"`) }],
       ['extra argument', { args: `${expected.arguments} "--verbose"` }],
       ['option case', { args: expected.arguments.replace('"--home"', '"--HOME"') }],
+      // Characters a culture-aware comparison ignores: a soft hyphen, a zero-width joiner, a decomposed ü.
+      ['soft hyphen', { args: expected.arguments.replace('"runtime"', `"run${String.fromCharCode(0xad)}time"`) }],
+      ['zero-width joiner', { args: expected.arguments.replace(`"--port" "${port}"`, `"--port" "${port}${String.fromCharCode(0x200d)}"`) }],
+      ['decomposed home', { args: expected.arguments.replace(windowsArgument(canonical), windowsArgument(canonical.normalize('NFD'))) }],
       ['working directory', { workdir: tmpdir() }],
       ['second action', { second: true }],
     ];
+    expect(canonical.normalize('NFD')).not.toBe(canonical);
     for (const [label, change] of deviations) {
       tamper(String(first.name), change);
-      expect([label, status().current_command]).toEqual([label, false]);
+      const tampered = status() as Status & { executable_available?: boolean };
+      expect([label, tampered.current_command]).toEqual([label, false]);
+      if (label === 'other Node') expect(tampered.executable_available).toBe(false);
+      if (label === 'other console host') expect(tampered.launcher).toBe('conhost --headless (not the Windows system copy)');
       expect(startupRegistration('install', home, cli, port, false).current_command).toBe(true);
     }
+    // The task's earlier runs belong to the replaced registration: none counts for this one yet.
+    expect(status().startup_result?.state).toBe('not_run');
     expect(status().launcher).toBe('conhost --headless');
     tamper(String(first.name), { path: process.execPath, args: rest });
     expect(status().launcher).toMatch(/^direct/);

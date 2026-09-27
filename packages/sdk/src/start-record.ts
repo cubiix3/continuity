@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -14,12 +14,21 @@ const file = (home: string) => join(home, 'runtime-start.json');
 /** Replaces the record atomically. Failing to write it never changes the start result. */
 export function recordStart(home: string, outcome: StartRecord['outcome'], category?: StartCategory, now = new Date()) {
   const record: StartRecord = { version: 1, at: now.toISOString(), outcome, exit_code: outcome === 'failed' ? 1 : 0, ...(outcome === 'failed' ? { category: category ?? 'error' } : {}) };
+  const temporary = `${file(home)}.${process.pid}.tmp`;
   try {
     mkdirSync(home, { recursive: true });
-    const temporary = `${file(home)}.${process.pid}.tmp`;
     writeFileSync(temporary, JSON.stringify(record), { mode: 0o600 });
-    renameSync(temporary, file(home));
+    // Windows refuses a rename onto a file another process is replacing at that moment: retry briefly.
+    for (let attempt = 0; ; attempt++) {
+      try { renameSync(temporary, file(home)); break; }
+      catch (error) {
+        if (attempt >= 20 || !['EPERM', 'EACCES', 'EBUSY'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10 + attempt * 5);
+      }
+    }
   } catch { /* An unwritable home must not turn a start into a failure, or a failure into another error. */ }
+  // Never leaves the temporary file behind (unlinkSync: rmSync skips some non-ASCII paths on Node 24).
+  finally { try { unlinkSync(temporary); } catch { /* renamed, or never written */ } }
   return record;
 }
 /** The last record, if it is well-formed; anything else reads as no record. */

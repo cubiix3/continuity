@@ -10,7 +10,7 @@ Continuity's unit of access is a `ProjectClient`, created by a trusted host from
 canonical directory registration. It exposes operations, not a namespace selector.
 Agent adapters receive a narrower `AgentAdapter` contract with seven operations.
 
-| Module | Responsibility |
+| Directory | Responsibility |
 | --- | --- |
 | `core` | Contracts, project resolver, namespace guard, context broker, memory policy, handoff service |
 | `storage-sqlite` | Versioned schema, atomic persistence, revisions, FTS5 candidate search |
@@ -19,13 +19,16 @@ Agent adapters receive a narrower `AgentAdapter` contract with seven operations.
 | `cli` | Local user commands and service startup |
 | `adapter-generic` | Small programmatic agent contract |
 | `adapter-mcp` | Seven stdio MCP tools |
-| `adapter-claude` | Claude Code SessionStart hook output and explicit settings install/remove |
+| `adapter-hooks` | Claude Code and Codex session hooks and explicit integration install/remove |
+| `dashboard` | Local Dashboard UI |
+| `retrieval-semantic` | Optional semantic retrieval adapters |
 | `server` | Local HTTP v1 transport |
 
-These are private pnpm workspace modules compiled together by one TypeScript
-configuration. They are not independently published packages. Relative module
-imports keep the initial distribution straightforward; there is one build and one
-set of contracts. The Core never imports SQLite or provider SDKs.
+These directories share one distribution. Those with a `package.json` are private
+pnpm workspace modules compiled by one TypeScript configuration; `dashboard`
+holds UI assets copied into the distribution. They are not independently
+published packages. Relative module imports keep one build and one set of
+contracts. The Core never imports SQLite or provider SDKs.
 
 ## Identity and namespaces
 

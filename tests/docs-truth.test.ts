@@ -30,6 +30,10 @@ it('keeps MCP tool counts and provider detail tools aligned with exports', () =>
   expect(read('docs/architecture.md')).toMatch(new RegExp('\\| `adapter-mcp` \\| ' + count + ' stdio MCP tools', 'i'));
   expect(read('README.md')).toMatch(new RegExp(`\\| MCP stdio \\| ${count} project-bound tools`, 'i'));
   expect(read('docs/agent-bootstrap.md')).toMatch(new RegExp(`${count} project-bound tools`, 'i'));
+  const adapters = read('docs/adapters.md');
+  expect(adapters).toMatch(new RegExp(`${count} tools are available`, 'i'));
+  const toolRows = [...adapters.matchAll(/^\| `(continuity_[a-z_]+)` \|/gm)].map(match => match[1]!).sort();
+  expect(toolRows).toEqual([...MCP_TOOLS].sort());
   expect(help()).toMatch(new RegExp(`Serve ${count} project-bound MCP tools`, 'i'));
 
   const row = read('docs/agent-bootstrap.md').split(/\r?\n/)

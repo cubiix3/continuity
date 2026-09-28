@@ -23,7 +23,7 @@
 ### Upgrade notes
 
 - Back up the complete Continuity home, stop the runtime and other Continuity processes, install the v0.2.0 artifact, then run Doctor and check each installed provider integration. See [UPGRADING.md](UPGRADING.md).
-- Host API 2 makes `host.doctor()` asynchronous; callers must await it. The SQLite schema remains version 5.
+- Host API 2 makes `host.doctor()` asynchronous; callers must await it. Upgrading a v0.1.0 home migrates SQLite schema 4 to 5; do not reopen the migrated home with v0.1.0.
 
 ### Detailed changes
 

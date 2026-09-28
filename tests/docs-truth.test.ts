@@ -41,6 +41,10 @@ it('keeps MCP tool counts and provider detail tools aligned with exports', () =>
   if (!row) throw new Error('Provider detail-tool row is missing');
   const names = [...row.matchAll(/`(continuity_[a-z_]+)`/g)].map(match => match[1]!).sort();
   expect(names).toEqual([...DETAIL_TOOLS].sort());
+  for (const path of ['docs/integrations/claude-code.md', 'docs/integrations/codex.md']) {
+    const listed = [...new Set([...read(path).matchAll(/`(continuity_[a-z_]+)`/g)].map(match => match[1]!))].sort();
+    expect(listed, path).toEqual([...DETAIL_TOOLS].sort());
+  }
 });
 
 it('documents the registered CLI commands and provider integrations', () => {

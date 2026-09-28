@@ -6,7 +6,7 @@ Continuity is a local, project-bound context, memory and handoff layer. The pre-
 
 ## Decision
 
-- Continuity is not a transcript or tool-output archive, code-search replacement, or agent execution engine. Coding agents use native tools to inspect, change and run code; Continuity does not edit files, manage Git or orchestrate agents.
+- Continuity is not a transcript or tool-output archive, code-search replacement, editor, Git manager, agent orchestrator, or agent execution engine. Coding agents inspect, change and run code with their native tools.
 - There is no cloud service, account system, team synchronization, telemetry, or cross-project global search. The trusted host keeps project scope fixed.
 - No semantic model or network service is downloaded, installed or enabled automatically. Optional semantic backends remain within the existing authorized-project retrieval boundary.
 - No automatic data erase or destructive retention is added. Existing retention commands preview eligible records; they do not delete them.

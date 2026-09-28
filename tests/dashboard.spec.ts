@@ -261,7 +261,7 @@ test('overview workspace total comes from the server, not the paginated workspac
 });
 test('the sidebar names the current Host API version', async ({ page }) => {
   await page.goto(`${base}/#/overview`);
-  await expect(page.locator('.sidebar footer')).toHaveText(`Local · v0.1.0 · Host API ${CONTINUITY_HOST_API_VERSION}`);
+  await expect(page.locator('.sidebar footer')).toHaveText(`Local · v0.2.0 · Host API ${CONTINUITY_HOST_API_VERSION}`);
 });
 test('real Git worktrees: Overview stays cheap while Diagnostics verifies each one with Git', async ({ page }) => {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: primary, stdio: 'pipe' });

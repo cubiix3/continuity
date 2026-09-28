@@ -30,8 +30,8 @@ The independently managed service's disk usage is not measured; these storage
 numbers are **not comparable** to SQLite-resident Ollama vectors.
 † These queries used lexical fallback, not a completed OpenViking semantic index.
 
-Raw data: [FTS5](performance-fts-after.json), [Ollama](performance-ollama.json),
-[OpenViking](performance-openviking.json). The raw Ollama sync reasons show only one
+Raw data: [FTS5](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/performance-fts-after.json), [Ollama](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/performance-ollama.json),
+[OpenViking](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/performance-openviking.json). The raw Ollama sync reasons show only one
 new embedding after the single-file edit, ten after the incremental edit, and zero
 after unchanged sync. The 10,000-passage first sync resumed after 4,896 and 9,888
 completed embeddings rather than restarting.
@@ -40,7 +40,7 @@ completed embeddings rather than restarting.
 
 The same script ran against detached `main` commit `18ad6ae` before semantic work.
 That implementation indexed the same resources but did not create passages.
-[Its complete results](performance-fts-before.json) remain committed.
+[Its complete results](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/performance-fts-before.json) remain committed.
 
 At 10,000 generated sections, unchanged FTS sync changed from 656.59 to 426.66 ms;
 queries from 614.20–748.36 to 438.08–551.25 ms. First sync, however, increased from
@@ -61,7 +61,7 @@ Continuity reports degradation and preserves completed writes. It does not resta
 or reconfigure the service. Completion, incremental timings and semantic latency
 at 1,000/10,000 OpenViking passages remain unverified under this bounded run.
 
-An earlier [OpenViking profile](performance-openviking-before-cache.json) exposed
+An earlier [OpenViking profile](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/performance-openviking-before-cache.json) exposed
 unnecessary manifest rewrites, including a 6,545 ms unchanged 100-passage sync.
 Those writes were removed; the repeat measured 101 ms. Server timing also varied,
 so this is a useful diagnostic comparison rather than a controlled backend speedup

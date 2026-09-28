@@ -1,6 +1,6 @@
 {
   "name": "continuity-local",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Local continuity, memory and structured handoffs for AI agents",
   "type": "module",

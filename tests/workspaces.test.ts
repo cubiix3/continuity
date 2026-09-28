@@ -340,6 +340,6 @@ it('Host API 2: doctor returns a Promise that resolves to the unchanged diagnost
   const pending = host.doctor();
   expect(pending).toBeInstanceOf(Promise);
   const report = await pending;
-  expect(report).toMatchObject({ integrity: 'ok', fts5: true, schema_version: 5, problems: [], version: '0.1.0', workspaces: [], adapters: { generic: true, 'http-loopback': true } });
+  expect(report).toMatchObject({ integrity: 'ok', fts5: true, schema_version: 5, problems: [], version: '0.2.0', workspaces: [], adapters: { generic: true, 'http-loopback': true } });
   expect(report.roots).toEqual(host.projects().map(p => ({ project_id: p.project_id, accessible: true })));
 });

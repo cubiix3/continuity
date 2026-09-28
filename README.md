@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/cubiix3/continuity/actions/workflows/ci.yml"><img alt="CI on Linux and Windows" src="https://github.com/cubiix3/continuity/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <a href="https://github.com/cubiix3/continuity/releases/tag/v0.1.0"><img alt="Latest release v0.1.0" src="https://img.shields.io/github/v/release/cubiix3/continuity?color=2d6a50"></a>
+  <a href="https://github.com/cubiix3/continuity/releases/tag/v0.2.0"><img alt="Latest release v0.2.0" src="https://img.shields.io/github/v/release/cubiix3/continuity?color=2d6a50"></a>
   <a href="LICENSE"><img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2d6a50"></a>
   <img alt="Node.js 24" src="https://img.shields.io/badge/node-24.13%2B-2d6a50">
 </p>
@@ -80,8 +80,8 @@ that state with the project, not with a chat:
 - **Current sources outrank agent observations.** Routine execution noise is rejected.
 - **Human review is optional**: an explicit override, not a queue you must work through.
 
-See the [memory model](docs/memory-model.md). Automatic memory is on `main` and
-not yet part of a release; v0.1.0 uses explicit review for free-form memory.
+See the [memory model](docs/memory-model.md). Automatic memory is included in
+v0.2.0; explicit human review remains available.
 
 ## Quickstart
 
@@ -90,15 +90,14 @@ See [stability boundaries](STABILITY.md) and [upgrade steps](UPGRADING.md) befor
 Continuity is not published to the npm registry. Do not install an unrelated
 package named `continuity`.
 
-**Latest release (v0.1.0).** Download `continuity-local-0.1.0.tgz` from the
-[release page](https://github.com/cubiix3/continuity/releases/tag/v0.1.0), then:
+**Latest release (v0.2.0).** Download `continuity-local-0.2.0.tgz` from the
+[release page](https://github.com/cubiix3/continuity/releases/tag/v0.2.0), then:
 
 ```sh
-npm install --global ./continuity-local-0.1.0.tgz
+npm install --global ./continuity-local-0.2.0.tgz
 ```
 
-**Current `main`** (includes the unreleased changes listed under
-[Status](#status)). Requires pnpm 10.30.1:
+**From source** (for contributors). Requires pnpm 10.30.1:
 
 ```sh
 git clone https://github.com/cubiix3/continuity.git
@@ -121,7 +120,7 @@ continuity dashboard
 
 Open <http://127.0.0.1:4783>. The browser does not open automatically.
 
-On Windows, current `main` can keep the Dashboard running and sync projects
+On Windows, v0.2.0 can keep the Dashboard running and sync projects
 automatically after sign-in: `continuity startup install`, then `continuity runtime start`
 to start it now. It runs as the current user, without administrator rights. See the
 [background runtime](docs/background-runtime.md) for limits and removal.
@@ -134,10 +133,10 @@ continuity handoff create --file handoff.json
 continuity handoff latest
 ```
 
-The [runnable example](examples/README.md) covers memory and handoff inputs.
+The [runnable example](https://github.com/cubiix3/continuity/blob/v0.2.0/examples/README.md) covers memory and handoff inputs.
 
 To give every new agent session this context automatically, install a provider
-hook once (current `main`): `continuity integrate claude install` or
+hook once: `continuity integrate claude install` or
 `continuity integrate codex install`. See [agent bootstrap](docs/agent-bootstrap.md).
 In interactive Claude Code and Codex sessions, the same hooks ask the agent, after a
 turn that edited files, whether anything is worth keeping or a handoff is finished; it
@@ -192,7 +191,7 @@ and [SECURITY.md](SECURITY.md) to report a vulnerability.
 Large repositories can keep one stable project identity while narrowing
 Continuity's local source index with `continuity sources set --include ... --exclude ...`.
 The filter lives in local state, never in the repository. See [source scope](docs/source-scope.md).
-This is on `main` and not yet part of a release.
+Source scope is included in v0.2.0.
 
 ## Architecture
 
@@ -219,21 +218,21 @@ access. FTS5 retrieval works fully offline; semantic retrieval is optional and
 init                          Register the current directory
 status | doctor               Identity and last sync | storage, registration, runtime and integration health
 sync                          Refresh the source index
-sources show | preview        Current source scope | read-only selection and limit check (main)
-sources set | clear           Replace or remove this project's local source filter (main)
+sources show | preview        Current source scope | read-only selection and limit check
+sources set | clear           Replace or remove this project's local source filter
 search <query>                Current source excerpts
 context <task>                Build a byte-budgeted context bundle
 inspect | explain <id>        Read a historical bundle | explain its selection
 memory list | show <id>       Inspect memories
-memory remember <text>        Record with --key and --source (--agent/--session on main)
+memory remember <text>        Record with --key and --source; --agent/--session for agent lessons
 memory forget <id>            Deactivate; revision history is kept
 memory pending                Candidates awaiting review and unresolved conflicts
 memory approve | reject <id>  Human review with --by <reviewer>
 handoff create --file <path>  Save structured JSON (use - for stdin)
 handoff latest | show <id>    Retrieve a handoff
 handoff close <id>            Mark a handoff finished (kept as history)
-bootstrap                     Read-only startup index for agent sessions (main)
-integrate claude|codex        Provider startup, autosave hooks and detail tools: install | status | remove (main)
+bootstrap                     Read-only startup index for agent sessions
+integrate claude|codex        Provider startup, autosave hooks and detail tools: install | status | remove
 project list | status         Inspect local registrations
 project rebind <id>           Explicit move with --from and --to
 retention status              Retention classes and eligibility
@@ -241,11 +240,11 @@ prune --dry-run               Preview only; never deletes
 mcp                           Serve project-bound tools over stdio
 serve                         Local authenticated HTTP API on 127.0.0.1
 dashboard                     Local Dashboard on 127.0.0.1:4783
-runtime start | status | stop Background Dashboard and automatic sync (main)
-startup install | remove      Windows current-user sign-in startup; also status (main)
+runtime start | status | stop Background Dashboard and automatic sync
+startup install | remove      Windows current-user sign-in startup; also status
 ```
 
-Commands marked (main) are not in v0.1.0. Global flags: `--project <directory>`, `--home <directory>`, `--json`.
+Global flags: `--project <directory>`, `--home <directory>`, `--json`.
 `CONTINUITY_HOME` overrides the default `~/.continuity` state directory.
 
 ## Documentation
@@ -258,18 +257,13 @@ Commands marked (main) are not in v0.1.0. Global flags: `--project <directory>`,
 
 ## Status
 
-**Latest release:** [v0.1.0](https://github.com/cubiix3/continuity/releases/tag/v0.1.0).
-Project identity, workspaces, handoffs, reviewed memory, provenance, context
-audit, MCP, local HTTP and the Dashboard.
+**Latest release:** [v0.2.0](https://github.com/cubiix3/continuity/releases/tag/v0.2.0).
+Claude Code and Codex have tested automatic project startup context, durable
+lessons and handoffs after explicit one-time integration setup. Source scope,
+the optional background runtime, Windows sign-in startup, Dashboard and Doctor
+are included. See the [changelog](CHANGELOG.md) and [release notes](docs/releases/v0.2.0.md).
 
-**Current `main` (unreleased):** automatic-first durable memory, local per-project
-source scope, a refreshed and denser Dashboard, the new brand mark, an optional
-background runtime with Windows sign-in startup and automatic sync, and agent
-auto-bootstrap for Claude Code and Codex. See the [changelog](CHANGELOG.md).
-
-**Next:** a model-aware session-end save step and future release packaging. Agent
-orchestration, cloud sync and a RIVET cutover are out of scope; the
-[RIVET dogfood notes](docs/research/rivet-dogfood.md) record what was and was not proven.
+Agent orchestration, cloud sync and a RIVET cutover remain out of scope.
 
 ## Development
 
@@ -280,8 +274,8 @@ pnpm test:ui        # Dashboard browser tests
 pnpm test:pack      # install the packed tarball into a fresh project
 ```
 
-CI runs these on Linux and Windows. Read [CONTRIBUTING.md](CONTRIBUTING.md) and
-[AGENTS.md](AGENTS.md) before changing Core boundaries. See
+CI runs these on Linux and Windows. Read [CONTRIBUTING.md](https://github.com/cubiix3/continuity/blob/v0.2.0/CONTRIBUTING.md) and
+[AGENTS.md](https://github.com/cubiix3/continuity/blob/v0.2.0/AGENTS.md) before changing Core boundaries. See
 [operations](docs/operations.md) for rebind, review and retention previews.
 
 ## License

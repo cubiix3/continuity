@@ -1,6 +1,6 @@
 # Stability boundaries
 
-This describes current `main`, which is not a v0.2 release. The latest published package is v0.1.0. Passing CI describes the tested code; it is not a compatibility or support promise for a future release.
+This describes Continuity v0.2.0. Passing CI describes the tested code; it is not a compatibility or support promise for a future release.
 
 ## Current contracts
 
@@ -14,8 +14,8 @@ This describes current `main`, which is not a v0.2 release. The latest published
 
 CI runs the build, types, tests, lint, UI and installed-package smoke tests on Windows and Linux. That does not establish behavior on other platforms or every provider version. Node.js 24.13 or newer on the Node 24 line is required.
 
-Windows workspace verification uses a registered Git for Windows installation. A Git executable found only through `PATH` is insufficient. Windows sign-in startup requires build 17763 or newer, runs in the current user's session without elevation, and needs a stable Node and CLI installation path. Automated task tests are not a real sign-out/sign-in acceptance test; that acceptance was waived for current `main`.
+Windows workspace verification uses a registered Git for Windows installation. A Git executable found only through `PATH` is insufficient. Windows sign-in startup requires build 17763 or newer, runs in the current user's session without elevation, and needs a stable Node and CLI installation path. The pre-merge real sign-out/sign-in acceptance for PR #45 was waived; a later natural login provided post-merge evidence on one Windows machine. Automated task tests do not cover every sign-in setup.
 
 Claude Code and Codex integrations install generated hooks with absolute Node, CLI and home paths. `doctor` lists installed integrations and reports stale or partial ones; `integrate ... status` gives the full status. A package or Node move does not repair hooks automatically. `integrate ... install` repairs the named integration. Windows startup likewise needs `startup install` after those paths change.
 
-The package and its interfaces are still pre-1.0. This document records present behavior, not a commitment to keep every CLI flag, JSON shape, hook format or internal TypeScript API unchanged. [ADR 019](docs/adr/019-v02-non-goals.md) records the scope we are keeping out of v0.2.
+The package and its interfaces are still pre-1.0. This document records present behavior, not a commitment to keep every CLI flag, JSON shape, hook format or internal TypeScript API unchanged. [ADR 019](docs/adr/019-v02-non-goals.md) records what remains outside v0.2.

@@ -5,7 +5,7 @@ Run `pnpm build && pnpm baseline`. To refresh the checked-in measurements:
 
 Eight small synthetic fixtures use the actual SQLite FTS5/BM25 and ContextBroker,
 with a 3,000-byte budget per request. No embedding model or ranking change is
-introduced. The raw [measurements](retrieval-baseline.json) include each query,
+introduced. The raw [measurements](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/retrieval-baseline.json) include each query,
 whether the expected source was included, unwanted sources, serialized budget
 cost, and selection reasons.
 

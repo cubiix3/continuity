@@ -1,4 +1,4 @@
-# Background runtime (unreleased)
+# Background runtime
 
 The optional runtime keeps the existing local Dashboard available and synchronizes
 registered projects and workspaces. It does not register projects, approve memories,

@@ -86,6 +86,7 @@ not yet part of a release; v0.1.0 uses explicit review for free-form memory.
 ## Quickstart
 
 Requirements: **Node.js 24.13 or newer** on the Node 24 line, and Git.
+See [stability boundaries](STABILITY.md) and [upgrade steps](UPGRADING.md) before replacing a local installation.
 Continuity is not published to the npm registry. Do not install an unrelated
 package named `continuity`.
 

@@ -20,3 +20,4 @@ These decisions describe implemented boundaries. Revisit them with evidence, not
 - [016: Explicit agent corrections of agent observations](016-agent-corrections.md)
 - [017: Shell-made edits start autosave](017-shell-made-edits.md)
 - [018: Sign-in startup without a console window](018-headless-sign-in-startup.md)
+- [019: v0.2 non-goals](019-v02-non-goals.md)

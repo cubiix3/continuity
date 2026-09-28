@@ -16,6 +16,6 @@ CI runs the build, types, tests, lint, UI and installed-package smoke tests on W
 
 Windows workspace verification uses a registered Git for Windows installation. A Git executable found only through `PATH` is insufficient. Windows sign-in startup requires build 17763 or newer, runs in the current user's session without elevation, and needs a stable Node and CLI installation path. Automated task tests are not a real sign-out/sign-in acceptance test; that acceptance was waived for current `main`.
 
-Claude Code and Codex integrations install generated hooks with absolute Node, CLI and home paths. `integrate ... status` reports stale or partial installs; current `main` does not repair them automatically after a package or Node move. `integrate ... install` repairs the named integration. Windows startup likewise needs `startup install` after those paths change.
+Claude Code and Codex integrations install generated hooks with absolute Node, CLI and home paths. `doctor` lists installed integrations and reports stale or partial ones; `integrate ... status` gives the full status. A package or Node move does not repair hooks automatically. `integrate ... install` repairs the named integration. Windows startup likewise needs `startup install` after those paths change.
 
 The package and its interfaces are still pre-1.0. This document records present behavior, not a commitment to keep every CLI flag, JSON shape, hook format or internal TypeScript API unchanged. [ADR 019](docs/adr/019-v02-non-goals.md) records the scope we are keeping out of v0.2.

@@ -5,7 +5,7 @@ This describes current `main`, which is not a v0.2 release. The latest published
 ## Current contracts
 
 - Git and current project files remain the source of truth. The trusted host binds a request to one registered project and, where applicable, one registered worktree. Continuity does not search other projects on an agent's request.
-- Core policy governs memory, handoffs, retrieval and context selection for the CLI, host API, MCP, HTTP and Dashboard. Source selection, canonical paths, symlink and secret exclusions, provenance and source freshness remain enforced across those clients.
+- Core policy governs memory, handoffs, retrieval and context selection for the CLI, host API, MCP, HTTP and Dashboard. File-source selection and indexing apply canonical paths, symlink and secret exclusions. Source retrieval preserves provenance and freshness.
 - SQLite migrations move forward transactionally. Continuity does not automatically reset a failed or corrupt database, repair an inaccessible workspace, or reverse a migration. Back up the complete home before upgrading; see [UPGRADING.md](UPGRADING.md).
 - Lexical FTS works without a semantic service. Semantic retrieval is optional and must fall back to lexical operation when its backend fails.
 - The background runtime is optional. The CLI works without it. Its Dashboard and control endpoints stay local; it is not a process supervisor.

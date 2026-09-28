@@ -295,7 +295,7 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       const runtime = runtimeProblems();
       health.problems.push(...runtime.problems);
       const adapters = { generic: true, 'http-loopback': true, 'mcp-stdio': runtime.mcp };
-      return { ...health, version: '0.1.0', node: process.versions.node, roots, workspaces, adapters, runtime_note: 'node:sqlite is pre-stable in Node 24; warnings depend on the installed patch version.' };
+      return { ...health, version: '0.2.0', node: process.versions.node, roots, workspaces, adapters, runtime_note: 'node:sqlite is pre-stable in Node 24; warnings depend on the installed patch version.' };
     },
     /**
      * Cheap current health for one project's Overview: storage capabilities, local configuration, the project root

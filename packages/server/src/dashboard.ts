@@ -39,7 +39,7 @@ export function createDashboardServer(host: Host, assetsRoot = new URL('../../da
     if (req.method === 'GET' && assets.has(url.pathname) && !url.search) {
       const asset = assets.get(url.pathname)!; res.writeHead(200, { 'Content-Type': asset.type }); res.end(asset.body); return;
     }
-    if (req.method === 'GET' && url.pathname === '/dashboard-api/session' && !url.search && req.headers['x-continuity-dashboard'] === '1') return send(200, { capability, version: '0.1.0' });
+    if (req.method === 'GET' && url.pathname === '/dashboard-api/session' && !url.search && req.headers['x-continuity-dashboard'] === '1') return send(200, { capability, version: '0.2.0' });
     const supplied = req.headers['x-continuity-token'];
     if (typeof supplied !== 'string' || !/^[a-f0-9]{64}$/.test(supplied) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(capability))) return send(403, { error: 'Dashboard session required. Reload this page.' });
     try {

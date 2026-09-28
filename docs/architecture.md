@@ -58,8 +58,8 @@ reserved in the data model for an observed mismatch awaiting refresh. Current
 synchronous refresh replaces it directly, so no stale candidate is returned.
 
 Every search, context request, and memory proposal refreshes the project first.
-This trades throughput for freshness in the first release; there is no watcher or
-performance claim. File SHA-256 is the version reference, including uncommitted
+The optional background runtime also watches registered projects for automatic
+sync. File SHA-256 is the version reference, including uncommitted
 changes. Git remains responsible for durable source history.
 
 The broker ranks project rules before FTS5 matches, then relevant source-backed
@@ -68,8 +68,8 @@ rules, memories whose text matches at least half of the meaningful task terms ma
 use up to 25% of the budget before lower-ranked passages, in trust order; see the
 [memory model](memory-model.md#context-and-trust). Large
 sources contribute a bounded excerpt around the first matching line; explanations
-mark the excerpt. Roles are validated and recorded; v0.1 has no role-specific
-ranking rules and does not pretend otherwise.
+mark the excerpt. Roles are validated and recorded; there are no role-specific
+ranking rules.
 
 Budgets measure compact JSON in UTF-8 bytes, including provenance and metadata.
 Items are admitted whole or skipped; requested budgets range from 512 to 32,000.

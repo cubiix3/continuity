@@ -21,7 +21,7 @@ const background = () => import('../../sdk/src/background.js');
 /** The CLI entry the installed hooks and the runtime run (this module is loaded by it). */
 const cliPath = fileURLToPath(new URL('./index.js', import.meta.url));
 
-const program = new Command().name('continuity').description('Persistent context for interchangeable agents.').version('0.1.0')
+const program = new Command().name('continuity').description('Persistent context for interchangeable agents.').version('0.2.0')
   .option('--project <directory>', 'project directory', process.cwd())
   .option('--home <directory>', 'private local state directory (or CONTINUITY_HOME)')
   .option('--json', 'machine-readable JSON');

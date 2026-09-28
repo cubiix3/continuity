@@ -31,7 +31,7 @@ export interface McpServerOptions {
  * Without an adapter (a session outside every registered project) the server registers no tools and says nothing.
  */
 export function createMcpServer(adapter: AgentAdapter | undefined, options: McpServerOptions = {}): McpServer {
-  const server = new McpServer({ name: 'continuity', version: '0.1.0' });
+  const server = new McpServer({ name: 'continuity', version: '0.2.0' });
   if (!adapter) return server;
   const wanted = new Set<McpToolName>(options.tools ?? MCP_TOOLS);
   const annotations = { destructiveHint: false, openWorldHint: false };

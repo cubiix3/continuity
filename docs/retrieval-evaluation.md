@@ -24,14 +24,14 @@ budget cost, effective mode, and actual lexical/semantic use.
 | OpenViking semantic | 21/22 | 21/22 | 23 | 3/3 | 55.54 |
 | OpenViking hybrid | 21/22 | 21/22 | 25 | 3/3 | 57.33 |
 
-Raw runs: [no backend](retrieval-none.json), [Ollama](retrieval-ollama.json),
-[OpenViking](retrieval-openviking.json). With no backend, all three requested modes
+Raw runs: [no backend](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/retrieval-none.json), [Ollama](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/retrieval-ollama.json),
+[OpenViking](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/retrieval-openviking.json). With no backend, all three requested modes
 effectively use FTS5 and produce the same labels. Each run also invokes the real
 compiled CLI for every search mode, context, verbose explain and doctor.
 
 A later repeat on 2026-09-20 found both local service endpoints unavailable.
 The successful timestamped runs above are retained; they do not imply that the
-services remained healthy. A separate [real CLI outage check](semantic-service-outage.json)
+services remained healthy. A separate [real CLI outage check](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/semantic-service-outage.json)
 verified lexical fallback, returned source content, byte limits and unavailable
 doctor diagnostics for both providers. No service was restarted or reconfigured.
 
@@ -47,8 +47,8 @@ not a guarantee that the latest handoff fits.
 
 The initial reciprocal-rank fusion also let weak OR keyword matches outvote good
 paraphrases. A general minimum term-coverage gate removed those extra votes. The
-same fixtures and cutoff were retained. The [Ollama before-gate report](retrieval-ollama-before-fusion.json)
-records 19/22 hybrid hits and 41 wrong items; the [OpenViking before-gate report](retrieval-openviking-before-fusion.json)
+same fixtures and cutoff were retained. The [Ollama before-gate report](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/retrieval-ollama-before-fusion.json)
+records 19/22 hybrid hits and 41 wrong items; the [OpenViking before-gate report](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/retrieval-openviking-before-fusion.json)
 records 21/22 and 25. No per-query or per-file ranking exceptions were added.
 
 OpenViking misses `restore dropped transport` at the same 0.5 cosine cutoff. Its

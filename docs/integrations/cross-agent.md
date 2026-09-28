@@ -2,7 +2,7 @@
 
 The clean rerun verifies three ordered stored handoffs, distinct runtime session
 IDs from process initialization events, and receipt of the preceding handoff ID
-in each successor's output. Evidence is in `real-agent-result.json`. Earlier
+in each successor's output. [Evidence](https://github.com/cubiix3/continuity/blob/v0.2.0/docs/integrations/real-agent-result.json) is retained in the repository. Earlier
 blocked attempts are kept separate from this fresh fixture.
 
 The live test uses `scripts/real-agents.mjs`. It creates a small existing reconnect

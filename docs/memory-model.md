@@ -1,4 +1,4 @@
-# Automatic project memory (unreleased)
+# Automatic project memory
 
 Agents submit candidates; Core determines activation and trust. Normal durable
 lessons do not need approval. Handoffs remain temporary structured work state;

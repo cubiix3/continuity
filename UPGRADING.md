@@ -1,6 +1,6 @@
 # Upgrading a local installation
 
-Current `main` is unreleased and still declares package version 0.1.0. Use an intended Continuity release artifact or a tarball built from the exact commit you chose. Continuity is not published under the npm package name `continuity`.
+For v0.1.x to v0.2.0, use `continuity-local-0.2.0.tgz` from the [v0.2.0 release](https://github.com/cubiix3/continuity/releases/tag/v0.2.0), or a tarball built from the exact release commit. Continuity is not published under the npm package name `continuity`.
 
 1. Record the active Continuity home, Dashboard port, installed package path and provider integration status. For each installed provider, record any `--no-autosave` or `--no-mcp` choice. On Windows, also record the startup task's port and auto-sync setting. The home is selected by `--home`, then `CONTINUITY_HOME`, then the default `~/.continuity`.
 2. Run `continuity runtime stop` for that home, and close other Continuity processes. Back up the **entire** home, including the SQLite database and any WAL/SHM files, before replacing the package. Keep the backup with the package version or commit that created it.

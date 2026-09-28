@@ -1,6 +1,31 @@
 # Changelog
 
-## Unreleased (main)
+## 0.2.0 — 2026-09-28
+
+### Highlights
+
+- Tested Claude Code and Codex integrations load project context at session start and save eligible lessons and unfinished-work handoffs after edits, without user Continuity commands during normal sessions.
+- Project-bound MCP detail tools let those integrations retrieve context, search results and the latest open handoff. Handoffs can be closed without losing their history.
+- The optional local background runtime provides a Dashboard, bounded automatic source sync and Windows current-user sign-in startup.
+- Local source-scope controls and a bounded memory share keep project context useful without widening project access.
+
+### Security / isolation
+
+- Project and workspace identity remain bound by the trusted host; source indexing excludes secrets, symlinks and ineligible files while preserving provenance and freshness.
+- Windows child-process launching uses trusted system executables and constrained environments. Startup status validates the full scheduled-task action.
+
+### Reliability
+
+- Dashboard health no longer waits on full Doctor checks; workspace verification in Doctor runs asynchronously with bounded concurrency.
+- Continuity-owned Windows process checks and sign-in startup run without a console window. This does not change windows opened by Codex itself.
+- Claude shell edits and bracketless save replies are included in quiet autosave handling. Doctor reports stale or partial installed provider integrations with repair guidance.
+
+### Upgrade notes
+
+- Back up the complete Continuity home, stop the runtime and other Continuity processes, install the v0.2.0 artifact, then run Doctor and check each installed provider integration. See [UPGRADING.md](UPGRADING.md).
+- Host API 2 makes `host.doctor()` asynchronous; callers must await it. The SQLite schema remains version 5.
+
+### Detailed changes
 
 - Automatic-first durable memory: source-backed facts and attributed agent lessons activate automatically with provenance and trust; conflicts are quarantined; human review is optional.
 - Local per-project source scope (`continuity sources`) to narrow the source index of large projects without changing project identity.

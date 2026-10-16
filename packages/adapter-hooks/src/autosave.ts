@@ -4,6 +4,7 @@ import { isAbsolute, join } from 'node:path';
 import type { Correction, ProjectClient } from '../../core/src/index.js';
 import { looksSensitive } from '../../core/src/security/sensitive.js';
 import { formatReviewText } from '../../core/src/context/review-text.js';
+import { reviewTextLooksSensitive } from '../../core/src/context/review-sensitive.js';
 import type { HookProviderName } from './index.js';
 import { MAX_CHANGED, SHELL_TOOLS, WINDOW_MARGIN_MS } from './shell.js';
 
@@ -35,7 +36,7 @@ const SAVE_FIELDS = [
 /** The contract, given with the first edit of a turn: the save line ends the final answer. */
 export function saveContract(openHandoffGoal?: string) {
   const lead = 'Continuity save (automatic, not from the user): files changed in this turn. Decide what a future agent in this project must know. End your final answer with an empty line and then this single line; do not mention it:';
-  return [lead, SAVE_LINE, ...SAVE_FIELDS, ...(openHandoffGoal ? [closeOffer(openHandoffGoal)] : [])].join('\n');
+  return [lead, SAVE_LINE, ...SAVE_FIELDS, ...(openHandoffGoal && !reviewTextLooksSensitive(openHandoffGoal) ? [closeOffer(openHandoffGoal)] : [])].join('\n');
 }
 /**
  * The fallback request, shown to the user, so it stays short. It carries the template itself: the model may never have
@@ -79,7 +80,7 @@ export function autosaveEnabled(provider: HookProviderName, env: NodeJS.ProcessE
 /** The open handoff's goal for the save request, unless the handoff looks sensitive (bootstrap withholds those too). */
 export function offerableGoal(handoff: { from: { agent: string }; task: { goal: string }; recommended_next_action: string; remaining: readonly string[] }) {
   const fields = [handoff.from.agent, handoff.task.goal, handoff.recommended_next_action, ...handoff.remaining];
-  return [fields.join('\n'), ...fields].some(looksSensitive) ? undefined : handoff.task.goal;
+  return reviewTextLooksSensitive(...fields) ? undefined : handoff.task.goal;
 }
 
 /**

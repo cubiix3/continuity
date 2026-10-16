@@ -108,6 +108,41 @@ test('fenced and inline code examples remain exact while actual findings render'
   expect(formatReviewText(`\\${finding}`)).toBe(`\\${finding}`);
 });
 
+test.each(['```', '````'])('a line-start %s code span does not hide later findings', ticks => {
+  const literal = `${ticks}example${ticks}\n\n`;
+  expect(parseReviewText(`${literal}${finding}`)).toEqual([{ type: 'text', text: literal }, expect.objectContaining({ type: 'review', raw: finding })]);
+  expect(formatReviewText(`${literal}${finding}`)).toContain(`${literal}\n[P1]`);
+});
+
+test.each(['    ', '\t', ' \t', '   \t', '        '])('indented code examples remain exact with %j indentation', indentation => {
+  const input = `${indentation}${finding}`;
+  expect(parseReviewText(input)).toEqual([{ type: 'text', text: input }]);
+  expect(formatReviewText(input)).toBe(input);
+});
+
+test.each(['\n', '\r\n'])('indented code blocks end before a real finding with %j line endings', newline => {
+  const literal = [`    ${finding}`, '', `\t${finding}`, '', ''].join(newline);
+  const parts = parseReviewText(`${literal}${finding}`);
+  expect(parts).toEqual([{ type: 'text', text: literal }, expect.objectContaining({ type: 'review', raw: finding })]);
+});
+
+test.each(['    ', '\t'])('indented fence markers do not open a fenced block with %j indentation', indentation => {
+  const literal = `${indentation}\`\`\`text\n${indentation}${finding}\n\n`;
+  expect(parseReviewText(`${literal}${finding}`)).toEqual([{ type: 'text', text: literal }, expect.objectContaining({ type: 'review', raw: finding })]);
+});
+
+test.each(['', ' ', '  ', '   '])('real findings still render with %j indentation', indentation => {
+  const parts = parseReviewText(`${indentation}${finding}`);
+  expect(parts.filter(part => part.type === 'review')).toEqual([expect.objectContaining({ raw: finding })]);
+  expect(formatReviewText(`${indentation}${finding}`)).not.toContain('::code-comment');
+});
+
+test('malformed quote recovery preserves the indentation of the next code example', () => {
+  const input = `::code-comment{title="Unfinished\n    ${finding}`;
+  expect(parseReviewText(input)).toEqual([{ type: 'text', text: input }]);
+  expect(formatReviewText(input)).toBe(input);
+});
+
 test('plain text and unfinished code fences stay exact', () => {
   for (const input of ['', 'Regular text.\n\nKeep spacing.  ', `\`\`\`text\n${finding}`]) expect(formatReviewText(input)).toBe(input);
 });

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Readable review findings in CLI text, startup summaries, autosave prompts and Dashboard records: priority, title, compact file reference and explanation replace raw `::code-comment` attributes. Original records, source text and machine-readable record responses remain unchanged.
+- Review code examples remain literal, including indented Markdown blocks. Automatic summaries and closure offers withhold secret-looking content revealed by review formatting before clipping.
 - Dashboard workspace switches update navigation and the displayed root; the keyboard skip link focuses content without changing the current page.
 - Automatic source sync invalidates removed or replaced directories without waiting for periodic reconciliation. Replacing an embedding cache preserves entries belonging to other models.
 - Startup context stops at unregistered nested Git repositories and worktrees; explicitly bound projects and workspaces retain their own context.

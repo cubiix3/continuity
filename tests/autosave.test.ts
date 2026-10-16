@@ -141,6 +141,27 @@ test('the autosave offer presents the review finding before clipping its goal', 
   expect(contract).toContain(saveContract()); expect(contract).toContain('[P1] Reconnect retry'); expect(contract).toContain('reconnect.ts:42'); expect(contract).toContain('Release the stale lease'); expect(contract).not.toContain('::code-comment');
 });
 
+test.each([
+  String.raw`::code-comment{title="Check deploy" body="api\u005fkey = abcd1234efgh5678"}`,
+  '::code-comment{title="api_key" body="= abcd1234efgh5678"}',
+])('autosave withholds secrets revealed by review presentation: %s', finding => {
+  expect(saveContract(finding)).toBe(saveContract());
+  expect(saveContract('x'.repeat(180) + finding)).toBe(saveContract());
+  const client = host.project(a), base = { completed: [], remaining: [], decisions: [], files_changed: [], risks: [], from: { agent: 'Codex', session: 'review' } };
+  client.createHandoff({ ...base, task: { goal: 'Older harmless work', status: 'in_progress' }, recommended_next_action: 'Continue.' });
+  for (const [index, fields] of [
+    { task: { goal: finding, status: 'in_progress' as const }, recommended_next_action: 'Continue.', remaining: [] },
+    { task: { goal: '```', status: 'in_progress' as const }, recommended_next_action: finding, remaining: [] },
+    { task: { goal: 'Safe goal', status: 'in_progress' as const }, recommended_next_action: 'Continue.', remaining: [finding] },
+  ].entries()) {
+    client.createHandoff({ ...base, ...fields });
+    for (const provider of ['claude', 'codex'] as const) {
+      const offered = edit(provider, `review-${index}-${provider}`, a).stdout;
+      expect(JSON.parse(offered)).toEqual(offer()); expect(offered).not.toContain('abcd1234');
+    }
+  }
+});
+
 test('a save line without the angle brackets is accepted as the same line, and nowhere else', () => {
   const payload = '{"memories":[{"key":"config.include-comments","kind":"experience","text":"Include lines keep the rest of the line as the path."}],"handoff":null}';
   const expected = parseSaveReply(`Done.\n\n[continuity-save]: <${payload}>`);

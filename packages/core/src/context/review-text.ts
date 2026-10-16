@@ -42,7 +42,7 @@ function readReview(text: string, from: number): { end: number; review?: ReviewC
       let value = '', closed = false; at++;
       while (at < text.length) {
         // Recover here only if the outer annotation is malformed; quoted examples remain literal.
-        if (text.startsWith(marker, at) && !text.slice(text.lastIndexOf('\n', at - 1) + 1, at).trim()) recovery ??= at;
+        if (text.startsWith(marker, at)) { const lineStart = text.lastIndexOf('\n', at - 1) + 1; if (!text.slice(lineStart, at).trim()) recovery ??= lineStart; }
         const char = text[at++]!;
         if (char === '"') { closed = true; break; }
         if (char !== '\\' || at === text.length) { value += char; continue; }
@@ -73,8 +73,11 @@ export function parseReviewText(text: string): ReviewTextPart[] {
   while (at < text.length) {
     if (at === 0 || text[at - 1] === '\n') {
       const next = text.indexOf('\n', at), lineEnd = next < 0 ? text.length : next;
-      const opening = /^[ \t]{0,3}(`{3,}|~{3,})(.*)$/.exec(text.slice(at, lineEnd));
-      if (opening && (!fence || (opening[1]![0] === fence && opening[1]!.length >= fenceLength && !opening[2]!.trim()))) {
+      const line = text.slice(at, lineEnd);
+      if (/^(?: {4}| {0,3}\t)/.test(line)) { at = lineEnd + 1; continue; }
+      const opening = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (opening && (opening[1]![0] !== '`' || !opening[2]!.includes('`'))
+        && (!fence || (opening[1]![0] === fence && opening[1]!.length >= fenceLength && !opening[2]!.trim()))) {
         if (fence) { fence = ''; fenceLength = 0; }
         else { fence = opening[1]![0]!; fenceLength = opening[1]!.length; }
         at = lineEnd + 1; continue;

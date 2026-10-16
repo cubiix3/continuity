@@ -267,6 +267,26 @@ test('secret-looking memory content is withheld from startup context', async () 
   expect(renderBootstrap(result)).toContain('1 record withheld from startup context');
 });
 
+test.each([
+  String.raw`::code-comment{title="Check deploy" body="api\u005fkey = abcd1234efgh5678"}`,
+  '::code-comment{title="api_key" body="= abcd1234efgh5678"}',
+])('startup withholds secrets revealed by review presentation: %s', async finding => {
+  const client = host.project(a); await client.sync();
+  const memory = client.propose({ key: 'deploy.review', kind: 'memory', text: finding, from: agent() });
+  client.createHandoff(handoff('Older harmless work'));
+  client.createHandoff({ ...handoff('```'), recommended_next_action: finding });
+  const result = bundle(), rendered = renderBootstrap(result);
+  expect(result.memories).toEqual([]); expect(result.latest_handoff).toBeUndefined();
+  expect(result.attention.withheld).toBe(2); expect(result.available.more_keys).toEqual([]);
+  expect(rendered).not.toContain('abcd1234efgh5678'); expect(rendered).not.toContain('Older harmless work');
+  expect(client.memory(memory.id).text).toBe(finding);
+  const cli = resolve('dist/packages/cli/src/index.js');
+  for (const provider of ['claude', 'codex']) {
+    const hook = spawnSync(process.execPath, [cli, '--home', home, 'integrate', provider, 'session-start'], { input: JSON.stringify({ cwd: a }), encoding: 'utf8', windowsHide: true });
+    expect(hook.status).toBe(0); expect(hook.stdout).not.toContain('abcd1234efgh5678');
+  }
+});
+
 test('Claude settings install is additive, idempotent, repairable and removes only Continuity', () => {
   const env = { CLAUDE_CONFIG_DIR: join(root, 'claude') }; mkdirSync(env.CLAUDE_CONFIG_DIR);
   const target = claudeHookTarget(process.execPath, resolve('dist/packages/cli/src/index.js'), home, env), settings = target.file;

@@ -149,9 +149,12 @@ export class FileSources implements SourcePort {
     let oversized = 0;
     const walk = (directory: string, inherited: IgnoreLayer[]) => {
       const layers = layer(directory, inherited);
+      const childDirectories = new Set<string>();
       if (metadataOnly) directories.push({ path: directory, accepts: name => {
         if (name === '.gitignore') return true;
         if (name.includes('/') || name.includes('\\') || deniedName.test(name)) return false;
+        // A removed or replaced directory still invalidates the previous snapshot.
+        if (childDirectories.has(name)) return true;
         const candidate = join(directory, name), local = relative(root, candidate).split(sep).join('/');
         const info = existsSync(candidate) ? lstatSync(candidate) : undefined;
         if (info?.isSymbolicLink() || excluded(layers, candidate, local, Boolean(info?.isDirectory()))) return false;
@@ -170,6 +173,7 @@ export class FileSources implements SourcePort {
           if (outsidePrefixes(relativePath)) continue;
           const normalized = process.platform === 'win32' ? canonical.toLowerCase() : canonical;
           if (nestedRoots.includes(normalized) || existsSync(join(path, '.git'))) continue;
+          if (metadataOnly) childDirectories.add(entry.name);
           walk(path, layers); continue;
         }
         if (!entry.isFile() || !eligibleFile(entry.name, relativePath)) continue;

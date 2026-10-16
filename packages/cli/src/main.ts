@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { BootstrapUnavailableError, openContinuity } from '../../sdk/src/index.js';
 import type { ContextBundle, ContextRequest, RetrievalMode } from '../../core/src/index.js';
 import { BOOTSTRAP_BUDGET, renderBootstrap } from '../../core/src/index.js';
+import { formatReviewText } from '../../core/src/context/review-text.js';
 import type { ProjectClient } from '../../core/src/index.js';
 import { deniedPath } from '../../core/src/security/denied.js';
 import { applySave, autosaveEnabled, editDecision, failureReason, offerableGoal, claudeHookTarget, codexHookTarget, hookIntegrationStatus, installHookIntegration, parseSaveReply, readSeen, readSessionState, recordEdit, editedByOthers, lastEdit, insideGit, DEFAULT_WINDOW_MS, MAX_CHANGED, WINDOW_MARGIN_MS, recordSeen, autosaveInstalled, removeHookIntegration, saveReport, sessionStartInput, sessionStartOutput, sessionStartUnavailable, mcpUsable, saveOffer, stopDecision, stopRequest, stopInput, scopeKey, stopMessage, toolUseInput, writeSessionState } from '../../adapter-hooks/src/index.js';
@@ -29,6 +30,27 @@ let host: ReturnType<typeof openContinuity> | undefined;
 const runtime = () => host ??= openContinuity(program.opts<{ home?: string }>().home);
 const client = () => runtime().project(program.opts<{ project: string }>().project);
 const json = () => Boolean(program.opts<{ json?: boolean }>().json);
+function contextContent(item: { kind?: unknown; passage?: unknown; content?: unknown }): unknown {
+  if (item.kind === 'handoff' && !item.passage && typeof item.content === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(item.content);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch { return item.content; }
+  }
+  return item.content;
+}
+function display(value: unknown, source = false): string {
+  if (typeof value === 'string') return source ? value : formatReviewText(value);
+  if (Array.isArray(value)) return value.length ? value.map(entry => `- ${display(entry).replace(/\n/g, '\n  ')}`).join('\n') : '[]';
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return Object.entries(record).map(([key, entry]) => {
+      const rendered = key === 'content' ? display(contextContent(record), Boolean(record.passage) || record.kind === 'source' || record.kind === 'rule') : display(entry);
+      return rendered.includes('\n') ? `${key}:\n  ${rendered.replace(/\n/g, '\n  ')}` : `${key}: ${rendered}`;
+    }).join('\n');
+  }
+  return String(value);
+}
 function output(value: unknown): void {
   if (json()) { console.log(JSON.stringify(value, null, 2)); return; }
   if (value === null) { console.log('No handoff recorded.'); return; }
@@ -38,15 +60,15 @@ function output(value: unknown): void {
     return;
   }
   if (typeof value === 'object' && value !== null) {
-    for (const [key, entry] of Object.entries(value)) console.log(`${key}: ${typeof entry === 'object' ? JSON.stringify(entry) : String(entry)}`);
+    console.log(display(value));
     console.log(); return;
   }
-  console.log(String(value));
+  console.log(display(value));
 }
 function contextOutput(bundle: ContextBundle): void {
   if (json()) { output(bundle); return; }
   console.log(`${bundle.context_id}\n${bundle.budget.used}/${bundle.budget.requested} UTF-8 bytes · ${bundle.items.length} items\n`);
-  for (const item of bundle.items) console.log(`${item.kind} · ${item.provenance.origin}\n${item.content}\n`);
+  for (const item of bundle.items) console.log(`${item.kind} · ${item.provenance.origin} · ${item.provenance.trust}\n${display(contextContent(item), Boolean(item.passage) || item.kind === 'source' || item.kind === 'rule')}\n`);
   if (!bundle.items.length) console.log('No matching items fit the budget. Try a broader query or a larger --budget.');
 }
 program.command('init').description('Register this canonical project directory locally').option('--name <name>').action((options: { name?: string }) => output(runtime().init(program.opts<{ project: string }>().project, options.name)));

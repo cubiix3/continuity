@@ -43,6 +43,31 @@ test('ignored build outputs and secrets have no watches and do not trigger sync'
   expect(worker.status().projects[0]!.runs).toBe(runs); expect(worker.status().projects[0]!.watcher_count).toBe(1);
 });
 
+test('watch plans retain removed directory names for source invalidation', () => {
+  mkdirSync(join(project, 'docs')); writeFileSync(join(project, 'docs', 'guide.md'), 'Current guide.');
+  mkdirSync(join(project, 'generated')); writeFileSync(join(project, '.gitignore'), 'generated/\n');
+  host.setSourceScope(project, { include: ['docs/**'] });
+  const plan = host.watchPlan(host.projects()[0]!.project_id), rootWatch = plan[0]!;
+  expect(rootWatch.accepts('docs')).toBe(true);
+  expect(rootWatch.accepts('generated')).toBe(false);
+  renameSync(join(project, 'docs'), join(project, 'archived'));
+  expect(rootWatch.accepts('docs')).toBe(true);
+  expect(rootWatch.accepts('archived')).toBe(false);
+  expect(rootWatch.accepts('generated')).toBe(false);
+  writeFileSync(join(project, 'docs'), 'Directory replaced by a file.');
+  expect(rootWatch.accepts('docs')).toBe(true);
+});
+
+test('moving a source directory outside the selection invalidates its snapshot automatically', async () => {
+  mkdirSync(join(project, 'docs')); writeFileSync(join(project, 'docs', 'guide.md'), 'Current guide.');
+  host.setSourceScope(project, { include: ['docs/**'] });
+  const worker = start(); await until(() => worker.status().projects[0]?.status === 'healthy');
+  expect(resources().some(r => r.path === 'docs/guide.md' && r.state === 'fresh')).toBe(true);
+  renameSync(join(project, 'docs'), join(project, 'archived'));
+  await until(() => !resources().some(r => r.state === 'fresh') && worker.status().projects[0]!.status === 'healthy');
+  expect(worker.status().projects[0]!.watcher_count).toBe(1);
+});
+
 test('new registration, nested boundary, unavailable scope and rebind are reconciled', async () => {
   const worker = start(); await until(() => worker.status().projects[0]?.status === 'healthy');
   const nested = join(project, 'nested'); mkdirSync(nested); writeFileSync(join(nested, 'private.ts'), 'nested only'); const registered = host.init(nested);

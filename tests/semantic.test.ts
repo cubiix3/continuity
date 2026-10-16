@@ -17,6 +17,7 @@ let root: string; let a: string; let b: string; let storage: SqliteStorage; let 
 let endpoint: string; let mode: string; let digest: string; let documents: string[];
 let remote: Map<string, string>; let targets: string[];
 const server = createServer(async (req, res) => {
+  if (req.url === '/fixture-ready') { res.writeHead(204).end(); return; }
   if (mode === 'timeout') return;
   if (mode === 'unavailable') { res.writeHead(503).end(); return; }
   if (mode === 'invalid-json') { res.end('B_CANARY invalid backend text'); return; }
@@ -48,9 +49,19 @@ beforeEach(async () => {
   storage = new SqliteStorage(join(root, 'continuity.db')); resolver = new ProjectResolver(storage); resolver.init(a); resolver.init(b);
   writeFileSync(join(a, 'README.md'), '# Recovery\nReconnect recovery reuses bounded retries.\n');
   writeFileSync(join(b, 'README.md'), 'B_CANARY reconnect recovery.');
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing test address');
-  endpoint = `http://127.0.0.1:${address.port}`;
+  // Windows can assign an ephemeral port that fetch blocks.
+  for (let attempt = 0; ; attempt++) {
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing test address');
+    endpoint = `http://127.0.0.1:${address.port}`;
+    try {
+      const response = await fetch(`${endpoint}/fixture-ready`, { signal: AbortSignal.timeout(3000) });
+      await response.body?.cancel(); break;
+    } catch (error) {
+      if (attempt >= 4 || !(error instanceof TypeError) || !(error.cause instanceof Error) || error.cause.message !== 'bad port') throw error;
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  }
 });
 afterEach(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); storage.close(); rmSync(root, { recursive: true, force: true }); });
 function client(path = a, backend?: SemanticRetrievalPort) {
@@ -99,6 +110,24 @@ it('invalidates a changed model and never mixes its vector dimensions', async ()
   await c.sync(); expect(documents).toHaveLength(2);
   expect((await c.retrievalHealth()).dimensions).toBe(3);
   expect((await c.context({ task: 'reconnect' })).retrieval?.effective).toBe('hybrid');
+});
+
+it('replaces only the selected embedding model while preserving incremental entries', async () => {
+  writeFileSync(join(a, 'README.md'), '# Recovery\nReconnect recovery reuses bounded retries.\n# Storage\nPersist checkpoints locally.\n');
+  const project = resolver.resolve(a);
+  await new ProjectClient(storage, new FileSources(), project).sync();
+  const entries = passages(storage.resources(project.project_id)).map(p => ({ passage_id: p.id, resource_id: p.resource_id, source_hash: p.source_hash, hash: p.hash, vector: [1, 0] }));
+  expect(entries).toHaveLength(2);
+  const cache = storage.embeddingCache(project.project_id);
+  cache.replace('model-a', entries); cache.replace('model-b', entries);
+  cache.replace('model-a', [entries[0]!]);
+  expect(cache.read('model-a')).toEqual([entries[0]]);
+  expect(cache.read('model-b')).toHaveLength(2);
+  cache.replace('model-a', [entries[1]!], false);
+  expect(cache.read('model-a')).toHaveLength(2);
+  cache.replace('model-a', []);
+  expect(cache.read('model-a')).toEqual([]);
+  expect(cache.read('model-b')).toHaveLength(2);
 });
 
 it('enforces scope before invoking a backend and rejects forged candidates', async () => {
@@ -164,7 +193,7 @@ it('sends only current authorized leaf URIs to OpenViking and rejects foreign hi
   const make = (path: string) => client(path, new OpenVikingRetrieval(storage.remoteResourceCache(resolver.resolve(path).project_id), endpoint, 'test-revision'));
   const c = make(a); await make(b).sync(); await c.sync();
   const bundle = await c.context({ task: 'restore transport' });
-  expect(bundle.retrieval?.effective).toBe('hybrid');
+  expect(bundle.retrieval, JSON.stringify({ endpoint, ...bundle.retrieval })).toMatchObject({ effective: 'hybrid' });
   expect(targets.every(uri => uri.includes(`/${c.status().project_id}/`) && uri.endsWith('.txt'))).toBe(true);
   expect(JSON.stringify(bundle)).not.toContain('B_CANARY');
   mode = 'viking-forged'; expect((await c.context({ task: 'reconnect' })).retrieval?.effective).toBe('lexical');

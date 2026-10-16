@@ -6,8 +6,9 @@ import assert from 'node:assert/strict';
 
 // Invoke via pnpm test:pack so npm_execpath identifies the exact pnpm installation.
 if (!process.env.npm_execpath) throw new Error('Run pnpm test:pack.');
+const [pnpmCommand, ...pnpmArgs] = /\.[cm]?js$/i.test(process.env.npm_execpath) ? [process.execPath, process.env.npm_execpath] : [process.env.npm_execpath];
 const root = mkdtempSync(join(tmpdir(), 'continuity-pack-'));
-const run = (args, cwd = process.cwd()) => execFileSync(process.execPath, [process.env.npm_execpath, ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+const run = (args, cwd = process.cwd()) => execFileSync(pnpmCommand, [...pnpmArgs, ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 try {
   mkdirSync('dist/packages/obsolete-release-fixture', { recursive: true });
   writeFileSync('dist/packages/obsolete-release-fixture/stale.js', 'obsolete output must never ship');
@@ -44,6 +45,7 @@ try {
     startupMs = Date.now() - started;
     const page = await fetch(url); assert.equal(page.status, 200); assert.match(await page.text(), /Local project continuity/);
     assert.equal((await fetch(`${url}/app.js`)).status, 200); assert.equal((await fetch(`${url}/app.css`)).status, 200);
+    assert.equal((await fetch(`${url}/core/src/context/review-text.js`)).status, 200);
     const session = await (await fetch(`${url}/dashboard-api/session`, { headers: { 'X-Continuity-Dashboard': '1' } })).json();
     const registrations = await (await fetch(`${url}/dashboard-api/projects`, { headers: { 'X-Continuity-Token': session.capability } })).json(); assert.equal(registrations.projects.length, 1);
   } finally {

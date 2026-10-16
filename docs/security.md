@@ -57,6 +57,12 @@ guarantee. Avoid indexing repositories containing sensitive data outside recogni
 patterns. Explicit handoff/proposal input is local user data and may itself be
 sensitive; it is not a credential vault.
 
+Automatic startup summaries and autosave closure offers check both original
+fields and their formatted review text for secret patterns before clipping.
+This includes credentials revealed by escape decoding or by joining review
+titles and explanations. A sensitive record is withheld as a whole; an older
+handoff does not replace the newest withheld open handoff.
+
 Only local project roots selected by the operator are supported. A root is a
 directory, not an inferred Git remote. Do not initialize a parent directory that
 intentionally contains unrelated unregistered projects. Registered child roots

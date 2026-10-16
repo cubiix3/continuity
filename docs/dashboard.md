@@ -30,6 +30,18 @@ Workspaces also shows the local source filter and the indexed count from the las
 successful sync. Configure it with [the source-scope CLI](source-scope.md).
 Invalid `sources.json` appears in Diagnostics and blocks source operations.
 
+Review annotations (`::code-comment{...}`) in memories, handoffs and non-source
+context items appear as findings with priority, title, a compact file/line reference
+and the original explanation. The full file path is available on hover; it does
+not open or read a file. "Original text" expands the unchanged stored text,
+including confidence and other annotation metadata. Priority describes the
+finding and never changes the record's trust label.
+
+Malformed annotations and literal code examples stay visible as text. Source
+previews and historical source passages retain their original content. The
+Dashboard formats text nodes only; it does not execute HTML or render arbitrary
+links from annotation attributes.
+
 ## Browser boundary
 
 The Dashboard is a trusted **human installation-wide** client. It can navigate registered

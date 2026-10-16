@@ -9,6 +9,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { openContinuity } from '../packages/sdk/src/index.js';
 import { GenericAdapter } from '../packages/adapter-generic/src/index.js';
 import { createLocalServer } from '../packages/server/src/index.js';
+import type { ContextBundle } from '../packages/core/src/contracts.js';
 
 let root: string;
 let path: string;
@@ -44,6 +45,49 @@ it('runs the real compiled CLI workflow across processes', async () => {
   expect(run('handoff', 'latest')).toMatchObject({ id: created.id });
   expect(run('handoff', 'show', created.id)).toMatchObject({ id: created.id });
   expect(run('doctor')).toMatchObject({ integrity: 'ok', fts5: true });
+}, 30000);
+
+it('renders nested review findings in human CLI output while preserving source text and machine records', async () => {
+  const finding = '::code-comment{title="Reconnect retry" body="Release the stale lease before replacing the reconnect session." file="src/reconnect.ts" start=42 end=45 priority=1 confidence=0.98}';
+  const example = `\`\`\`text\n${finding}\n\`\`\`\n`;
+  writeFileSync(join(path, 'README.md'), example);
+  const host = openContinuity(home); host.init(path);
+  let memoryId: string, handoffId: string;
+  try {
+    const client = host.project(path);
+    memoryId = client.propose({ key: 'reconnect.retry', kind: 'experience', text: finding, source_path: 'README.md' }).id;
+    handoffId = client.createHandoff({ ...handoff, remaining: [finding], decisions: [finding], risks: [finding], recommended_next_action: finding }).id;
+  } finally { host.close(); }
+  const human = (...args: string[]) => execFileSync(process.execPath, [cli, '--home', home, '--project', path, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  for (const args of [['memory', 'show', memoryId], ['memory', 'list'], ['handoff', 'show', handoffId], ['handoff', 'latest']]) {
+    const text = human(...args);
+    expect(text).toContain('[P1] Reconnect retry'); expect(text).toContain('reconnect.ts:42'); expect(text).toContain('Release the stale lease'); expect(text).not.toContain('::code-comment');
+  }
+  expect(human('memory', 'show', memoryId)).toContain('trust: derived');
+  expect(run('memory', 'show', memoryId)).toMatchObject({ text: finding, provenance: { trust: 'derived' } });
+  expect(run('handoff', 'show', handoffId)).toMatchObject({ remaining: [finding], decisions: [finding], risks: [finding], recommended_next_action: finding });
+  const context = run('context', 'reconnect', '--budget', '16000') as ContextBundle;
+  expect(context.items.find(item => item.id === memoryId)?.content).toBe(finding);
+  expect(context.items.some(item => item.passage && item.content.includes(finding))).toBe(true);
+  expect(context.items.find(item => item.kind === 'handoff')?.content).toContain('::code-comment');
+  for (const text of [human('context', 'reconnect', '--budget', '16000'), human('inspect', context.context_id)]) {
+    expect(text).toContain('[P1] Reconnect retry'); expect(text).toContain('reconnect.ts:42'); expect(text).toContain('recommended_next_action:'); expect(text).toContain(finding);
+  }
+  expect(run('inspect', context.context_id)).toEqual(context);
+  expect(human('search', 'reconnect')).toContain(finding);
+  const transport = new StdioClientTransport({ command: process.execPath, args: [cli, '--home', home, '--project', path, 'mcp'], stderr: 'pipe' });
+  const client = new Client({ name: 'continuity-review-test', version: '1.0.0' });
+  try {
+    await client.connect(transport);
+    const bootstrap = await client.callTool({ name: 'continuity_bootstrap', arguments: {} });
+    expect(bootstrap.structuredContent).toMatchObject({ result: { text: expect.stringContaining('[P1] Reconnect retry'), bundle: { memories: [{ trust: 'derived', summary: expect.stringContaining('[P1] Reconnect retry') }] } } });
+    const result = await client.callTool({ name: 'continuity_context', arguments: { task: 'reconnect', budget: 16000 } });
+    expect(result.structuredContent).toMatchObject({ result: { items: expect.arrayContaining([expect.objectContaining({ id: memoryId, content: finding })]) } });
+    for (const response of [bootstrap, result]) {
+      const content = response.content as { type: string; text: string }[];
+      expect(content[0]?.type).toBe('text'); expect(JSON.parse(content[0]!.text)).toEqual(response.structuredContent);
+    }
+  } finally { await client.close(); }
 }, 30000);
 
 it('hands work between generic agent instances', async () => {

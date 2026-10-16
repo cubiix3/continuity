@@ -192,6 +192,15 @@ td a.mono { font-weight:450; font-size:12.5px }
 /* Detail pages */
 .detail { max-width:880px }
 .memory-content { font:14px/1.7 var(--sans); white-space:pre-wrap; overflow-wrap:anywhere; margin:var(--space-5) 0 0; padding:0; background:none; border:0; max-height:none; max-width:78ch }
+.review-content { margin:0; font:inherit; white-space:pre-wrap; overflow-wrap:anywhere }
+.review-text { white-space:normal; overflow-wrap:anywhere; min-width:0 }
+.review-prose,.review-body { white-space:pre-wrap }
+.review-finding { margin:var(--space-3) 0; padding:var(--space-2) var(--space-3); border-left:2px solid var(--accent); background:var(--surface) }
+.review-finding > header { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--space-1) var(--space-3); margin-bottom:var(--space-1) }
+.review-finding h3 { margin:0; font-size:13px; line-height:1.5 }
+.review-location { color:var(--muted); font:12px/1.5 var(--mono); overflow-wrap:anywhere }
+.review-body { font:13px/1.6 var(--sans) }
+.review-original { margin-top:var(--space-2) }
 .details { display:grid; grid-template-columns:150px minmax(0,1fr); gap:6px var(--space-5); margin:var(--space-3) 0 }
 .details dt { color:var(--muted) }
 .details dd { margin:0; overflow-wrap:anywhere }

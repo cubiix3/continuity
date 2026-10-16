@@ -39,6 +39,30 @@ test('stale sync is reported as degraded without syncing', async () => {
   expect(result.health.status).toBe('degraded'); expect(renderBootstrap(result, later)).toMatch(/Source index is stale/);
 });
 
+test('review findings become readable startup summaries before clipping while stored records stay original', async () => {
+  const finding = '::code-comment{title="Reconnect retry" body="Release the stale lease before replacing the reconnect session." file="src/reconnect.ts" start=42 end=45 priority=1 confidence=0.98}';
+  expect(finding.length).toBeGreaterThan(160);
+  writeFileSync(join(a, 'README.md'), finding);
+  const client = host.project(a); await client.sync();
+  const memory = client.propose({ key: 'reconnect.retry', kind: 'experience', text: finding, source_path: 'README.md' });
+  client.createHandoff({ ...handoff(finding), remaining: [finding], recommended_next_action: finding });
+  const result = bundle(), rendered = renderBootstrap(result);
+  for (const summary of [result.memories[0]?.summary, result.latest_handoff?.goal, result.latest_handoff?.next_action, result.latest_handoff?.remaining[0]]) {
+    expect(summary).toContain('[P1] Reconnect retry'); expect(summary).toContain('reconnect.ts:42'); expect(summary).toContain('Release the stale lease'); expect(summary).not.toContain('::code-comment');
+  }
+  expect(rendered).toContain('source-backed (README.md)'); expect(result.memories[0]?.trust).toBe('derived');
+  expect(size(result)).toBe(result.budget.used); expect(result.budget.used).toBeLessThanOrEqual(result.budget.requested);
+  expect(client.memory(memory.id).text).toBe(finding); expect(client.latestHandoff()?.task.goal).toBe(finding);
+  const cli = resolve('dist/packages/cli/src/index.js');
+  for (const provider of ['claude', 'codex']) {
+    const hook = spawnSync(process.execPath, [cli, '--home', home, 'integrate', provider, 'session-start'], { input: JSON.stringify({ cwd: a }), encoding: 'utf8', windowsHide: true });
+    expect(hook.status).toBe(0);
+    const text = provider === 'claude' ? (JSON.parse(hook.stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } }).hookSpecificOutput.additionalContext : hook.stdout;
+    expect(text).toContain('[P1] Reconnect retry'); expect(text).toContain('reconnect.ts:42'); expect(text).toContain('source-backed (README.md)'); expect(text).not.toContain('::code-comment');
+    if (provider === 'claude') expect(JSON.parse(hook.stdout).hookSpecificOutput.hookEventName).toBe('SessionStart');
+  }
+});
+
 test('trust order, labels, diversity, rule demotion and handoff priority', async () => {
   const client = host.project(a); await client.sync();
   const human = client.propose({ key: 'release.tags', kind: 'decision', text: 'Release tags are immutable and are never moved.' }); host.review(a, human.id, 'accepted', 'Maintainer');
@@ -182,6 +206,33 @@ test('nested registered project and subdirectories resolve to the nearest regist
   const outside = join(root, 'unregistered'); mkdirSync(outside); expect(host.bootstrap(outside)).toBeUndefined();
 });
 
+test('startup context stops at unregistered nested Git checkouts and resumes after explicit binding', () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' });
+  git(a, 'init'); git(a, 'add', '.'); git(a, '-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-m', 'fixture');
+  host.project(a).createHandoff(handoff('Parent-only work'));
+  const nested = join(a, 'vendor', 'nested'), feature = join(a, '.claude', 'worktrees', 'feature');
+  mkdirSync(nested, { recursive: true }); git(nested, 'init'); git(a, 'worktree', 'add', '-b', 'feature', feature);
+  const nestedDeep = join(nested, 'src'), featureDeep = join(feature, 'src'), plain = join(a, 'docs');
+  for (const path of [nestedDeep, featureDeep, plain]) mkdirSync(path);
+  const cli = resolve('dist/packages/cli/src/index.js');
+  const hook = (provider: string, cwd: string) => spawnSync(process.execPath, [cli, '--home', home, 'integrate', provider, 'session-start'], { input: JSON.stringify({ cwd }), encoding: 'utf8', windowsHide: true });
+  expect(host.bootstrap(plain)?.project.name).toBe('Alpha'); expect(host.session(plain)?.status().name).toBe('Alpha');
+  for (const path of [nested, nestedDeep, feature, featureDeep]) {
+    expect(host.bootstrap(path), path).toBeUndefined(); expect(host.session(path), path).toBeUndefined();
+    for (const provider of ['claude', 'codex']) {
+      const result = hook(provider, path); expect(result.status).toBe(0); expect(result.stdout).toBe('');
+    }
+  }
+  host.init(nested, 'Nested'); host.project(nested).createHandoff(handoff('Nested-only work'));
+  host.workspace(a, feature).createHandoff(handoff('Feature-only work'));
+  for (const [path, name, goal] of [[nestedDeep, 'Nested', 'Nested-only work'], [featureDeep, 'Alpha', 'Feature-only work']] as const) {
+    expect(host.bootstrap(path)?.project.name).toBe(name); expect(host.bootstrap(path)?.latest_handoff?.goal).toBe(goal);
+    for (const provider of ['claude', 'codex']) {
+      const result = hook(provider, path); expect(result.status).toBe(0); expect(result.stdout).toContain(goal); expect(result.stdout).not.toContain('Parent-only work');
+    }
+  }
+});
+
 test('workspace binding: worktree handoffs and source freshness stay with their checkout', async () => {
   const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' });
   git(a, 'init'); git(a, 'add', '.'); git(a, '-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-m', 'fixture');
@@ -214,6 +265,26 @@ test('secret-looking memory content is withheld from startup context', async () 
   const result = bundle();
   expect(JSON.stringify(result)).not.toContain('abcd1234efgh5678'); expect(result.attention.withheld).toBe(1);
   expect(renderBootstrap(result)).toContain('1 record withheld from startup context');
+});
+
+test.each([
+  String.raw`::code-comment{title="Check deploy" body="api\u005fkey = abcd1234efgh5678"}`,
+  '::code-comment{title="api_key" body="= abcd1234efgh5678"}',
+])('startup withholds secrets revealed by review presentation: %s', async finding => {
+  const client = host.project(a); await client.sync();
+  const memory = client.propose({ key: 'deploy.review', kind: 'memory', text: finding, from: agent() });
+  client.createHandoff(handoff('Older harmless work'));
+  client.createHandoff({ ...handoff('```'), recommended_next_action: finding });
+  const result = bundle(), rendered = renderBootstrap(result);
+  expect(result.memories).toEqual([]); expect(result.latest_handoff).toBeUndefined();
+  expect(result.attention.withheld).toBe(2); expect(result.available.more_keys).toEqual([]);
+  expect(rendered).not.toContain('abcd1234efgh5678'); expect(rendered).not.toContain('Older harmless work');
+  expect(client.memory(memory.id).text).toBe(finding);
+  const cli = resolve('dist/packages/cli/src/index.js');
+  for (const provider of ['claude', 'codex']) {
+    const hook = spawnSync(process.execPath, [cli, '--home', home, 'integrate', provider, 'session-start'], { input: JSON.stringify({ cwd: a }), encoding: 'utf8', windowsHide: true });
+    expect(hook.status).toBe(0); expect(hook.stdout).not.toContain('abcd1234efgh5678');
+  }
 });
 
 test('Claude settings install is additive, idempotent, repairable and removes only Continuity', () => {

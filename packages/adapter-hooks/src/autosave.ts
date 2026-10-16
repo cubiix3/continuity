@@ -3,6 +3,7 @@ import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, 
 import { isAbsolute, join } from 'node:path';
 import type { Correction, ProjectClient } from '../../core/src/index.js';
 import { looksSensitive } from '../../core/src/security/sensitive.js';
+import { formatReviewText } from '../../core/src/context/review-text.js';
 import type { HookProviderName } from './index.js';
 import { MAX_CHANGED, SHELL_TOOLS, WINDOW_MARGIN_MS } from './shell.js';
 
@@ -47,7 +48,7 @@ export const SAVE_REQUEST = [
 ].join('\n');
 /** With an open handoff, the model may close it; it never names an id, and a finished task is never a new handoff. */
 function closeOffer(openHandoffGoal: string) {
-  const goal = Array.from(openHandoffGoal.replace(/\s+/g, ' ').replace(/"/g, "'").trim()).slice(0, 160).join('');
+  const goal = Array.from(formatReviewText(openHandoffGoal).replace(/\s+/g, ' ').replace(/"/g, "'").trim()).slice(0, 160).join('');
   return `Open handoff in this project: "${goal}". Add "close_handoff":true only if its work is now finished or your new handoff fully replaces it; never create a handoff just to say work is done.`;
 }
 

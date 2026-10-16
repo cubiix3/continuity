@@ -67,6 +67,34 @@ test('overview, navigation, project and workspace switch keep the correct scope'
   await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Empty' });
   await page.getByRole('link', { name: 'Sources', exact: true }).click(); await expect(page.getByText('No entries on this page.')).toBeVisible();
 });
+test('workspace selector updates navigation and the displayed root without a reload', async ({ page }) => {
+  const project = host.projects().find(p => p.name === 'Demo · Relay')!, worker = host.inspection.workspaces(project.project_id)[0]!;
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=`);
+  await page.getByLabel('Workspace', { exact: true }).selectOption(worker.workspace_id);
+  await expect(page.getByRole('heading', { name: 'Selected workspace' })).toBeVisible();
+  await expect(page.locator('.scope-path')).toHaveAttribute('title', worker.root);
+  for (const href of await page.locator('nav a').evaluateAll(links => links.map(a => (a as HTMLAnchorElement).hash))) expect(new URLSearchParams(href.split('?')[1]).get('workspace')).toBe(worker.workspace_id);
+  await page.getByRole('link', { name: 'Handoffs', exact: true }).click();
+  await expect(page.getByText('No entries on this page.', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue(worker.workspace_id);
+  await page.getByLabel('Workspace', { exact: true }).selectOption('');
+  await expect(page.getByRole('heading', { name: 'Selected workspace' })).toBeVisible();
+  await expect(page.locator('.scope-path')).toHaveAttribute('title', project.root);
+  await page.getByRole('link', { name: 'Handoffs', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Review reconnect cancellation', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Workspace', { exact: true })).toHaveValue('');
+});
+test('keyboard skip link focuses the main content and preserves the current route', async ({ page }) => {
+  await page.goto(`${base}/#/memories`);
+  await expect(page.getByRole('heading', { name: 'Memories', exact: true })).toBeVisible();
+  const current = page.url();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Skip to content', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('main')).toBeFocused();
+  await expect(page).toHaveURL(current);
+  await expect(page.getByRole('heading', { name: 'Memories', exact: true })).toBeVisible();
+});
 test('handoff detail explains work state without a transcript', async ({ page }) => {
   await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' });
   await page.getByRole('link', { name: 'Review reconnect cancellation', exact: true }).click();
@@ -89,6 +117,98 @@ test('source and memory HTML remains text; source previews refresh', async ({ pa
   await page.getByRole('link', { name: 'README.md', exact: true }).click(); await expect(page.locator('pre').first()).toContainText('NEW_CURRENT'); await expect(page.locator('pre').first()).toContainText(malicious);
   await page.getByRole('link', { name: 'Memories', exact: true }).click(); await page.getByRole('link', { name: 'hostile-content', exact: true }).click(); await expect(page.locator('pre').first()).toContainText(malicious);
   expect(await page.evaluate(() => Object.hasOwn(window, 'DASHBOARD_XSS'))).toBe(false); expect(dialogs).toEqual([]);
+});
+test('review directives render as findings in memory and handoff views without changing their stored text', async ({ page }) => {
+  const file = 'G:/Continuity/packages/core/src/context/broker.ts';
+  const first = `::code-comment{title="[P1] Preserve the selected workspace" body="Keep navigation in the selected checkout. ${malicious}" file="${file}" start=42 end=46 priority=1 confidence=0.97}`;
+  const second = '::code-comment{title="[P2] Keep the original record" body="Formatting must preserve the recorded review text." file="packages/dashboard/src/app.ts" start=175 end=175 priority=2 confidence=0.88}';
+  const raw = `Review findings\n${first}\n\n${second}\nThe original findings remain available for inspection.`;
+  const client = host.project(primary), memory = client.propose({ key: 'review-presentation', kind: 'experience', text: raw, from: { agent: 'Codex', session: 'review-display' } });
+  const handoff = client.createHandoff({ from: { agent: 'Codex', session: 'review-display' }, task: { goal: 'Inspect review presentation', status: 'blocked' }, completed: [second], remaining: [], decisions: [], files_changed: [], risks: [], recommended_next_action: first });
+  const project = host.projects().find(p => p.name === 'Demo · Relay')!;
+  await page.goto(`${base}/#/overview?project=${project.project_id}&workspace=`);
+  const next = page.locator('.timeline li').filter({ has: page.getByRole('link', { name: handoff.task.goal, exact: true }) }).locator('.next');
+  await expect(next).toContainText('[P1] Preserve the selected workspace');
+  await expect(next).not.toContainText('::code-comment');
+  expect(await next.getAttribute('title')).not.toContain('confidence=');
+  await page.getByRole('link', { name: 'Memories', exact: true }).click();
+  const preview = page.locator('tr').filter({ has: page.getByRole('link', { name: memory.key, exact: true }) }).locator('small');
+  await expect(preview).toContainText('[P1] Preserve the selected workspace');
+  expect(await preview.getAttribute('title')).not.toContain('::code-comment');
+  await page.getByRole('link', { name: memory.key, exact: true }).click();
+  const content = page.locator('.memory-content'), findings = content.locator('.review-finding');
+  await expect(findings).toHaveCount(2);
+  await expect(findings.first().getByRole('heading')).toHaveText('[P1] Preserve the selected workspace');
+  await expect(findings.first().locator('.review-location')).toHaveText('broker.ts:42-46');
+  await expect(findings.first().locator('.review-location')).toHaveAttribute('title', file);
+  await expect(findings.first().locator('.review-body')).toContainText(malicious);
+  await expect(findings.locator('a, script')).toHaveCount(0);
+  const original = content.locator('.review-original');
+  await expect(original.locator('pre')).toBeHidden();
+  await original.getByText('Original text', { exact: true }).click();
+  await expect(original.locator('pre')).toHaveText(raw);
+  await original.getByText('Original text', { exact: true }).click();
+  for (const [name, colorScheme, width] of [['light', 'light', 1440], ['dark', 'dark', 1440], ['narrow', 'light', 390]] as const) {
+    await page.emulateMedia({ colorScheme }); await page.setViewportSize({ width, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`review-${name}.png`), fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('link', { name: 'Handoffs', exact: true }).click();
+  await page.getByRole('link', { name: handoff.task.goal, exact: true }).click();
+  await expect(page.locator('.next-action .review-finding')).toHaveCount(1);
+  await expect(page.locator('.handoff-grid .review-finding')).toHaveCount(1);
+  expect(client.memory(memory.id).text).toBe(raw); expect(client.latestHandoff()?.recommended_next_action).toBe(first);
+  expect(await page.evaluate(() => Object.hasOwn(window, 'DASHBOARD_XSS'))).toBe(false);
+});
+test('context review presentation preserves source passages, literal examples and raw handoff JSON', async ({ page }) => {
+  const directive = '::code-comment{title="[P2] Preserve review provenance" body="Keep source passages and stored records unchanged." file="src/review.ts" start=12 end=15 priority=2 confidence=0.91}';
+  const examples = `Literal examples\n\n\`\`\`text\n${directive}\n\`\`\`\n::code-comment{title="Unknown annotation" body="Preserve this syntax" unknown=1}`;
+  writeFileSync(join(primary, 'review.md'), directive);
+  const client = host.project(primary); await client.sync();
+  const memory = client.propose({ key: 'literal-review-examples', kind: 'experience', text: examples, from: { agent: 'Codex', session: 'literal-review' } });
+  const handoff = client.createHandoff({ from: { agent: 'Codex', session: 'context-review' }, task: { goal: 'Review context presentation', status: 'blocked' }, completed: [], remaining: [directive], decisions: [], files_changed: [], risks: [], recommended_next_action: 'Inspect the original review.' });
+  const snapshot = JSON.stringify({ task: handoff.task, remaining: handoff.remaining, decisions: handoff.decisions, recommended_next_action: handoff.recommended_next_action });
+  const bundle = await client.context({ task: 'Review context presentation', budget: 6000 });
+  const context = { ...bundle, context_id: 'ctx_review_presentation', items: [
+    { id: 'review-memory', kind: 'memory' as const, content: directive, provenance: memory.provenance, reasons: ['Review display fixture'] },
+    { id: handoff.id, kind: 'handoff' as const, content: snapshot, provenance: handoff.provenance, reasons: ['Structured handoff snapshot'] },
+    { id: 'review-source', kind: 'source' as const, content: directive, provenance: memory.provenance, reasons: ['Historical source passage'], passage: { path: 'review.md', start_line: 1, end_line: 1 } },
+    { id: 'review-rule', kind: 'rule' as const, content: directive, provenance: memory.provenance, reasons: ['Historical rule without passage metadata'] },
+  ] };
+  const storage = new SqliteStorage(join(root, 'state', 'continuity.db')); try { storage.saveContext(context); } finally { storage.close(); }
+  await page.goto(`${base}/#/contexts/${context.context_id}?project=${bundle.project_id}&workspace=`);
+  const entries = page.locator('.evidence > details'); await expect(entries).toHaveCount(4);
+  for (const index of [0, 1, 2, 3]) await entries.nth(index).locator('summary').first().click();
+  await expect(entries.nth(0).locator('.review-finding')).toHaveCount(1);
+  await expect(entries.nth(1).locator('.review-finding')).toHaveCount(1);
+  const original = entries.nth(1).locator('.review-original');
+  await original.locator('summary').click(); await expect(original.locator('pre')).toHaveText(snapshot);
+  await expect(entries.nth(2).locator('.review-finding')).toHaveCount(0);
+  await expect(entries.nth(2).locator('pre')).toHaveText(directive);
+  await expect(entries.nth(3).locator('.review-finding')).toHaveCount(0);
+  await expect(entries.nth(3).locator('pre')).toHaveText(directive);
+  await page.getByRole('link', { name: 'Memories', exact: true }).click();
+  await page.getByRole('link', { name: memory.key, exact: true }).click();
+  await expect(page.locator('.memory-content')).toHaveText(examples);
+  await expect(page.locator('.review-finding, .review-original')).toHaveCount(0);
+  await page.getByRole('link', { name: 'Sources', exact: true }).click();
+  await page.getByRole('link', { name: 'review.md', exact: true }).click();
+  await expect(page.locator('.code pre')).toHaveText(directive);
+  await expect(page.locator('.review-finding, .review-original')).toHaveCount(0);
+  expect(client.memory(memory.id).text).toBe(examples);
+});
+test('handoff directive goals keep review bodies out of the page title', async ({ page }) => {
+  const body = 'Keep the complete review readable beneath a compact task title. '.repeat(8);
+  const directive = `::code-comment{title="[P2] Keep the task title compact" body="${body}" file="packages/dashboard/src/app.ts" start=222 end=226 priority=2 confidence=0.95}`;
+  const handoff = host.project(primary).createHandoff({ from: { agent: 'Codex', session: 'goal-review' }, task: { goal: directive, status: 'blocked' }, completed: [], remaining: [], decisions: [], files_changed: [], risks: [], recommended_next_action: 'Inspect the complete finding.' });
+  await page.goto(`${base}/#/handoffs/${handoff.id}?project=${handoff.project_id}&workspace=`);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('[P2] Keep the task title compact');
+  await expect(page.locator('.review-goal .review-body')).toHaveText(body);
+  await expect(page.locator('.review-goal .review-original pre')).toBeHidden();
+  await page.screenshot({ path: test.info().outputPath('review-goal-light.png'), fullPage: true });
+  await page.getByRole('link', { name: 'Handoffs', exact: true }).click();
+  await expect(page.getByRole('link', { name: '[P2] Keep the task title compact', exact: true })).toBeVisible();
 });
 test('context audit exposes selection, budgets and historical source semantics', async ({ page }) => {
   await page.goto(base); await page.getByLabel('Project', { exact: true }).selectOption({ label: 'Demo · Relay' }); await page.getByRole('link', { name: 'Context Audit', exact: true }).click();

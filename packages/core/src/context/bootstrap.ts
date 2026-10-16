@@ -3,6 +3,7 @@ import { openHandoff } from '../contracts.js';
 import { NamespaceGuard } from '../security/namespace.js';
 import { looksSensitive } from '../security/sensitive.js';
 import { memoryContextKind, sourceBackedCurrent } from './freshness.js';
+import { formatReviewText } from './review-text.js';
 
 export const BOOTSTRAP_BUDGET = { default: 6000, min: 1024, max: 16000 } as const;
 /** An index, not a dump: at most this many memories, at most `perOrigin` from one origin before others are considered. */
@@ -117,12 +118,12 @@ export function buildBootstrap(input: BootstrapInput): BootstrapBundle {
   if (!fits()) throw new Error('Bootstrap metadata exceeds byte budget.');
   // Whole items only, in priority order: latest handoff, then memories. Anything left is reported as available.
   if (latest) {
-    const remaining = latest.remaining.slice(0, LIMITS.remaining).map(r => clip(r, LIMITS.remainingItem).text);
-    bundle.latest_handoff = { id: latest.id, agent: clip(latest.from.agent, 60).text, status: latest.task.status, goal: clip(latest.task.goal, LIMITS.goal).text, next_action: clip(latest.recommended_next_action, LIMITS.next).text, remaining, remaining_total: latest.remaining.length, captured_at: latest.provenance.captured_at, selection_reason: 'latest_handoff' };
+    const remaining = latest.remaining.slice(0, LIMITS.remaining).map(r => clip(formatReviewText(r), LIMITS.remainingItem).text);
+    bundle.latest_handoff = { id: latest.id, agent: clip(latest.from.agent, 60).text, status: latest.task.status, goal: clip(formatReviewText(latest.task.goal), LIMITS.goal).text, next_action: clip(formatReviewText(latest.recommended_next_action), LIMITS.next).text, remaining, remaining_total: latest.remaining.length, captured_at: latest.provenance.captured_at, selection_reason: 'latest_handoff' };
     if (!fits()) { bundle.latest_handoff.remaining = []; if (!fits()) delete bundle.latest_handoff; }
   }
   for (const [origin, m] of shortlist) {
-    const summary = clip(m.text, LIMITS.summary);
+    const summary = clip(formatReviewText(m.text), LIMITS.summary);
     bundle.memories.push({ id: m.id, key: clip(m.key, 120).text, kind: memoryContextKind(m) as BootstrapMemory['kind'], origin, trust: m.provenance.trust, summary: summary.text, truncated: summary.truncated, captured_at: recency(m), ...(origin === 'source' && m.source_path ? { source_path: m.source_path } : {}), selection_reason: reasons[origin] });
     bundle.available.more_memories--;
     if (!fits()) { bundle.memories.pop(); bundle.available.more_memories++; break; }

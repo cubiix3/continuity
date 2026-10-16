@@ -80,6 +80,13 @@ context bundles: only if their exact source version is fresh in the current
 workspace snapshot. Otherwise they are withheld and counted. Agent-authored
 memories of kind `rule` are shown as `memory`; they never become project rules.
 
+Review annotations in memory and handoff prose are converted to readable text
+before summary clipping and byte budgeting. Summaries show priority, title, a
+compact file/line reference and as much of the explanation as fits. The stored
+record remains unchanged; annotation priority does not affect memory selection,
+trust or source freshness. Literal code examples and malformed annotations remain
+literal text.
+
 `continuity bootstrap --json` returns the structured `BootstrapBundle` with full
 IDs and a `selection_reason` per item. The byte budget (default 6,000, range
 1,024–16,000 via `--budget`) covers the compact JSON bundle in UTF-8 bytes; items
@@ -99,7 +106,9 @@ keys) and 2.0 KB injected text, 2.3 KB with the detail tool line.
   session starts during runtime syncs.
 - **Project-bound.** The provider supplies only its working directory. The host
   resolves the nearest registered project or workspace root; nested projects
-  resolve to themselves. Nothing from other projects is read.
+  resolve to themselves. Unregistered nested Git repositories, submodules and
+  worktrees receive no startup context until explicitly bound. Ordinary
+  subdirectories inherit their registered root. Nothing from other projects is read.
 - **Workspace-aware.** A registered Git worktree gets its own handoffs and source
   freshness, sharing the project's durable memories as elsewhere. Its root must still
   link into the project's `.git/worktrees` (checked by reading the `.git` file, without

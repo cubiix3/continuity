@@ -8,8 +8,9 @@ import assert from 'node:assert/strict';
 import { chromium } from '@playwright/test';
 
 if (!process.env.npm_execpath) throw new Error('Run pnpm test:runtime-pack.');
+const [pnpmCommand, ...pnpmArgs] = /\.[cm]?js$/i.test(process.env.npm_execpath) ? [process.execPath, process.env.npm_execpath] : [process.env.npm_execpath];
 const root = mkdtempSync(join(tmpdir(), 'continuity background ü '));
-const pm = (args, cwd = process.cwd()) => execFileSync(process.execPath, [process.env.npm_execpath, ...args], { cwd, encoding: 'utf8', stdio: 'pipe' });
+const pm = (args, cwd = process.cwd()) => execFileSync(pnpmCommand, [...pnpmArgs, ...args], { cwd, encoding: 'utf8', stdio: 'pipe' });
 let cli, host, browser, startupInstalled = false;
 const home = join(root, 'custom home'), project = join(root, 'project');
 const command = (...args) => JSON.parse(execFileSync(process.execPath, [cli, '--home', home, '--project', project, '--json', ...args], { encoding: 'utf8', stdio: 'pipe' }));

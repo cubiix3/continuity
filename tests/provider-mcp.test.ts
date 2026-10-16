@@ -398,9 +398,9 @@ test('no tool is promised where the session has none: a nested unregistered chec
   for (const provider of ['codex', 'claude']) spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', provider, 'install'], { encoding: 'utf8', windowsHide: true, env });
   const start = (provider: string, cwd: string) => { const out = spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, 'integrate', provider, 'session-start'], { input: JSON.stringify({ cwd, source: 'startup' }), encoding: 'utf8', windowsHide: true, env }).stdout; return provider === 'claude' && out ? JSON.parse(out).hookSpecificOutput.additionalContext as string : out; };
   expect(start('codex', a)).toContain('via continuity_context');
-  // A Git checkout nested in the project shows the parent's index, but its MCP server binds nothing.
+  // An unregistered nested Git checkout inherits neither the parent's index nor its tools.
   const nested = join(a, '.claude', 'worktrees', 'feat'); mkdirSync(nested, { recursive: true }); writeFileSync(join(nested, '.git'), 'gitdir: ../../../.git/worktrees/feat\n');
-  expect(start('codex', nested)).toContain('Continuity · Alpha'); expect(start('codex', nested)).not.toContain('continuity_context');
+  for (const provider of ['codex', 'claude']) expect(start(provider, nested)).toBe('');
   // Claude Code keeps per-project server toggles in the same file.
   expect(start('claude', a)).toContain('via continuity_context');
   const file = join(root, 'cc', '.claude.json'), config = json(file);

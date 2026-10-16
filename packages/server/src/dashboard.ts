@@ -19,6 +19,7 @@ export function createDashboardServer(host: Host, assetsRoot = new URL('../../da
     ['/', { type: 'text/html; charset=utf-8', body: readFileSync(new URL('public/index.html', assetsRoot)) }],
     ['/app.css', { type: 'text/css; charset=utf-8', body: readFileSync(new URL('public/app.css', assetsRoot)) }],
     ['/app.js', { type: 'text/javascript; charset=utf-8', body: readFileSync(new URL('src/app.js', assetsRoot)) }],
+    ['/core/src/context/review-text.js', { type: 'text/javascript; charset=utf-8', body: readFileSync(new URL('../core/src/context/review-text.js', assetsRoot)) }],
     ['/favicon.svg', { type: 'image/svg+xml', body: readFileSync(new URL('public/favicon.svg', assetsRoot)) }],
   ]);
   const server = createServer({ maxHeaderSize: 8192, requestTimeout: 10000, headersTimeout: 10000 }, async (req, res) => {

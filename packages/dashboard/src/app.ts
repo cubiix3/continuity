@@ -1,4 +1,5 @@
 import type { ContextBundle, Handoff, Memory, Project, Resource, SelectionAudit, Workspace } from '../../core/src/contracts.js';
+import { formatReviewText, parseReviewText, reviewHeading, reviewLocation } from '../../core/src/context/review-text.js';
 
 type Row = { record: Record<string, unknown>; cursor: number; created_at?: string };
 type Page = { items: Row[]; next: number | null };
@@ -75,11 +76,38 @@ function table(headers: string[], rows: (string | Node)[][], widths: string[] = 
   t.append(head);
   const body = el('tbody'); for (const values of rows) { const row = el('tr'); for (const value of values) { const td = el('td'); td.append(value); row.append(td); } body.append(row); } t.append(body); wrap.append(t); return wrap;
 }
-function section(title: string, values: string[]) {
+function originalText(value: string) { const details = el('details', undefined, 'review-original'); details.append(el('summary', 'Original text'), el('pre', value)); return details; }
+function reviewContent(value: string, className?: string, original = value) {
+  const parts = parseReviewText(value);
+  if (!parts.some(part => part.type === 'review')) return el('pre', value, className);
+  const content = el('div', undefined, ['review-text', className].filter(Boolean).join(' '));
+  for (const part of parts) {
+    if (part.type === 'text') { if (part.text.trim()) content.append(el('div', part.text.replace(/^(?:\r?\n)+|(?:\r?\n)+$/g, ''), 'review-prose')); continue; }
+    const finding = el('article', undefined, 'review-finding'), header = el('header');
+    header.append(el('h3', reviewHeading(part)));
+    if (part.file) { const location = el('span', reviewLocation(part), 'review-location'); location.title = part.file; header.append(location); }
+    finding.append(header, el('div', part.body, 'review-body')); content.append(finding);
+  }
+  content.append(originalText(original)); return content;
+}
+function contextContent(item: ContextBundle['items'][number]) {
+  if (item.passage || item.kind === 'source' || item.kind === 'rule') return el('pre', item.content);
+  if (item.kind === 'handoff') {
+    try {
+      const snapshot = JSON.parse(item.content) as Partial<Handoff>;
+      if (typeof snapshot?.task?.goal === 'string' && Array.isArray(snapshot.remaining) && snapshot.remaining.every(value => typeof value === 'string') && Array.isArray(snapshot.decisions) && snapshot.decisions.every(value => typeof value === 'string') && typeof snapshot.recommended_next_action === 'string') {
+        const prose = [`Task\n${snapshot.task.goal}`, `Remaining\n${snapshot.remaining.join('\n')}`, `Decisions\n${snapshot.decisions.join('\n')}`, `Recommended next action\n${snapshot.recommended_next_action}`].join('\n\n');
+        if (parseReviewText(prose).some(part => part.type === 'review')) return reviewContent(prose, undefined, item.content);
+      }
+    } catch { /* Historical content may predate the structured handoff snapshot. */ }
+  }
+  return reviewContent(item.content);
+}
+function section(title: string, values: string[], reviews = false) {
   const s = el('section', undefined, 'section'); s.append(el('h2', title));
   if (!values.length) s.append(el('p', 'None recorded.', 'muted'));
   else {
-    const ul = el('ul'); values.forEach(v => ul.append(el('li', v)));
+    const ul = el('ul'); values.forEach(v => { const item = el('li'); item.append(reviews ? reviewContent(v, 'review-content') : v); ul.append(item); });
     if (values.reduce((size, value) => size + value.length, 0) > 4000) { const disclosure = el('details'); disclosure.append(el('summary', `Show all ${values.length} entries`), ul); s.append(disclosure); }
     else s.append(ul);
   }
@@ -99,7 +127,7 @@ async function selectors(after = 0) {
   workspaces = [...new Map([...(after ? workspaces : []), ...loaded.workspaces, ...(loaded.selected ? [loaded.selected] : [])].map(w => [w.workspace_id, w])).values()];
   for (const item of workspaces) { const option = el('option', item.root.split(/[\\/]/).at(-1) ?? item.workspace_id); option.value = item.workspace_id; w.append(option); } w.value = workspaceId;
   p.onchange = () => { projectId = p.value; workspaceId = ''; generation++; void selectors().then(() => { go('overview'); return render(); }).catch(showError); };
-  w.onchange = () => { workspaceId = w.value; generation++; go('workspaces'); void render(); };
+  w.onchange = () => { workspaceId = w.value; generation++; void selectors().then(() => { go('workspaces'); return render(); }).catch(showError); };
   const projectControl = el('div', undefined, 'scope-project'), workspaceControl = el('div', undefined, 'scope-workspace');
   const rootPath = (workspaceId ? workspaces.find(item => item.workspace_id === workspaceId)?.root : undefined) ?? projects.find(item => item.project_id === projectId)?.root ?? 'No project registered';
   const root = el('span', undefined, 'scope-path'); root.title = rootPath; root.append(el('bdi', rootPath));
@@ -139,8 +167,10 @@ function timeline(rows: Row[]) {
   for (const row of rows) {
     const h = row.record as unknown as Handoff, li = el('li'), meta = el('div', undefined, 'handoff-meta'), next = el('p', undefined, 'next');
     meta.append(el('strong', h.from.agent), el('span', h.from.session, 'mono'), status(h.closure?.status ?? h.task.status));
-    next.append(el('span', 'Next'), h.recommended_next_action || 'No next action recorded.'); next.title = h.recommended_next_action;
-    li.append(pageLink('handoffs', h.id, h.task.goal), timestamp(h.provenance.captured_at), meta, next); list.append(li);
+    const action = formatReviewText(h.recommended_next_action);
+    next.append(el('span', 'Next'), action || 'No next action recorded.'); next.title = action;
+    const goal = parseReviewText(h.task.goal).find(part => part.type === 'review');
+    li.append(pageLink('handoffs', h.id, goal ? reviewHeading(goal) : h.task.goal), timestamp(h.provenance.captured_at), meta, next); list.append(li);
   }
   if (!rows.length) { const item = el('li'); item.append(el('p', 'No handoffs yet. Structured work state appears here when an agent leaves a handoff.', 'muted')); list.append(item); } return list;
 }
@@ -161,7 +191,7 @@ async function list(kind: string, stamp: number, after = 0, filter = 'all') {
   const num = (value: string) => el('span', value, 'num');
   if (!rows.length) empty('No entries on this page.', kind === 'handoffs' ? 'Handoffs appear when an agent records structured work state for another session.' : kind === 'memories' && filter !== 'all' ? 'No memories match this filter.' : 'Use the CLI or your agent integration to create records.');
   else if (kind === 'handoffs') main.append(timeline(rows));
-  else if (kind === 'memories') main.append(table(['Memory', 'Origin', 'Kind', 'Status', 'Created'], rows.map(({ record: r }) => { const m = r as unknown as Memory, claim = el('div', undefined, 'record-title'), preview = el('small', text(r.text)); preview.title = text(r.text); claim.append(pageLink(kind, text(r.id), text(r.key)), preview); return [claim, originLabel(m), el('span', text(r.kind), 'faint'), status(text(r.status)), timestamp(m.provenance.captured_at)]; }), ['', '96px', '96px', '128px', '104px']));
+  else if (kind === 'memories') main.append(table(['Memory', 'Origin', 'Kind', 'Status', 'Created'], rows.map(({ record: r }) => { const m = r as unknown as Memory, claim = el('div', undefined, 'record-title'), preview = el('small', formatReviewText(text(r.text))); preview.title = preview.textContent!; claim.append(pageLink(kind, text(r.id), text(r.key)), preview); return [claim, originLabel(m), el('span', text(r.kind), 'faint'), status(text(r.status)), timestamp(m.provenance.captured_at)]; }), ['', '96px', '96px', '128px', '104px']));
   else if (kind === 'sources') main.append(table(['Path', 'State', 'Kind', 'Size', 'Passages', 'Captured'], rows.map(({ record: r }) => { const path = pageLink(kind, text(r.id), text(r.path)); path.className = 'mono'; return [path, status(text(r.state)), el('span', text(r.kind), 'faint'), num(bytes(r.bytes)), num(text(r.passage_count)), timestamp((r.provenance as Resource['provenance']).captured_at)]; }), ['', '96px', '80px', '84px', '80px', '104px']));
   else main.append(table(['Context', 'Mode', 'Used / requested', 'Items', 'Created'], rows.map(({ record: r, created_at }) => { const budget = r.budget as ContextBundle['budget'], title = el('div', undefined, 'record-title'), id = el('small', text(r.context_id), 'mono'); title.append(pageLink('contexts', text(r.context_id), text(r.role)), id); return [title, el('span', text((r.retrieval as ContextBundle['retrieval'])?.effective), 'faint'), num(`${bytes(budget.used)} / ${bytes(budget.requested)}`), num(text(r.item_count)), timestamp(created_at)]; }), ['', '96px', '150px', '72px', '104px']));
   const numeric = kind === 'sources' ? [3, 4] : kind === 'contexts' ? [2, 3] : [];
@@ -190,16 +220,18 @@ async function detail(kind: string, id: string, stamp: number) {
   const wrap = el('div', undefined, 'detail'); main.append(wrap);
   if (kind === 'handoffs') {
     const h = row.record as unknown as Handoff, header = el('header', undefined, 'page-header');
-    header.append(el('h1', h.task.goal), metaLine(el('strong', h.from.agent), el('span', h.from.session, 'mono'), status(h.closure?.status ?? h.task.status), timestamp(h.provenance.captured_at), h.provenance.workspace_id ? 'Workspace checkout' : 'Primary workspace'));
+    const goal = parseReviewText(h.task.goal).find(part => part.type === 'review');
+    header.append(el('h1', goal ? reviewHeading(goal) : h.task.goal), metaLine(el('strong', h.from.agent), el('span', h.from.session, 'mono'), status(h.closure?.status ?? h.task.status), timestamp(h.provenance.captured_at), h.provenance.workspace_id ? 'Workspace checkout' : 'Primary workspace'));
+    if (goal) header.append(reviewContent(h.task.goal, 'review-goal'));
     if (h.closure) header.append(el('p', `Closed by ${h.closure.closed_by.agent} · ${new Date(h.closure.closed_at).toLocaleString()}. The handoff below is unchanged history.`, 'notice'));
-    const next = section('Recommended next action', [h.recommended_next_action]); next.classList.add('next-action');
+    const next = section('Recommended next action', [h.recommended_next_action], true); next.classList.add('next-action');
     const grid = el('div', undefined, 'handoff-grid'), files = section('Files changed', h.files_changed); files.classList.add('files');
-    grid.append(section('Completed', h.completed), section('Remaining', h.remaining), section('Decisions', h.decisions), section('Risks', h.risks));
+    grid.append(section('Completed', h.completed, true), section('Remaining', h.remaining, true), section('Decisions', h.decisions, true), section('Risks', h.risks, true));
     wrap.append(header, next, grid, files, provenanceBlock(h.provenance));
   } else if (kind === 'memories') {
     const m = row.record as unknown as Memory, header = el('header', undefined, 'page-header'), title = el('h1', m.key, 'mono');
     header.append(title, metaLine(originLabel(m), m.kind, status(m.status), timestamp(m.provenance.captured_at)));
-    wrap.append(header, el('pre', m.text, 'memory-content'));
+    wrap.append(header, reviewContent(m.text, 'memory-content'));
     if (m.status === 'needs_attention') wrap.append(el('p', 'This claim is quarantined. It is not delivered as active project knowledge.', 'notice warning'));
     wrap.append(el('h2', 'Origin'), facts([['Trust', m.provenance.trust], ['Agent / session', m.from ? `${m.from.agent} / ${m.from.session}` : undefined], ['Evidence', m.source_path], ['Source version', m.source_path ? m.provenance.source_version : undefined], ['Superseded by', m.superseded_by], ['Superseded', m.superseded_at ? timestamp(m.superseded_at) : undefined], ['Reviewed by', m.review?.by], ['Reviewed', m.review ? timestamp(m.review.at) : undefined]]), el('p', m.reason, 'reason'));
     const controls = el('div', undefined, 'actions');
@@ -221,7 +253,7 @@ async function detail(kind: string, id: string, stamp: number) {
     for (const item of c.items) {
       const d = el('details'), summaryLine = el('summary');
       summaryLine.append(el('span', `${item.passage?.path ?? item.provenance.origin}${item.passage ? `:${item.passage.start_line}–${item.passage.end_line}` : ''}`, 'mono'), el('span', `${item.kind} · ${item.provenance.trust}`, 'faint'));
-      d.append(summaryLine, section('Why included?', item.reasons), facts([['Source version', el('code', item.provenance.source_version)], ['Audit ref', el('code', item.id)]]), el('div', 'HISTORICAL PROJECT CONTENT', 'source-label'), el('pre', item.content)); evidence.append(d);
+      d.append(summaryLine, section('Why included?', item.reasons), facts([['Source version', el('code', item.provenance.source_version)], ['Audit ref', el('code', item.id)]]), el('div', 'HISTORICAL PROJECT CONTENT', 'source-label'), contextContent(item)); evidence.append(d);
     }
     main.append(evidence);
     const selection = await api<SelectionAudit | null>('selection', { id }); if (stamp !== generation) return;
@@ -320,6 +352,7 @@ async function start() {
   for (const [name, pages] of pageGroups) { const group = el('div', undefined, 'nav-group'); group.append(el('span', name, 'nav-label')); for (const page of pages) group.append(link(page, `#/${slug(page)}`)); nav.append(group); }
   await selectors(); if (!location.hash) location.hash = '/overview'; else await render();
 }
+document.querySelector<HTMLAnchorElement>('.skip')!.addEventListener('click', event => { event.preventDefault(); main.focus(); });
 window.addEventListener('hashchange', () => {
   const saved = new URLSearchParams(location.hash.split('?')[1] ?? '');
   const requested = saved.get('project');

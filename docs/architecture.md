@@ -34,9 +34,11 @@ contracts. The Core never imports SQLite or provider SDKs.
 
 `projects` stores a UUID, display name, identity version, and canonical root in the
 private local database. The repository contains no identity file. `init` is
-idempotent for a canonical path; parent resolution chooses the nearest registered
-root. Clones and worktrees at different paths have separate identities. Relocation
-is not automatically inferred from remote URLs or directory names.
+idempotent for a canonical path. Clones have separate identities; explicitly
+registered Git worktrees share their primary project's identity and keep separate
+source snapshots. Session and bootstrap resolution choose the nearest registered
+project or attached workspace, stopping at an unregistered nested Git checkout.
+Relocation is not automatically inferred from remote URLs or directory names.
 
 Only `project:<id>` namespaces are enabled. Sessions and handoffs carry the owning
 project ID; they do not grant an additional cross-project read capability. Global
@@ -58,18 +60,19 @@ reserved in the data model for an observed mismatch awaiting refresh. Current
 synchronous refresh replaces it directly, so no stale candidate is returned.
 
 Every search, context request, and memory proposal refreshes the project first.
-The optional background runtime also watches registered projects for automatic
-sync. File SHA-256 is the version reference, including uncommitted
-changes. Git remains responsible for durable source history.
+File SHA-256 is the version reference, including uncommitted changes. The optional
+[background runtime](background-runtime.md) also refreshes persisted snapshots
+through bounded directory watches and periodic reconciliation. Removed or replaced
+directories invalidate their previous snapshots through the same watch plan.
+Git remains responsible for durable source history.
 
 The broker ranks project rules before FTS5 matches, then relevant source-backed
 memories. Ties use path and ID. Deduplication is by exact selected text. After the
 rules, memories whose text matches at least half of the meaningful task terms may
 use up to 25% of the budget before lower-ranked passages, in trust order; see the
-[memory model](memory-model.md#context-and-trust). Large
-sources contribute a bounded excerpt around the first matching line; explanations
-mark the excerpt. Roles are validated and recorded; there are no role-specific
-ranking rules.
+[memory model](memory-model.md#context-and-trust). Sources split at headings,
+declarations and bounded line ranges; returned passages keep their paths and line
+numbers. Roles are validated and recorded; there are no role-specific ranking rules.
 
 Budgets measure compact JSON in UTF-8 bytes, including provenance and metadata.
 Items are admitted whole or skipped; requested budgets range from 512 to 32,000.
@@ -83,16 +86,22 @@ migrations via `user_version`. Future schema versions are refused. Tables cover
 projects, namespaces, resources, memories, memory revisions, handoffs, sessions,
 observations, sync state, provenance, and historical context bundles. The
 observation ingestion is available through the generic adapter and MCP, without
-automatic memory promotion. Schema v2 adds audited rebindings and timestamps for
-context/session retention previews; v1 data migrates transactionally.
+automatic memory promotion. Separate memory proposals follow Core evidence,
+attribution and conflict policy; see the [memory model](memory-model.md).
+Migrations add audited rebindings, retention timestamps, semantic caches, workspace
+snapshots and handoff closures transactionally.
 
 Memory policy decisions run inside a write transaction so concurrent local
 processes cannot bypass conflict checks. Handoffs and their session/provenance
 records are written atomically. The default database is
 `~/.continuity/continuity.db`; `CONTINUITY_HOME` and `--home` support isolated stores.
 
-`SemanticRetrievalPort` reserves optional ranking over already scoped candidates.
-No vector storage, network service, embeddings, or OpenViking dependency exists.
+`SemanticRetrievalPort` receives only authorized project passages. Optional Ollama
+embeddings use SQLite caches scoped by project, workspace and model; replacing one
+model's cache preserves the others. OpenViking uses scoped remote resource
+references. Semantic failure preserves lexical retrieval. Configuration lives in
+the private Continuity home and never enables a service or model download from
+repository content. See [retrieval](retrieval.md).
 
 An optional host-supplied `TokenEstimator` reports estimated tokens for the selected
 items, with an optional `provider_model_hint`. There is no tokenizer dependency.

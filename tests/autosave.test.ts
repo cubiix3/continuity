@@ -135,6 +135,12 @@ test('the offer is complete, the fallback request is short and self-contained; o
   expect(parseSaveReply('[continuity-save]: <{"memories":[{"key":"old"}]}>\n\n[continuity-save]: <{"memories":[]}>')).toEqual({ memories: [], handoff: null });
 });
 
+test('the autosave offer presents the review finding before clipping its goal', () => {
+  const finding = '::code-comment{title="Reconnect retry" body="Release the stale lease before replacing the reconnect session." file="src/reconnect.ts" start=42 end=45 priority=1 confidence=0.98}';
+  const contract = saveContract(finding);
+  expect(contract).toContain(saveContract()); expect(contract).toContain('[P1] Reconnect retry'); expect(contract).toContain('reconnect.ts:42'); expect(contract).toContain('Release the stale lease'); expect(contract).not.toContain('::code-comment');
+});
+
 test('a save line without the angle brackets is accepted as the same line, and nowhere else', () => {
   const payload = '{"memories":[{"key":"config.include-comments","kind":"experience","text":"Include lines keep the rest of the line as the path."}],"handoff":null}';
   const expected = parseSaveReply(`Done.\n\n[continuity-save]: <${payload}>`);

@@ -54,6 +54,13 @@ Results contain JSON text and structured data under `result`. MCP framing is
 outside the Core bundle budget. stdout is reserved for protocol traffic; diagnostics
 use stderr. The adapter uses the official [MCP TypeScript SDK v1](https://ts.sdk.modelcontextprotocol.io/server).
 
+CLI text output formats nested records and review annotations as readable text.
+`--json`, MCP result records and HTTP record responses keep their original data.
+Bootstrap summary fields are display projections: annotations are formatted before
+clipping, and the existing MCP bootstrap `text` uses those summaries. Source text
+and source-backed context passages are always shown verbatim. Continuity does not
+render or change an external agent chat application's messages.
+
 ## HTTP v1
 
 ```sh

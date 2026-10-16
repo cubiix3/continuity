@@ -116,8 +116,8 @@ export class SqliteStorage implements StoragePort {
       replace: (model, entries, complete = true) => this.transaction(() => {
         for (const e of entries) this.assertCurrentResource(projectId, e.resource_id, e.source_hash);
         const ids = new Set(entries.map(e => e.passage_id));
-        for (const row of complete ? this.db.prepare('SELECT e.passage_id FROM embeddings e JOIN resources r ON r.id = e.resource_id WHERE e.project_id = ? AND r.workspace_id = ?').all(projectId, this.workspaceId) : []) {
-          if (!ids.has(String(row.passage_id))) this.db.prepare('DELETE FROM embeddings WHERE project_id = ? AND passage_id = ?').run(projectId, String(row.passage_id));
+        for (const row of complete ? this.db.prepare('SELECT e.passage_id FROM embeddings e JOIN resources r ON r.id = e.resource_id WHERE e.project_id = ? AND e.model = ? AND r.workspace_id = ?').all(projectId, model, this.workspaceId) : []) {
+          if (!ids.has(String(row.passage_id))) this.db.prepare('DELETE FROM embeddings WHERE project_id = ? AND model = ? AND passage_id = ?').run(projectId, model, String(row.passage_id));
         }
         for (const e of entries) {
           if (!e.vector.length || e.vector.length > 8192 || e.vector.some(n => !Number.isFinite(n))) throw new Error('Invalid embedding vector');

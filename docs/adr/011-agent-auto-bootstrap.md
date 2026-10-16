@@ -20,8 +20,16 @@ source-backed freshness predicate was extracted from the context broker and is
 shared, so there is one freshness rule. Content matching the existing secret
 heuristics, which moved from the source adapter to `core/security`, is withheld.
 
+Review annotations are a content format, independent of the provider. The shared
+plain-text reader converts them before display summaries are clipped and budgeted.
+Raw records remain unchanged. Priority and file references are display data;
+they grant no trust, file access or rendering authority. Provider protocol envelopes
+and raw record responses stay unchanged.
+
 The trusted host resolves a directory to the nearest registered project or
-workspace root without registering anything. Providers supply only their
+attached workspace root without registering anything. Resolution stops at an
+unregistered nested Git repository or worktree, so it cannot inherit the parent's
+startup context. Providers supply only their
 working directory. Provider adapters (`adapter-hooks`) shape hook input and
 output and edit a provider's user hook file only on an explicit
 `continuity integrate <provider> install|remove`: additive, atomic, backed up and

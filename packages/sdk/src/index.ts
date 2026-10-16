@@ -140,16 +140,17 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
       : new OllamaRetrieval(bound.embeddingCache(projectId), s.endpoint, s.model, s.document_prefix, s.query_prefix);
   };
   /** Nearest registered project or workspace root at or above `path`; a detached worktree path resolves to nothing. */
-  const nearest = (path: string): { project: Project; workspace?: Workspace; start: string } | undefined => {
-    const start = canonicalRoot(path);
-    let current = start;
+  const nearest = (path: string): { project: Project; workspace?: Workspace } | undefined => {
+    let current = canonicalRoot(path);
     const projects = storage.projects(), workspaceRoots = new Map(projects.flatMap(p => storage.workspaces(p.project_id).map(w => [w.root, { project: p, workspace: w }] as const)));
     for (;;) {
       const primary = projects.find(p => p.root === current);
-      if (primary) return { project: primary, start };
+      if (primary) return { project: primary };
       const candidate = workspaceRoots.get(current);
       // A removed worktree's path can be reused by an unrelated checkout: no context rather than a wrong one.
-      if (candidate) return attachedWorktree(candidate.project.root, candidate.workspace.root) ? { ...candidate, start } : undefined;
+      if (candidate) return attachedWorktree(candidate.project.root, candidate.workspace.root) ? candidate : undefined;
+      // Unregistered worktrees, submodules and nested repositories must not inherit a parent's session context.
+      if (existsSync(join(current, '.git'))) return undefined;
       const parent = dirname(current);
       if (parent === current) return undefined;
       current = parent;
@@ -251,10 +252,7 @@ export function openContinuity(home = process.env.CONTINUITY_HOME ?? join(homedi
     session: (path: string) => {
       const scope = nearest(path);
       if (!scope) return undefined;
-      const { project, workspace, start } = scope;
-      // A Git checkout nested below the resolved root (an unregistered worktree, submodule or nested repository) is a
-      // different tree: writes there would carry the wrong workspace and source evidence.
-      for (let dir = start; dir !== (workspace?.root ?? project.root); dir = dirname(dir)) if (dirname(dir) === dir || existsSync(join(dir, '.git'))) return undefined;
+      const { project, workspace } = scope;
       if (!workspace) return new ProjectClient(storage, sourceFor(project), project, undefined, undefined, 'lexical');
       const source = sourceFor(project, workspace.root);
       // The bounded change check reads only metadata of an attachment already confirmed above; scans verify it with Git.

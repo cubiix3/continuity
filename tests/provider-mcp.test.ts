@@ -144,6 +144,52 @@ test('Codex: the MCP table is appended and removed as a whole block; comments, C
   expect(readFileSync(file, 'utf8')).toBe(original);
 });
 
+test('malformed hook settings report no file contents and remain unchanged', () => {
+  for (const provider of ['claude', 'codex'] as const) {
+    const dir = join(root, `invalid-hooks-${provider}`); mkdirSync(dir);
+    const target = provider === 'claude' ? claudeTarget(dir) : codexTarget(dir);
+    const malformed = '{ "hooks": PRIVATE_HOOK_CONTENT_7284 }';
+    writeFileSync(target.file, malformed);
+    const status = hookIntegrationStatus(target);
+    expect(status.state).toBe('invalid_config');
+    expect(status.message).toContain('invalid JSON');
+    expect(status.message).not.toContain('PRIVATE');
+    expect(() => installHookIntegration(target)).toThrow('invalid JSON');
+    expect(() => removeHookIntegration(target)).toThrow('invalid JSON');
+    const result = spawnSync(process.execPath, ['--no-warnings', cli, '--home', home, '--json', 'integrate', provider, 'status'], {
+      encoding: 'utf8', windowsHide: true, env: { ...process.env, CODEX_HOME: dir, CLAUDE_CONFIG_DIR: dir }
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout + result.stderr).not.toContain('PRIVATE');
+    expect(readFileSync(target.file, 'utf8')).toBe(malformed);
+  }
+});
+
+test('Codex: the context hint respects tool allow and deny lists without changing them', () => {
+  const dir = join(root, 'codex-filters'), target = codexTarget(dir), file = join(dir, 'config.toml');
+  writeMcpEntry(target.mcp, true);
+  const clean = readFileSync(file, 'utf8');
+  const cases: [string, boolean][] = [
+    ['', true],
+    ['enabled_tools = ["continuity_context"]', true],
+    ['enabled_tools = []', false],
+    ['enabled_tools = ["continuity_search"]', false],
+    ['disabled_tools = ["continuity_context"]', false],
+    ['disabled_tools = ["continuity_search"]', true],
+    ['disabled_tools = []', true],
+    ['enabled_tools = ["continuity_context"]\ndisabled_tools = ["continuity_context"]', false],
+    ['"enabled_tools" = [\n  \'continuity_context\', # context\n]', true],
+    ['"disabled_tools" = [\n  "continuity_\\u0063ontext", # context\n]', false],
+    ['enabled_tools = "continuity_context"', false],
+    ['disabled_tools = [false]', false],
+  ];
+  for (const [filters, usable] of cases) {
+    const config = `${clean}${filters}\n`; writeFileSync(file, config);
+    expect(mcpUsable(target.mcp, a), filters).toBe(usable);
+    expect(readFileSync(file, 'utf8')).toBe(config);
+  }
+});
+
 test('Codex: TOML strings keep hostile path characters literal and round-trip through the entry check', () => {
   const dir = join(root, 'codex-escape');
   const odd = join(root, 'we"ird\\ü \'dir');
@@ -313,8 +359,8 @@ test('a dangling Claude config link is refused before any file is written; MCP b
 });
 
 /** A real stdio MCP session with the provider-mode server, started the way the provider starts it. */
-async function mcpSession(provider: 'claude' | 'codex', cwd: string, env: Record<string, string> = {}) {
-  const transport = new StdioClientTransport({ command: process.execPath, args: ['--no-warnings', cli, '--home', home, 'integrate', provider, 'mcp'], cwd, env: { ...Object.fromEntries(Object.entries(process.env).filter(([k, v]) => v !== undefined && !/^CLAUDE_PROJECT_DIR$/.test(k))) as Record<string, string>, ...env }, stderr: 'pipe' });
+async function mcpSession(provider: 'claude' | 'codex', cwd: string, env: Record<string, string> = {}, stateHome = home) {
+  const transport = new StdioClientTransport({ command: process.execPath, args: ['--no-warnings', cli, '--home', stateHome, 'integrate', provider, 'mcp'], cwd, env: { ...Object.fromEntries(Object.entries(process.env).filter(([k, v]) => v !== undefined && !/^CLAUDE_PROJECT_DIR$/.test(k))) as Record<string, string>, ...env }, stderr: 'pipe' });
   const client = new Client({ name: 'test-provider', version: '1.0.0' });
   await client.connect(transport);
   return client;
@@ -356,7 +402,15 @@ test('nested projects bind to themselves; unregistered directories and missing s
   const outside = join(root, 'outside'); mkdirSync(outside);
   for (const [provider, cwd, env] of [['codex', outside, {}], ['claude', outside, { CLAUDE_PROJECT_DIR: outside }]] as const) {
     const client = await mcpSession(provider, cwd, env);
-    try { expect((await client.listTools().catch(() => ({ tools: [] }))).tools).toEqual([]); } finally { await client.close(); }
+    try {
+      expect(client.getServerCapabilities()).toMatchObject({ tools: {} });
+      expect((await client.listTools()).tools).toEqual([]);
+      await expect(client.callTool({ name: 'continuity_search', arguments: { query: 'ALPHA' } })).rejects.toThrow();
+    } finally { await client.close(); }
+  }
+  for (const provider of ['claude', 'codex'] as const) {
+    const client = await mcpSession(provider, a, { CLAUDE_PROJECT_DIR: a }, join(root, 'no-home'));
+    try { expect((await client.listTools()).tools).toEqual([]); } finally { await client.close(); }
   }
   const noHome = spawnSync(process.execPath, ['--no-warnings', cli, '--home', join(root, 'no-home'), 'integrate', 'codex', 'mcp'], { cwd: a, input: '', encoding: 'utf8', windowsHide: true });
   expect(noHome.status).toBe(0); expect(existsSync(join(root, 'no-home'))).toBe(false);
@@ -372,7 +426,7 @@ test('an attached worktree binds to its workspace; a detached one gets no tools'
   try { expect(text(await attached.callTool({ name: 'continuity_handoff_latest', arguments: {} }))).toContain('FEATURE branch work'); } finally { await attached.close(); }
   renameSync(join(a, '.git', 'worktrees', 'alpha-feature'), join(root, 'pruned'));
   const detached = await mcpSession('codex', feature);
-  try { expect((await detached.listTools().catch(() => ({ tools: [] }))).tools).toEqual([]); } finally { await detached.close(); }
+  try { expect((await detached.listTools()).tools).toEqual([]); } finally { await detached.close(); }
 });
 
 test('the startup index names the detail tool only when the MCP entry is really installed', () => {
@@ -384,6 +438,11 @@ test('the startup index names the detail tool only when the MCP entry is really 
   expect(start({ CODEX_HOME: dir })).not.toContain('continuity_context');
   install({ CODEX_HOME: dir }, 'codex');
   expect(start({ CODEX_HOME: dir })).toContain('More available: 3 more memories (alpha.lesson-1, alpha.lesson-0, alpha.plurals) via continuity_context.');
+  const config = join(dir, 'config.toml'), installed = readFileSync(config, 'utf8');
+  writeFileSync(config, installed + 'disabled_tools = ["continuity_context"]\n');
+  expect(start({ CODEX_HOME: dir })).not.toContain('via continuity_context');
+  writeFileSync(config, installed + 'enabled_tools = ["continuity_context"]\n');
+  expect(start({ CODEX_HOME: dir })).toContain('via continuity_context');
   // A stale entry (for example after the CLI moved) is not promised.
   writeMcpEntry(codexHookTarget(process.execPath, join(root, 'old', 'dist', 'packages', 'cli', 'src', 'index.js'), home, { CODEX_HOME: dir }).mcp, true);
   expect(start({ CODEX_HOME: dir })).not.toContain('continuity_context');

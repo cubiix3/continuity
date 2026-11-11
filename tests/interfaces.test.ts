@@ -6,8 +6,10 @@ import { execFileSync } from 'node:child_process';
 import { createServer, request } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { openContinuity } from '../packages/sdk/src/index.js';
 import { GenericAdapter } from '../packages/adapter-generic/src/index.js';
+import { createMcpServer } from '../packages/adapter-mcp/src/index.js';
 import { createLocalServer } from '../packages/server/src/index.js';
 import type { ContextBundle } from '../packages/core/src/contracts.js';
 
@@ -28,6 +30,22 @@ const handoff = {
   from: { agent: 'generic-a', session: 's1' }, task: { goal: 'Fix reconnect', status: 'in_progress' },
   completed: ['Read source'], remaining: ['Implement retry'], decisions: [], files_changed: [], risks: [], recommended_next_action: 'Write regression test',
 };
+
+it('empty MCP servers complete discovery without exposing project tools', async () => {
+  const host = openContinuity(home); host.init(path);
+  try {
+    for (const server of [createMcpServer(undefined), createMcpServer(new GenericAdapter(host.project(path)), { tools: [] })]) {
+      const client = new Client({ name: 'empty-mcp', version: '1.0.0' });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      try {
+        await server.connect(serverTransport); await client.connect(clientTransport);
+        expect(client.getServerCapabilities()).toMatchObject({ tools: {} });
+        expect((await client.listTools()).tools).toEqual([]);
+        await expect(client.callTool({ name: 'continuity_search', arguments: { query: 'reconnect' } })).rejects.toThrow();
+      } finally { await client.close(); await server.close(); }
+    }
+  } finally { host.close(); }
+});
 
 it('runs the real compiled CLI workflow across processes', async () => {
   expect(run('init')).toMatchObject({ identity_version: 1 });

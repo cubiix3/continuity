@@ -243,12 +243,20 @@ export function mcpConfigRefusal(t: McpTarget): string {
 const normalPath = (path: string) => { const p = path.replace(/\\/g, '/').replace(/\/+$/, ''); return process.platform === 'win32' ? p.toLowerCase() : p; };
 /**
  * Whether a session in `directory` really has the detail tools: the entry is installed and not turned off for that
- * project (Claude Code keeps per-project `disabledMcpServers` in the same file).
+ * project. The startup hint names continuity_context, so Codex tool filters must allow it.
  */
 export function mcpUsable(t: McpTarget, directory: string): boolean {
   if (mcpState(t) !== 'installed') return false;
-  if (t.provider !== 'claude') return true;
   try {
+    if (t.provider === 'codex') {
+      const { text } = readText(t.file), layout = tomlLayout(text);
+      if (layout.unsafe || !layout.main) return false;
+      const keys = tableKeys(layout.lines, layout.main), value = (name: string) => keys.find(k => k.path.length === 1 && k.path[0] === name)?.value;
+      const enabled = value('enabled_tools'), disabled = value('disabled_tools');
+      const allow = tomlStrings(enabled), deny = tomlStrings(disabled);
+      return (enabled === undefined || Array.isArray(allow) && allow.includes('continuity_context'))
+        && (disabled === undefined || Array.isArray(deny) && !deny.includes('continuity_context'));
+    }
     const projects = readClaude(t.file).config.projects ?? {}, wanted = normalPath(directory);
     return !Object.entries(projects).some(([key, value]) => normalPath(key) === wanted && Array.isArray(value?.disabledMcpServers) && value.disabledMcpServers.includes(MCP_SERVER_NAME));
   } catch { return false; }

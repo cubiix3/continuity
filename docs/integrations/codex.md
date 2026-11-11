@@ -61,10 +61,15 @@ test run only). See [agent bootstrap](../agent-bootstrap.md).
 The same install adds `[mcp_servers.continuity]` to `config.toml`. Codex starts that
 server once per session in the session's directory; it serves
 `continuity_context`, `continuity_search` and `continuity_handoff_latest` for that
-project, and no tools elsewhere. The daemon ends a session's server one to two minutes
+project, and no tools elsewhere. Outside a registered project or without Continuity
+state, `tools/list` returns an empty list so MCP startup completes without granting
+project access. The daemon ends a session's server one to two minutes
 after the session. ORCA mirrors `~/.codex/config.toml` into its own `CODEX_HOME` as it
 does `hooks.json`. For a separate `CODEX_HOME` that is not mirrored, run the install
 once with that `CODEX_HOME` set.
+
+The startup index names `continuity_context` only when Codex's `enabled_tools` and
+`disabled_tools` allow it. Tool filters are kept as configured during install or repair.
 
 Verified with Codex 0.157.1 on Windows, in an isolated `CODEX_HOME`:
 - the closed-handoff question used two structured Continuity calls and no CLI; before,

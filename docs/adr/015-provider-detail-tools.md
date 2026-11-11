@@ -47,13 +47,17 @@ Findings, verified with a probe MCP server:
   search refresh the source index and record a context audit like any retrieval, so
   only the handoff read carries `readOnlyHint`. For Claude Code they also carry
   `alwaysLoad`. Unbound sessions (unregistered, detached worktree, no state) get a
-  server with no tools and no output.
+  server with no tools or project data. It advertises the tools capability and answers
+  `tools/list` with an empty list, so clients can complete discovery.
 - The startup hook names the tool only when this session really has it: this
   integration's entry is current, not turned off (Codex `enabled = false`, Claude Code
   per-project `disabledMcpServers`), and the server binds this directory. A nested
-  unregistered checkout shows its parent's index, but its server binds nothing. With
+  unregistered checkout inherits neither its parent's index nor its tools. With
   the tool, the hook lists up to ten keys of the memories it did not show. Otherwise it
   names no tool and no CLI.
+- The Codex startup hint also respects `enabled_tools` and `disabled_tools`. It names
+  `continuity_context` only when the allow list includes it (if present) and the deny
+  list does not. An empty allow list hides the hint; malformed lists also hide it.
 - The Codex editor reads `config.toml` as TOML does. It skips strings, including
   multi-line ones, and comments, and it counts table headers only outside arrays. It
   decodes quoted and escaped key names. It refuses what it could still misread:
@@ -118,8 +122,6 @@ Findings, verified with a probe MCP server:
 - Known limits:
   - the read-modify-rename has no lock, so a provider write in the same moment can be
     lost; install is rare;
-  - Codex `enabled_tools`/`disabled_tools` lists are not read, so the hint may name a
-    tool the user hid;
   - a project- or local-scope Claude Code server named `continuity` shadows ours without
     the hook knowing;
   - a session started before the project was registered keeps a server without tools

@@ -108,7 +108,9 @@ function readSettings(path: string): { settings: Settings; exists: boolean } {
   if (!existsSync(path)) return { settings: {}, exists: false };
   const raw = readFileSync(path, 'utf8'), text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
   if (!text.trim()) return { settings: {}, exists: true };
-  const parsed = JSON.parse(text) as unknown;
+  let parsed: unknown;
+  // Parser messages can quote other hooks' commands and credentials.
+  try { parsed = JSON.parse(text); } catch { throw new Error('invalid JSON'); }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Settings must be a JSON object.');
   const settings = parsed as Settings;
   if (settings.hooks !== undefined && (typeof settings.hooks !== 'object' || settings.hooks === null || Array.isArray(settings.hooks))) throw new Error('"hooks" must be an object.');

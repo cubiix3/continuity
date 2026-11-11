@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { contextRequestSchema, handoffInputSchema, memoryCandidateSchema, observationSchema } from '../../core/src/contracts.js';
 import { renderBootstrap } from '../../core/src/context/bootstrap.js';
@@ -32,8 +33,13 @@ export interface McpServerOptions {
  */
 export function createMcpServer(adapter: AgentAdapter | undefined, options: McpServerOptions = {}): McpServer {
   const server = new McpServer({ name: 'continuity', version: '0.2.0' });
-  if (!adapter) return server;
   const wanted = new Set<McpToolName>(options.tools ?? MCP_TOOLS);
+  if (!adapter || wanted.size === 0) {
+    // Clients may request tools/list even when no project is bound.
+    server.server.registerCapabilities({ tools: {} });
+    server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
+    return server;
+  }
   const annotations = { destructiveHint: false, openWorldHint: false };
   const extra = options.meta ? { _meta: options.meta } : {};
   if (wanted.has('continuity_observe')) server.registerTool('continuity_observe', { ...extra, description: 'Record bounded execution observations in this project. Observations never become memory automatically.', inputSchema: observationSchema, annotations }, args => result(() => adapter.observe(args)));

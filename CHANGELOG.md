@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Unbound MCP sessions complete tool discovery with an empty list instead of failing startup with `-32601`. Registered projects keep their project-bound tools.
+- Codex startup hints respect tool allow and deny lists. Malformed provider hook JSON reports a generic parse error without quoting configuration contents.
 - Readable review findings in CLI text, startup summaries, autosave prompts and Dashboard records: priority, title, compact file reference and explanation replace raw `::code-comment` attributes. Original records, source text and machine-readable record responses remain unchanged.
 - Review code examples remain literal, including indented Markdown blocks. Automatic summaries and closure offers withhold secret-looking content revealed by review formatting before clipping.
 - Dashboard workspace switches update navigation and the displayed root; the keyboard skip link focuses content without changing the current page.

@@ -13,34 +13,57 @@
   <img alt="Node.js 24" src="https://img.shields.io/badge/node-24.13%2B-2d6a50">
 </p>
 
-Continuity is a local continuity layer. It keeps project identity, memory,
-provenance and structured handoffs stable while agents and sessions change.
-Git and your project files stay the source of truth.
+<h3 align="center">Agents are replaceable. Project continuity is not.</h3>
 
-![Continuity Dashboard showing project health, recent handoffs and memory state](docs/screenshots/dashboard.png)
+Continuity is a local-first project continuity layer for AI coding agents.
+Claude Code can work on a project and leave a durable lesson or a handoff, and
+Codex can continue from the same project context in a fresh session, without
+sharing transcripts. Git and your project files stay the source of truth.
 
-<sub>The local Dashboard with a demo project. No hosted service, account or model key.</sub>
+<p align="center">
+  <a href="#quickstart"><b>Get started</b></a> ·
+  <a href="#dashboard">Dashboard</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="https://github.com/cubiix3/continuity/releases/tag/v0.2.0">v0.2.0 release</a> ·
+  <a href="#documentation">Docs</a> ·
+  <a href="https://cubiix3.github.io/continuity/">Website</a>
+</p>
+
+## See it in 30 seconds
+
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="site/assets/continuity-demo-still.webp">
+    <img alt="Animation: a Claude Code session fixes a Windows worktree problem and its lesson is saved as an agent observation. A fresh Codex session in the same project starts with that lesson retrieved and answers with it. The Continuity logo closes the loop." src="site/assets/continuity-demo.webp" width="600">
+  </picture>
+</p>
+
+1. **Claude Code learns a project-specific lesson**: on Windows, removing a pnpm
+   worktree with Git fails, `fs.rmSync` works.
+2. **Continuity keeps it** as a durable lesson of this project, attributed to
+   Claude Code at `agent_observation` trust.
+3. **A fresh Codex session receives it automatically** in its startup context,
+   before the first prompt. No transcript crosses sessions, only the lesson and its origin.
+
+<sub>Animated walkthrough. The lesson, key and trust label come from a real, isolated
+Continuity install; the Codex line shows the lesson's content, not a captured transcript.</sub>
 
 ## Why Continuity
 
 You switch from Claude Code to Codex, start a fresh session, or hand work to
 another agent. The agent changes. The project does not.
 
-Without a shared layer, every new session rediscovers the same rules, repeats the
-same decisions and loses what the last agent was halfway through. Continuity keeps
-that state with the project, not with a chat:
-
 ```text
-   Claude Code ──┐                       ┌──▶ Codex
-                 ▼                       │
-            ┌────────────────────────────┴───┐
-            │           Continuity           │
-            │  identity · memory · handoffs  │
-            │   provenance · context audit   │
-            └────────────────────────────────┘
-                 ▲                       │
-   CLI / MCP ────┘                       └──▶ the next session
+Without Continuity
+  Claude Code ── learns the project's rules and fixes ──▶ session ends
+  Codex       ── fresh session ──▶ rediscovers the same rules, repeats the same fix
+
+With Continuity
+  Claude Code ── lesson · handoff ──▶ Continuity ──▶ Codex, fresh session
+                                      local · project-bound · with provenance
 ```
+
+Continuity keeps that state with the project, not with a chat.
 
 | Continuity is | Continuity is not |
 | --- | --- |
@@ -49,6 +72,91 @@ that state with the project, not with a chat:
 | Structured handoffs between agents | A replacement for Git |
 | Project and workspace isolation | A cloud memory service |
 | A CLI, MCP server and loopback API | A replacement for native Read, Grep or Git tools |
+
+## After setup, just work
+
+```text
+cd my-project
+claude        # or: codex
+```
+
+After a one-time [setup](#quickstart), a normal Claude Code or Codex session needs
+no Continuity commands:
+
+- **At session start** the agent receives the project's startup context: health,
+  the latest open handoff and durable memories with their trust labels.
+- **After a turn that edited files**, an interactive session saves up to three
+  durable lessons and, if work is unfinished, a handoff. Continuity's memory policy
+  decides what is kept. No chats are read. Scripted `claude -p` and `codex exec`
+  answers stay unchanged.
+- **The next session**, with the same agent or the other one, starts from there
+  and can close the handoff once the work is done.
+
+Details are in [agent bootstrap](docs/agent-bootstrap.md) and
+[agent lifecycle](docs/agent-lifecycle.md).
+
+## Quickstart
+
+Requirements: **Node.js 24.13 or newer** on the Node 24 line, and Git.
+See [stability boundaries](STABILITY.md) and [upgrade steps](UPGRADING.md) before replacing a local installation.
+Continuity is not published to the npm registry. Do not install an unrelated
+package named `continuity`.
+
+**Latest release (v0.2.0).** Download `continuity-local-0.2.0.tgz` from the
+[release page](https://github.com/cubiix3/continuity/releases/tag/v0.2.0), then:
+
+```sh
+npm install --global ./continuity-local-0.2.0.tgz
+```
+
+Register a project once, from inside it:
+
+```sh
+continuity init
+continuity sync
+```
+
+Then install a provider integration once:
+
+```sh
+continuity integrate claude install
+continuity integrate codex install
+```
+
+Codex runs user hooks only after a one-time review: open Codex and trust the
+Continuity hook in `/hooks`. See [agent bootstrap](docs/agent-bootstrap.md) for
+`status`, `remove`, `--no-autosave` and `--no-mcp`.
+
+Open the local Dashboard with `continuity dashboard` at <http://127.0.0.1:4783>.
+The browser does not open automatically.
+
+On Windows, v0.2.0 can keep the Dashboard running and sync projects
+automatically after sign-in: `continuity startup install`, then `continuity runtime start`
+to start it now. It runs as the current user, without administrator rights. See the
+[background runtime](docs/background-runtime.md) for limits and removal.
+
+Other agents and scripts can leave and pick up handoffs through the CLI or MCP:
+
+```sh
+continuity handoff create --file handoff.json
+# later, from another agent in the same project:
+continuity handoff latest
+```
+
+The [runnable example](https://github.com/cubiix3/continuity/blob/v0.2.0/examples/README.md) covers memory and handoff inputs.
+
+**From source** (for contributors). Requires pnpm 10.30.1:
+
+```sh
+git clone https://github.com/cubiix3/continuity.git
+cd continuity
+pnpm install --frozen-lockfile
+pnpm check
+pnpm link --global
+```
+
+If pnpm's global bin directory is not configured, run `pnpm setup` and open a new
+terminal. Without linking, `pnpm continuity --project <path> init` works from the checkout.
 
 ## What it keeps
 
@@ -65,8 +173,8 @@ that state with the project, not with a chat:
 
 1. `continuity init` registers a project. `continuity sync` builds a bounded,
    hashed index of its current text sources.
-2. Agents connect through MCP, the CLI or the local API. The host fixes the
-   project, so an agent can read and write only that project's state.
+2. Agents connect through provider hooks, MCP, the CLI or the local API. The host
+   fixes the project, so an agent can read and write only that project's state.
 3. Agents propose memories and leave handoffs. Core policy decides what becomes
    durable, at which trust level, and what is quarantined.
 4. Context requests return a byte-budgeted bundle with provenance and an
@@ -83,66 +191,6 @@ that state with the project, not with a chat:
 See the [memory model](docs/memory-model.md). Automatic memory is included in
 v0.2.0; explicit human review remains available.
 
-## Quickstart
-
-Requirements: **Node.js 24.13 or newer** on the Node 24 line, and Git.
-See [stability boundaries](STABILITY.md) and [upgrade steps](UPGRADING.md) before replacing a local installation.
-Continuity is not published to the npm registry. Do not install an unrelated
-package named `continuity`.
-
-**Latest release (v0.2.0).** Download `continuity-local-0.2.0.tgz` from the
-[release page](https://github.com/cubiix3/continuity/releases/tag/v0.2.0), then:
-
-```sh
-npm install --global ./continuity-local-0.2.0.tgz
-```
-
-**From source** (for contributors). Requires pnpm 10.30.1:
-
-```sh
-git clone https://github.com/cubiix3/continuity.git
-cd continuity
-pnpm install --frozen-lockfile
-pnpm check
-pnpm link --global
-```
-
-If pnpm's global bin directory is not configured, run `pnpm setup` and open a new
-terminal. Without linking, `pnpm continuity --project <path> init` works from the checkout.
-
-Then, inside your project:
-
-```sh
-continuity init
-continuity sync
-continuity dashboard
-```
-
-Open <http://127.0.0.1:4783>. The browser does not open automatically.
-
-On Windows, v0.2.0 can keep the Dashboard running and sync projects
-automatically after sign-in: `continuity startup install`, then `continuity runtime start`
-to start it now. It runs as the current user, without administrator rights. See the
-[background runtime](docs/background-runtime.md) for limits and removal.
-
-Leave a handoff and pick it up in another agent's session:
-
-```sh
-continuity handoff create --file handoff.json
-# later, from another agent in the same project:
-continuity handoff latest
-```
-
-The [runnable example](https://github.com/cubiix3/continuity/blob/v0.2.0/examples/README.md) covers memory and handoff inputs.
-
-To give every new agent session this context automatically, install a provider
-hook once: `continuity integrate claude install` or
-`continuity integrate codex install`. See [agent bootstrap](docs/agent-bootstrap.md).
-In interactive Claude Code and Codex sessions, the same hooks ask the agent, after a
-turn that edited files, whether anything is worth keeping or a handoff is finished; it
-never reads chats. Scripted `claude -p` and `codex exec` answers stay unchanged. See
-[agent lifecycle](docs/agent-lifecycle.md).
-
 ## Agent integrations
 
 | Integration | Status |
@@ -156,11 +204,16 @@ never reads chats. Scripted `claude -p` and `codex exec` answers stay unchanged.
 | Command Code, Grok | Unverified; Grok structured results remain unresolved |
 | Ollama, OpenViking | Optional local semantic retrieval · [tested versions and limits](docs/retrieval.md) |
 
-A [real cross-agent fixture](docs/integrations/cross-agent.md) passes structured
+Claude Code and Codex are the first-class tested integrations. A
+[real cross-agent fixture](docs/integrations/cross-agent.md) passes structured
 work between fresh Claude Code and Codex sessions without sharing transcripts.
 See [adapter contracts](docs/adapters.md).
 
 ## Dashboard
+
+![Continuity Dashboard showing project health, recent handoffs and memory state](docs/screenshots/dashboard.png)
+
+<sub>The local Dashboard with a demo project. No hosted service, account or model key.</sub>
 
 `continuity dashboard` serves a local, read-mostly view on `127.0.0.1`:
 Overview, Projects, Workspaces, Handoffs, Memories, Context Audit, Sources and
@@ -250,9 +303,10 @@ Global flags: `--project <directory>`, `--home <directory>`, `--json`.
 ## Documentation
 
 - [Architecture](docs/architecture.md) and [decision records](docs/adr/README.md)
-- [Memory model](docs/memory-model.md) · [Handoffs](docs/handoffs.md) · [Agent bootstrap](docs/agent-bootstrap.md) · [Source scope](docs/source-scope.md)
+- [Memory model](docs/memory-model.md) · [Handoffs](docs/handoffs.md) · [Agent bootstrap](docs/agent-bootstrap.md) · [Agent lifecycle](docs/agent-lifecycle.md) · [Source scope](docs/source-scope.md)
 - [Dashboard](docs/dashboard.md) · [Background runtime](docs/background-runtime.md) · [Adapters, MCP and HTTP](docs/adapters.md) · [Retrieval](docs/retrieval.md)
 - [Security model](docs/security.md) · [Operations](docs/operations.md) · [Product scope](docs/product-scope.md)
+- [Stability boundaries](STABILITY.md) · [Upgrading](UPGRADING.md) · [v0.2.0 release notes](docs/releases/v0.2.0.md) · [Changelog](CHANGELOG.md)
 - [Brand assets](docs/branding/README.md)
 
 ## Status

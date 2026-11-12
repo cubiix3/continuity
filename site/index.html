@@ -4,11 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#14171a">
-  <meta name="description" content="Continuity keeps project memory, provenance, and handoffs local when agents and sessions change.">
-  <meta property="og:title" content="Continuity — Keep the work moving">
-  <meta property="og:description" content="Local project memory and structured handoffs for interchangeable coding agents.">
+  <meta name="description" content="Agents are replaceable. Project continuity is not. Continuity is a local-first project continuity layer for AI coding agents such as Claude Code and Codex.">
+  <meta property="og:title" content="Continuity — Agents are replaceable. Project continuity is not.">
+  <meta property="og:description" content="A local-first project continuity layer for AI coding agents: durable memory, provenance and structured handoffs across Claude Code, Codex and new sessions.">
   <meta property="og:type" content="website">
-  <title>Continuity — Keep the work moving</title>
+  <meta property="og:url" content="https://cubiix3.github.io/continuity/">
+  <meta property="og:image" content="https://cubiix3.github.io/continuity/assets/continuity-social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Continuity: persistent continuity for interchangeable agents">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>Continuity — Project continuity for AI coding agents</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
   <script src="./motion.js" defer></script>
@@ -19,6 +25,7 @@
     <div class="wrap header-inner">
       <a class="brand" href="#top" aria-label="Continuity home"><img src="./assets/continuity-logo-dark.png" alt="Continuity" width="165" height="30"></a>
       <nav aria-label="Main navigation">
+        <a href="#demo">Demo</a>
         <a href="#why">Why Continuity</a>
         <a href="#how">How it works</a>
         <a href="https://github.com/cubiix3/continuity#documentation">Docs</a>
@@ -31,14 +38,14 @@
     <section class="hero" id="top" aria-labelledby="hero-title">
       <div class="wrap hero-grid">
         <div class="hero-copy">
-          <p class="eyebrow">Local context for coding agents</p>
+          <p class="eyebrow">Local-first project continuity for AI coding agents</p>
           <h1 id="hero-title">The work survives<br>the <span>handoff.</span></h1>
-          <p class="hero-lead">Agents and sessions change. Continuity keeps the project's memory, evidence, and next steps in one local place, ready for whoever picks up the work.</p>
+          <p class="hero-lead">Agents are replaceable. Project continuity is not. Continuity keeps the project's memory, evidence, and next steps in one local place, ready for whoever picks up the work.</p>
           <div class="hero-actions">
             <a class="button button-primary" href="https://github.com/cubiix3/continuity#quickstart">Get started <span aria-hidden="true">↗</span></a>
             <a class="button button-secondary" href="https://github.com/cubiix3/continuity">Explore the code <span aria-hidden="true">↗</span></a>
           </div>
-          <p class="hero-note">Open source. Runs locally. Works across agents.</p>
+          <p class="hero-note">Open source. Runs locally. Tested with Claude Code and Codex. <a href="https://github.com/cubiix3/continuity/releases/tag/v0.2.0">v0.2.0 release <span aria-hidden="true">↗</span></a></p>
         </div>
 
         <div class="handoff-demo is-playing" data-demo aria-label="Example of a handoff between coding agent sessions">
@@ -60,6 +67,27 @@
           </div>
           <div class="demo-footer"><span class="live-dot" aria-hidden="true"></span> Project files remain the source of truth</div>
         </div>
+      </div>
+    </section>
+
+    <section class="film section" id="demo" aria-labelledby="demo-title">
+      <div class="wrap film-grid">
+        <div>
+          <p class="eyebrow">See it in 30 seconds</p>
+          <h2 id="demo-title">Claude Code learns it. Codex starts with it.</h2>
+          <ol class="film-steps">
+            <li><strong>Claude Code learns a project-specific lesson.</strong> Removing a pnpm worktree with Git fails on Windows; <code>fs.rmSync</code> works.</li>
+            <li><strong>Continuity keeps it with its origin.</strong> A durable lesson of this project, attributed to Claude Code at agent-observation trust.</li>
+            <li><strong>A fresh Codex session receives it.</strong> The lesson arrives in its startup context. No transcript crosses sessions.</li>
+          </ol>
+          <p class="film-note">Animated walkthrough. The lesson, key and trust label come from a real, isolated Continuity install; the Codex line shows the lesson's content, not a captured transcript.</p>
+        </div>
+        <figure class="film-frame">
+          <picture>
+            <source media="(prefers-reduced-motion: reduce)" srcset="./assets/continuity-demo-still.webp">
+            <img src="./assets/continuity-demo.webp" width="960" height="960" loading="lazy" decoding="async" alt="Animation: a Claude Code session fixes a Windows worktree problem and its lesson is saved as an agent observation. A fresh Codex session in the same project starts with that lesson retrieved and answers with it.">
+          </picture>
+        </figure>
       </div>
     </section>
 
@@ -140,6 +168,6 @@
     </section>
   </main>
 
-  <footer class="site-footer"><div class="wrap footer-inner"><a href="#top" aria-label="Continuity home"><img src="./assets/continuity-logo-dark.png" alt="Continuity" width="143" height="26"></a><div><a href="https://github.com/cubiix3/continuity">GitHub</a><a href="https://github.com/cubiix3/continuity/blob/main/LICENSE">Apache 2.0</a></div></div></footer>
+  <footer class="site-footer"><div class="wrap footer-inner"><a href="#top" aria-label="Continuity home"><img src="./assets/continuity-logo-dark.png" alt="Continuity" width="143" height="26"></a><div><a href="https://github.com/cubiix3/continuity">GitHub</a><a href="https://github.com/cubiix3/continuity/releases/tag/v0.2.0">Release v0.2.0</a><a href="https://github.com/cubiix3/continuity#documentation">Docs</a><a href="https://github.com/cubiix3/continuity/blob/main/LICENSE">Apache 2.0</a></div></div></footer>
 </body>
 </html>
